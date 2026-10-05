@@ -1,0 +1,163 @@
+# fexcore - 9b6687871a7e6fa6757ab241dc3abe5029e46145 - 2026-10-05T23:59:54Z
+
+## fexcore.log:      152 lines
+### errors
+145--- Performing Test HAS_SYSCALL_RENAMEAT2
+146--- Performing Test HAS_SYSCALL_RENAMEAT2 - Failed
+147:CMake Error at CMakeLists.txt:644 (install):
+148-  install TARGETS given no BUNDLE DESTINATION for MACOSX_BUNDLE executable
+149-  target "fexcore-smoke".
+150-
+151-
+152--- Configuring incomplete, errors occurred!
+### end
+Submodule 'External/rpmalloc' (https://github.com/FEX-Emu/rpmalloc.git) registered for path 'External/rpmalloc'
+Submodule 'External/unordered_dense' (https://github.com/martinus/unordered_dense.git) registered for path 'External/unordered_dense'
+Submodule 'External/xxhash' (https://github.com/Cyan4973/xxHash.git) registered for path 'External/xxhash'
+Submodule 'External/cpp-optparse' (https://github.com/Sonicadvance1/cpp-optparse) registered for path 'Source/Common/cpp-optparse'
+Cloning into '/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fex-src/External/fmt'...
+Cloning into '/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fex-src/External/rpmalloc'...
+Cloning into '/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fex-src/Source/Common/cpp-optparse'...
+Cloning into '/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fex-src/External/range-v3'...
+Cloning into '/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fex-src/External/xxhash'...
+Cloning into '/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fex-src/External/unordered_dense'...
+From https://github.com/fmtlib/fmt
+ * branch            407c905e45ad75fc29bf0f9bb7c5c2fd3475976f -> FETCH_HEAD
+Submodule path 'External/fmt': checked out '407c905e45ad75fc29bf0f9bb7c5c2fd3475976f'
+From https://github.com/ericniebler/range-v3
+ * branch            ca1388fb9da8e69314dda222dc7b139ca84e092f -> FETCH_HEAD
+Submodule path 'External/range-v3': checked out 'ca1388fb9da8e69314dda222dc7b139ca84e092f'
+From https://github.com/FEX-Emu/rpmalloc
+ * branch            1d85c246cd827ead6865f4f880d4fef53f2b1864 -> FETCH_HEAD
+Submodule path 'External/rpmalloc': checked out '1d85c246cd827ead6865f4f880d4fef53f2b1864'
+From https://github.com/martinus/unordered_dense
+ * branch            3234af2c03549bc85656bfd3a86993bf1cd8aef1 -> FETCH_HEAD
+Submodule path 'External/unordered_dense': checked out '3234af2c03549bc85656bfd3a86993bf1cd8aef1'
+From https://github.com/Cyan4973/xxHash
+ * branch            e626a72bc2321cd320e953a0ccf1584cad60f363 -> FETCH_HEAD
+Submodule path 'External/xxhash': checked out 'e626a72bc2321cd320e953a0ccf1584cad60f363'
+Submodule path 'Source/Common/cpp-optparse': checked out '9f94388a339fcbb0bc95c17768eb786c85988f6e'
+-- The C compiler identification is AppleClang 21.0.0.21000101
+-- The CXX compiler identification is AppleClang 21.0.0.21000101
+-- The ASM compiler identification is AppleClang
+-- Found assembler: /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang
+-- Detecting C compiler ABI info
+-- Detecting C compiler ABI info - done
+-- Check for working C compiler: /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang - skipped
+-- Detecting C compile features
+-- Detecting C compile features - done
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Check for working CXX compiler: /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang++ - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+-- Looking for include file gdb/jit-reader.h
+-- Looking for include file gdb/jit-reader.h - not found
+-- Clang version 21.0.0.21000101
+-- Performing Test HAS_CLANG_PRESERVE_ALL
+-- Performing Test HAS_CLANG_PRESERVE_ALL - Success
+-- Has clang::preserve_all
+-- Performing Test HAS_PROGRAM_INVOCATION_NAME
+-- Performing Test HAS_PROGRAM_INVOCATION_NAME - Failed
+-- Enabling ccache 4.14
+--  jemalloc glibc allocator disabled!
+ This is not a recommended configuration!
+ This will very explicitly break thunk execution!
+ Use at your own risk!
+--  FEX allocator is disabled!
+ This is not a recommended configuration!
+ This will very explicitly break 32-bit application execution!
+ Use at your own risk!
+-- Found Python: /opt/homebrew/Frameworks/Python.framework/Versions/3.14/bin/python3.14 (found suitable version "3.14.7", minimum required is "3.9") found components: Interpreter
+-- xxHash build type: RELEASE
+-- Architecture: arm64
+-- {fmt} version: 12.1.0
+-- Build type: RELEASE
+-- Performing Test HAS_NULLPTR_WARNING
+-- Performing Test HAS_NULLPTR_WARNING - Success
+CMake Warning (deprecated) at External/range-v3/CMakeLists.txt:8 (cmake_minimum_required):
+  Compatibility with CMake < 3.10 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+  to tell CMake that the project requires at least <min> but has been updated
+  to work with policies introduced by <max> or earlier.
+This warning is for project developers.  Use -Wno-author or -Wno-deprecated
+to suppress it.
+
+CMake Warning at External/range-v3/cmake/ranges_env.cmake:65 (message):
+  [range-v3 warning]: unknown system visionOS !
+Call Stack (most recent call first):
+  External/range-v3/CMakeLists.txt:24 (include)
+
+
+CMake Warning at External/range-v3/cmake/ranges_env.cmake:92 (message):
+  [range-v3 warning]: unknown build type, defaults to release!
+Call Stack (most recent call first):
+  External/range-v3/CMakeLists.txt:24 (include)
+
+
+-- Found Git: /opt/homebrew/bin/git (found version "2.55.0")
+-- [range-v3]: C++ std=2a
+-- Performing Test RANGES_HAS_CXXSTD
+-- Performing Test RANGES_HAS_CXXSTD - Success
+-- Performing Test RANGES_HAS_WALL
+-- Performing Test RANGES_HAS_WALL - Success
+-- Performing Test RANGES_HAS_WEXTRA
+-- Performing Test RANGES_HAS_WEXTRA - Success
+-- Performing Test RANGES_HAS_WERROR
+-- Performing Test RANGES_HAS_WERROR - Success
+-- Performing Test RANGES_HAS_FDIAGNOSTIC_SHOW_TEMPLATE_TREE
+-- Performing Test RANGES_HAS_FDIAGNOSTIC_SHOW_TEMPLATE_TREE - Success
+-- Performing Test RANGES_HAS_FTEMPLATE_BACKTRACE_LIMIT
+-- Performing Test RANGES_HAS_FTEMPLATE_BACKTRACE_LIMIT - Success
+-- Performing Test RANGES_HAS_FMACRO_BACKTRACE_LIMIT
+-- Performing Test RANGES_HAS_FMACRO_BACKTRACE_LIMIT - Success
+-- Performing Test RANGES_HAS_OMIT_FRAME_POINTER
+-- Performing Test RANGES_HAS_OMIT_FRAME_POINTER - Success
+-- Performing Test RANGES_HAS_OFAST
+-- Performing Test RANGES_HAS_OFAST - Success
+-- Performing Test RANGES_HAS_STRICT_ALIASING
+-- Performing Test RANGES_HAS_STRICT_ALIASING - Success
+-- Performing Test RANGES_HAS_STRICT_VTABLE_POINTERS
+-- Performing Test RANGES_HAS_STRICT_VTABLE_POINTERS - Success
+-- Performing Test RANGES_HAS_FAST_MATH
+-- Performing Test RANGES_HAS_FAST_MATH - Success
+-- Performing Test RANGES_HAS_VECTORIZE
+-- Performing Test RANGES_HAS_VECTORIZE - Success
+-- Performing Test RANGES_HAS_SIZED_DEALLOCATION
+-- Performing Test RANGES_HAS_SIZED_DEALLOCATION - Success
+-- Performing Test RANGES_HAS_MARCH_NATIVE
+-- Performing Test RANGES_HAS_MARCH_NATIVE - Success
+-- Performing Test RANGES_HAS_MTUNE_NATIVE
+-- Performing Test RANGES_HAS_MTUNE_NATIVE - Success
+-- Performing Test RANGE_V3_ALIGNED_NEW_PROBE
+-- Performing Test RANGE_V3_ALIGNED_NEW_PROBE - Success
+-- Performing Test RANGES_HAS_FCOROUTINES_TS
+-- Performing Test RANGES_HAS_FCOROUTINES_TS - Failed
+-- Performing Test RANGE_V3_HAS_FCONCEPTS
+-- Performing Test RANGE_V3_HAS_FCONCEPTS - Failed
+-- Performing Test GCC_COLOR
+-- Performing Test GCC_COLOR - Success
+-- Performing Test CLANG_COLOR
+-- Performing Test CLANG_COLOR - Success
+-- Performing Test ENUM_ENUM_WARNING
+-- Performing Test ENUM_ENUM_WARNING - Success
+-- FEX version: 
+-- FEX commit: f2b679f6028ce1c38875233aecfcf5d3f8ebecec
+-- Performing Test HAS_SYSCALL_GETCPU
+-- Performing Test HAS_SYSCALL_GETCPU - Failed
+-- Performing Test HAS_SYSCALL_GETTID
+-- Performing Test HAS_SYSCALL_GETTID - Failed
+-- Performing Test HAS_SYSCALL_TGKILL
+-- Performing Test HAS_SYSCALL_TGKILL - Failed
+-- Performing Test HAS_SYSCALL_STATX
+-- Performing Test HAS_SYSCALL_STATX - Failed
+-- Performing Test HAS_SYSCALL_RENAMEAT2
+-- Performing Test HAS_SYSCALL_RENAMEAT2 - Failed
+CMake Error at CMakeLists.txt:644 (install):
+  install TARGETS given no BUNDLE DESTINATION for MACOSX_BUNDLE executable
+  target "fexcore-smoke".
+
+
+-- Configuring incomplete, errors occurred!
