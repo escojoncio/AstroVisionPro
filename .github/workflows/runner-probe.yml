@@ -1,0 +1,34 @@
+# Reports which Xcode and visionOS SDKs the macOS runners offer, into the ci-logs branch.
+name: runner-probe
+on:
+  push:
+    paths: [.github/workflows/runner-probe.yml]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  probe:
+    runs-on: macos-26
+    steps:
+      - name: Describe the runner
+        run: |
+          {
+            echo "## runner"; sw_vers; uname -a; sysctl -n hw.ncpu hw.memsize
+            echo "## xcode-select"; xcode-select -p; xcodebuild -version
+            echo "## installed Xcodes"; ls -d /Applications/Xcode*.app
+            echo "## SDKs"; xcodebuild -showsdks
+            echo "## tools"; cmake --version | head -1; which ninja meson python3 brew || true
+          } > probe.txt 2>&1
+          cat probe.txt
+      - name: Store the report in the ci-logs branch
+        run: |
+          git config user.name "ci"; git config user.email "ci@users.noreply.github.com"
+          mkdir -p /tmp/logs && cp probe.txt /tmp/logs/runner-probe.txt
+          git fetch origin ci-logs || true
+          if git rev-parse --verify origin/ci-logs >/dev/null 2>&1; then
+            git checkout -B ci-logs origin/ci-logs
+          else
+            git checkout --orphan ci-logs && git rm -rf . >/dev/null
+          fi
+          cp /tmp/logs/runner-probe.txt .
+          git add runner-probe.txt && git commit -m "runner probe ${GITHUB_SHA}" && git push origin ci-logs
