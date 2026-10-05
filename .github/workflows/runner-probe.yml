@@ -6,29 +6,40 @@ on:
   workflow_dispatch:
 permissions:
   contents: write
+concurrency:
+  group: ci-logs-writer
+  cancel-in-progress: false
 jobs:
   probe:
-    runs-on: macos-26
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, macos-26, macos-15]
+    runs-on: ${{ matrix.runner }}
     steps:
       - name: Describe the runner
         run: |
           {
-            echo "## runner"; sw_vers; uname -a; sysctl -n hw.ncpu hw.memsize
-            echo "## xcode-select"; xcode-select -p; xcodebuild -version
-            echo "## installed Xcodes"; ls -d /Applications/Xcode*.app
-            echo "## SDKs"; xcodebuild -showsdks
+            echo "## runner ${{ matrix.runner }}"; uname -a
+            if command -v sw_vers >/dev/null; then
+              sw_vers; sysctl -n hw.ncpu hw.memsize
+              echo "## xcode-select"; xcode-select -p; xcodebuild -version
+              echo "## installed Xcodes"; ls -d /Applications/Xcode*.app
+              echo "## SDKs"; xcodebuild -showsdks
+            fi
             echo "## tools"; cmake --version | head -1; which ninja meson python3 brew || true
           } > probe.txt 2>&1
           cat probe.txt
       - name: Store the report in the ci-logs branch
         run: |
           git config user.name "ci"; git config user.email "ci@users.noreply.github.com"
-          mkdir -p /tmp/logs && cp probe.txt /tmp/logs/runner-probe.txt
-          git fetch origin ci-logs || true
-          if git rev-parse --verify origin/ci-logs >/dev/null 2>&1; then
-            git checkout -B ci-logs origin/ci-logs
-          else
-            git checkout --orphan ci-logs && git rm -rf . >/dev/null
-          fi
-          cp /tmp/logs/runner-probe.txt .
-          git add runner-probe.txt && git commit -m "runner probe ${GITHUB_SHA}" && git push origin ci-logs
+          cp probe.txt /tmp/probe-${{ matrix.runner }}.txt
+          for attempt in 1 2 3 4 5; do
+            git fetch origin ci-logs && git checkout -B ci-logs origin/ci-logs \
+              || { git checkout --orphan ci-logs && git rm -rf -q . ; }
+            cp /tmp/probe-${{ matrix.runner }}.txt probe-${{ matrix.runner }}.txt
+            git add probe-${{ matrix.runner }}.txt
+            git commit -q -m "runner probe ${{ matrix.runner }} ${GITHUB_SHA}" || true
+            git push origin ci-logs && break
+            sleep $((attempt * 5))
+          done
