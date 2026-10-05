@@ -1,0 +1,1035 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 4900aa1..7a3d48f 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -65,9 +65,9 @@ if (NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
+   message(FATAL_ERROR "Unsupported pointer size ${CMAKE_SIZEOF_VOID_P}."
+     " FEX only supports 64-bit (8-byte pointer) systems."
+     " If you believe this is in error, file an issue.")
+-elseif (NOT (WIN32 OR CMAKE_SYSTEM_NAME STREQUAL "Linux"))
++elseif (NOT (WIN32 OR CMAKE_SYSTEM_NAME STREQUAL "Linux" OR APPLE))
+   message(FATAL_ERROR "Unsupported system type ${CMAKE_SYSTEM_NAME}."
+-    " FEX only supports Linux and Windows."
++    " FEX only supports Linux, Windows and (embedded, FEXCore only) Apple systems."
+     " If you believe this is in error, file an issue.")
+ endif()
+ 
+diff --git a/CodeEmitter/CodeEmitter/Buffer.h b/CodeEmitter/CodeEmitter/Buffer.h
+index 602eeb6..31a7316 100644
+--- a/CodeEmitter/CodeEmitter/Buffer.h
++++ b/CodeEmitter/CodeEmitter/Buffer.h
+@@ -5,6 +5,8 @@
+ #include <cstring>
+ #include <type_traits>
+ 
++#include <FEXCore/Utils/DarwinCompat.h>
++
+ namespace ARMEmitter {
+ class Buffer {
+ public:
+@@ -25,7 +27,8 @@ public:
+   template<typename T>
+   requires (std::is_trivially_copyable_v<T>)
+   void dcn(const T& Data) {
+-    std::memcpy(CurrentOffset, &Data, sizeof(Data));
++    // (Where code memory is mapped twice, it is written through the writable mapping.)
++    std::memcpy(FEX_JIT_WRITABLE(CurrentOffset), &Data, sizeof(Data));
+     CurrentOffset += sizeof(Data);
+   }
+   void dc8(uint8_t Data) {
+@@ -43,7 +46,7 @@ public:
+ 
+   void EmitString(const char* String) {
+     const auto StringLength = strlen(String);
+-    memcpy(CurrentOffset, String, StringLength);
++    memcpy(FEX_JIT_WRITABLE(CurrentOffset), String, StringLength);
+     CurrentOffset += StringLength;
+   }
+ 
+@@ -53,7 +56,7 @@ public:
+     if (!CurrentAlignment) {
+       return;
+     }
+-    std::memset(CurrentOffset, 0, Size - CurrentAlignment);
++    std::memset(FEX_JIT_WRITABLE(CurrentOffset), 0, Size - CurrentAlignment);
+     CurrentOffset += Size - CurrentAlignment;
+   }
+ 
+diff --git a/CodeEmitter/CodeEmitter/Emitter.h b/CodeEmitter/CodeEmitter/Emitter.h
+index 001adcb..1875b4e 100644
+--- a/CodeEmitter/CodeEmitter/Emitter.h
++++ b/CodeEmitter/CodeEmitter/Emitter.h
+@@ -671,7 +671,7 @@ public:
+       uint32_t Inst = *Instruction & ~InstMask;
+       Inst |= (Offset & 0b11) << 29;
+       Inst |= (Offset >> 2) << 5;
+-      *Instruction = Inst;
++      *FEX_JIT_WRITABLE(Instruction) = Inst;
+       break;
+     }
+     case ForwardLabel::InstType::ADRP: {
+@@ -689,7 +689,7 @@ public:
+       uint32_t Inst = *Instruction & ~InstMask;
+       Inst |= (Offset & 0b11) << 29;
+       Inst |= (Offset >> 2) << 5;
+-      *Instruction = Inst;
++      *FEX_JIT_WRITABLE(Instruction) = Inst;
+       break;
+     }
+     case ForwardLabel::InstType::B: {
+@@ -704,7 +704,7 @@ public:
+       uint32_t Offset = static_cast<uint32_t>(Imm) & InstMask;
+       uint32_t Inst = *Instruction & ~InstMask;
+       Inst |= Offset;
+-      *Instruction = Inst;
++      *FEX_JIT_WRITABLE(Instruction) = Inst;
+ 
+       break;
+     }
+@@ -720,7 +720,7 @@ public:
+       uint32_t Offset = static_cast<uint32_t>(Imm) & InstMask;
+       uint32_t Inst = *Instruction & ~(InstMask << 5);
+       Inst |= Offset << 5;
+-      *Instruction = Inst;
++      *FEX_JIT_WRITABLE(Instruction) = Inst;
+ 
+       break;
+     }
+@@ -737,7 +737,7 @@ public:
+       uint32_t Offset = static_cast<uint32_t>(Imm) & InstMask;
+       uint32_t Inst = *Instruction & ~(InstMask << 5);
+       Inst |= Offset << 5;
+-      *Instruction = Inst;
++      *FEX_JIT_WRITABLE(Instruction) = Inst;
+       break;
+     }
+     case ForwardLabel::InstType::LONG_ADDRESS_GEN: {
+diff --git a/Data/CMake/LinkerGC.cmake b/Data/CMake/LinkerGC.cmake
+index d7b2fac..11d73d0 100644
+--- a/Data/CMake/LinkerGC.cmake
++++ b/Data/CMake/LinkerGC.cmake
+@@ -6,7 +6,9 @@
+ # --as-needed  : Only includes libraries that are actually needed in the final output.
+ 
+ macro(LinkerGC target)
+-  if (CMAKE_BUILD_TYPE MATCHES "RELEASE")
++  if (CMAKE_BUILD_TYPE MATCHES "RELEASE" AND APPLE)
++    target_link_options(${target} PRIVATE "LINKER:-dead_strip")
++  elseif (CMAKE_BUILD_TYPE MATCHES "RELEASE")
+     target_link_options(${target} PRIVATE
+       "LINKER:--gc-sections"
+       "LINKER:--strip-all"
+diff --git a/FEXCore/Source/CMakeLists.txt b/FEXCore/Source/CMakeLists.txt
+index 850a96e..ea996e7 100644
+--- a/FEXCore/Source/CMakeLists.txt
++++ b/FEXCore/Source/CMakeLists.txt
+@@ -9,7 +9,7 @@ set(FEXCORE_BASE_SRCS
+   Utils/SpinWaitLock.cpp
+   Utils/WildcardMatcher.cpp)
+ 
+-if (NOT MINGW)
++if (NOT MINGW AND NOT APPLE)
+   list(APPEND FEXCORE_BASE_SRCS
+     Utils/Allocator/64BitAllocator.cpp)
+ endif()
+diff --git a/FEXCore/Source/Interface/Core/ArchHelpers/Arm64Emitter.cpp b/FEXCore/Source/Interface/Core/ArchHelpers/Arm64Emitter.cpp
+index 8856b44..36ef988 100644
+--- a/FEXCore/Source/Interface/Core/ArchHelpers/Arm64Emitter.cpp
++++ b/FEXCore/Source/Interface/Core/ArchHelpers/Arm64Emitter.cpp
+@@ -73,6 +73,21 @@ namespace x64 {
+     ARMEmitter::Reg::r8, ARMEmitter::Reg::r16, ARMEmitter::Reg::r17,
+   };
+ 
++#ifdef __APPLE__
++  // x18 belongs to the system on Apple platforms: it may be cleared at any moment.
++  constexpr std::array<ARMEmitter::Register, 6> RA = {
++    // All these callee saved
++    ARMEmitter::Reg::r20, ARMEmitter::Reg::r21, ARMEmitter::Reg::r22,
++    ARMEmitter::Reg::r23, ARMEmitter::Reg::r24, ARMEmitter::Reg::r30,
++  };
++
++  constexpr unsigned RAPairs = 4;
++
++  // Dynamic GPRs
++  constexpr std::array<ARMEmitter::Register, 1> PreserveAll_Dynamic = {
++    ARMEmitter::Reg::r30,
++  };
++#else
+   constexpr std::array<ARMEmitter::Register, 7> RA = {
+     // All these callee saved
+     ARMEmitter::Reg::r20, ARMEmitter::Reg::r21, ARMEmitter::Reg::r22, ARMEmitter::Reg::r23,
+@@ -86,8 +101,9 @@ namespace x64 {
+     ARMEmitter::Reg::r18,
+     ARMEmitter::Reg::r30,
+   };
++#endif
+ 
+-  constexpr std::array<ARMEmitter::Register, 2> NotPreserved_Dynamic = PreserveAll_Dynamic;
++  constexpr auto NotPreserved_Dynamic = PreserveAll_Dynamic;
+ 
+   // All are caller saved
+   constexpr std::array<ARMEmitter::VRegister, 16> SRAFPR = {
+diff --git a/FEXCore/Source/Interface/Core/CodeCache.cpp b/FEXCore/Source/Interface/Core/CodeCache.cpp
+index 3866fa5..ad5820a 100644
+--- a/FEXCore/Source/Interface/Core/CodeCache.cpp
++++ b/FEXCore/Source/Interface/Core/CodeCache.cpp
+@@ -1,4 +1,5 @@
+ // SPDX-License-Identifier: MIT
++#include <FEXCore/Utils/DarwinCompat.h>
+ #include "FEXCore/Utils/LogManager.h"
+ #include "FEXCore/Utils/MathUtils.h"
+ #include "FEXCore/Utils/TypeDefines.h"
+@@ -890,7 +891,7 @@ void CodeCache::FinalizeCodePages(MappedCodeCacheFile& Code, std::span<std::byte
+ #else
+   // TODO: Implement lazy mapping on Windows
+ #ifdef _M_ARM64EC
+-  memcpy(Code.CodeBuffer.data() + StartOffset, Code.CodeBufferInFile.data() + StartOffset, Size);
++  memcpy(FEX_JIT_WRITABLE(Code.CodeBuffer.data() + StartOffset), Code.CodeBufferInFile.data() + StartOffset, Size);
+ #endif
+   for (size_t i = StartPage; i < EndPage; ++i) {
+     auto PageRelocations = SpanPageRelocations(Code, i);
+diff --git a/FEXCore/Source/Interface/Core/JIT/JIT.cpp b/FEXCore/Source/Interface/Core/JIT/JIT.cpp
+index 451ee10..ee32675 100644
+--- a/FEXCore/Source/Interface/Core/JIT/JIT.cpp
++++ b/FEXCore/Source/Interface/Core/JIT/JIT.cpp
+@@ -11,6 +11,7 @@ desc: Main glue logic of the arm64 splatter backend
+ $end_info$
+ */
+ 
++#include <FEXCore/Utils/DarwinCompat.h>
+ #include "Interface/Context/Context.h"
+ #include "Interface/Core/LookupCache.h"
+ #include "Interface/Core/Dispatcher/Dispatcher.h"
+@@ -511,7 +512,7 @@ static void DirectBlockDelinker(FEXCore::Context::ExitFunctionLinkData* Record,
+     BranchEmit.b(BranchOffset);
+   }
+ 
+-  std::atomic_ref<uint32_t>(*reinterpret_cast<uint32_t*>(CallerAddress)).store(BranchInst, std::memory_order::relaxed);
++  std::atomic_ref<uint32_t>(*FEX_JIT_WRITABLE(reinterpret_cast<uint32_t*>(CallerAddress))).store(BranchInst, std::memory_order::relaxed);
+   ARMEmitter::Emitter::ClearICache(reinterpret_cast<void*>(CallerAddress), 4);
+ }
+ 
+@@ -522,7 +523,7 @@ static void IndirectBlockDelinker(FEXCore::Context::ExitFunctionLinkData* Record
+   // Restore branch +2 instructions to jump to the linker block
+   BranchEmit.b(0x2);
+ 
+-  std::atomic_ref<uint32_t>(*reinterpret_cast<uint32_t*>(JumpThunkStartAddress)).store(BranchInst, std::memory_order::relaxed);
++  std::atomic_ref<uint32_t>(*FEX_JIT_WRITABLE(reinterpret_cast<uint32_t*>(JumpThunkStartAddress))).store(BranchInst, std::memory_order::relaxed);
+   ARMEmitter::Emitter::ClearICache(reinterpret_cast<void*>(JumpThunkStartAddress), 4);
+ 
+   // No need to reset HostCode here as the exit linker pointer is stored separately, and if the block is relinked it will be updated.
+@@ -589,11 +590,11 @@ uint64_t Arm64JITCore::ExitFunctionLink(FEXCore::Core::CpuStateFrame* Frame, FEX
+         GuestRip, Record, [](FEXCore::Context::ExitFunctionLinkData* Record) { DirectBlockDelinker(Record, false); }, lk);
+     }
+ 
+-    std::atomic_ref<uint32_t>(*reinterpret_cast<uint32_t*>(CallerAddress)).store(BranchInst, std::memory_order::relaxed);
++    std::atomic_ref<uint32_t>(*FEX_JIT_WRITABLE(reinterpret_cast<uint32_t*>(CallerAddress))).store(BranchInst, std::memory_order::relaxed);
+     ARMEmitter::Emitter::ClearICache(reinterpret_cast<void*>(CallerAddress), 4);
+   } else {
+     // This case is common between calls and jumps as the thunk callsite can be left untouched.
+-    std::atomic_ref<uint64_t>(Record->HostCode).store(HostCode, std::memory_order::seq_cst);
++    std::atomic_ref<uint64_t>(*FEX_JIT_WRITABLE(&Record->HostCode)).store(HostCode, std::memory_order::seq_cst);
+ #ifdef ARCHITECTURE_arm64
+     // Make memory write visible to other threads reading the same location
+     asm volatile("dc cvau, %0; dsb ish" : : "r"(Record->HostCode) :);
+@@ -602,7 +603,7 @@ uint64_t Arm64JITCore::ExitFunctionLink(FEXCore::Core::CpuStateFrame* Frame, FEX
+     uint32_t LdrInst = 0;
+     ARMEmitter::Emitter LdrEmit(reinterpret_cast<uint8_t*>(&LdrInst), 4);
+     LdrEmit.ldr(TMP1, reinterpret_cast<uint64_t>(&Record->HostCode) - JumpThunkStartAddress);
+-    std::atomic_ref<uint32_t>(*reinterpret_cast<uint32_t*>(JumpThunkStartAddress)).store(LdrInst, std::memory_order::relaxed);
++    std::atomic_ref<uint32_t>(*FEX_JIT_WRITABLE(reinterpret_cast<uint32_t*>(JumpThunkStartAddress))).store(LdrInst, std::memory_order::relaxed);
+     ARMEmitter::Emitter::ClearICache(reinterpret_cast<void*>(JumpThunkStartAddress), 4);
+ 
+     Thread->LookupCache->AddBlockLink(GuestRip, Record, IndirectBlockDelinker, lk);
+@@ -1118,7 +1119,7 @@ CPUBackend::CompiledCode Arm64JITCore::CompileCode(uint64_t Entry, uint64_t Size
+     }
+ 
+     // Copy over CodeBuffer contents
+-    memcpy(GetCursorAddress<uint8_t*>(), TempCodeBuffer, TempSize);
++    memcpy(FEX_JIT_WRITABLE(GetCursorAddress<uint8_t*>()), TempCodeBuffer, TempSize);
+     SetCursorOffset(CodeBuffers.LatestOffset + TempSize);
+ 
+     CodeBuffers.LatestOffset = GetCursorOffset();
+diff --git a/FEXCore/Source/Utils/Allocator.cpp b/FEXCore/Source/Utils/Allocator.cpp
+index 296dc2b..b4d500b 100644
+--- a/FEXCore/Source/Utils/Allocator.cpp
++++ b/FEXCore/Source/Utils/Allocator.cpp
+@@ -23,8 +23,10 @@
+ #include <fcntl.h>
+ #ifndef _WIN32
+ #include <sys/mman.h>
++#ifndef __APPLE__
+ #include <sys/user.h>
+ #endif
++#endif
+ 
+ namespace fextl::pmr {
+ static fextl::pmr::default_resource FEXDefaultResource;
+@@ -34,7 +36,44 @@ std::pmr::memory_resource* get_default_resource() {
+ } // namespace fextl::pmr
+ 
+ namespace FEXCore::Allocator {
+-#ifndef _WIN32
++#if defined(__APPLE__)
++// Embedded in an application on an Apple system: FEXCore runs no 32-bit guests and takes over no
++// address space, so all of that is left out.
++MMAP_Hook mmap {::mmap};
++MUNMAP_Hook munmap {::munmap};
++
++void VirtualName(const char*, void*, size_t) {}
++
++void SetupHooks(size_t) {}
++
++void ClearHooks() {}
++
++FEX_DEFAULT_VISIBILITY size_t GetHostVABits() {
++  return 47;
++}
++
++fextl::vector<MemoryRegion> CollectMemoryGaps(uintptr_t, uintptr_t, int) {
++  return {};
++}
++
++fextl::vector<MemoryRegion> StealMemoryRegion(uintptr_t, uintptr_t) {
++  return {};
++}
++
++fextl::vector<MemoryRegion> Setup48BitAllocatorIfExists(size_t) {
++  return {};
++}
++
++void ReclaimMemoryRegion(const fextl::vector<MemoryRegion>&) {}
++
++void LockBeforeFork(FEXCore::Core::InternalThreadState*) {}
++
++void UnlockAfterFork(FEXCore::Core::InternalThreadState*, bool) {}
++
++void RegisterTLSData(FEXCore::Core::InternalThreadState*) {}
++
++void UninstallTLSData(FEXCore::Core::InternalThreadState*) {}
++#elif !defined(_WIN32)
+ MMAP_Hook mmap {::mmap};
+ MUNMAP_Hook munmap {::munmap};
+ 
+diff --git a/FEXCore/Source/Utils/AllocatorHooks.cpp b/FEXCore/Source/Utils/AllocatorHooks.cpp
+index fd6947f..b96d8e2 100644
+--- a/FEXCore/Source/Utils/AllocatorHooks.cpp
++++ b/FEXCore/Source/Utils/AllocatorHooks.cpp
+@@ -11,7 +11,11 @@
+ #endif
+ 
+ #include <cstdint>
++#ifdef __APPLE__
++#include <malloc/malloc.h>
++#else
+ #include <malloc.h>
++#endif
+ #include <stdlib.h>
+ #include <stdio.h>
+ #include <string.h>
+@@ -188,7 +192,12 @@ void* calloc(size_t n, size_t size) {
+   return ::calloc(n, size);
+ }
+ void* memalign(size_t align, size_t s) {
++#ifdef __APPLE__
++  void* ptr {};
++  return ::posix_memalign(&ptr, align < sizeof(void*) ? sizeof(void*) : align, s) == 0 ? ptr : nullptr;
++#else
+   return ::memalign(align, s);
++#endif
+ }
+ void* valloc(size_t size) {
+   return ::valloc(size);
+@@ -203,7 +212,11 @@ void free(void* ptr) {
+   return ::free(ptr);
+ }
+ size_t malloc_usable_size(void* ptr) {
++#ifdef __APPLE__
++  return ::malloc_size(ptr);
++#else
+   return ::malloc_usable_size(ptr);
++#endif
+ }
+ void* aligned_alloc(size_t a, size_t s) {
+   return ::aligned_alloc(a, s);
+diff --git a/FEXCore/Source/Utils/ArchHelpers/Arm64.cpp b/FEXCore/Source/Utils/ArchHelpers/Arm64.cpp
+index 01e5bb2..5aea031 100644
+--- a/FEXCore/Source/Utils/ArchHelpers/Arm64.cpp
++++ b/FEXCore/Source/Utils/ArchHelpers/Arm64.cpp
+@@ -9,6 +9,7 @@
+ #include <FEXCore/Utils/LogManager.h>
+ #include <FEXCore/Utils/Telemetry.h>
+ #include <FEXCore/Utils/ArchHelpers/Arm64.h>
++#include <FEXCore/Utils/DarwinCompat.h>
+ 
+ #include <atomic>
+ #include <cstdint>
+@@ -2103,7 +2104,7 @@ std::optional<int32_t> HandleUnalignedAccess(FEXCore::Core::InternalThreadState*
+   // Lock code mutex during any SIGBUS handling that potentially changes code.
+   // Due to code buffer sharing between threads, code must be carefully backpatched from last to first.
+   // Multiple threads can be attempting to handle the SIGBUS or even be executing the code being backpatched.
+-  FEXCore::Utils::SpinWaitLock::UniqueSpinMutex lk(&InlineTail->SpinLockFutex);
++  FEXCore::Utils::SpinWaitLock::UniqueSpinMutex lk(FEX_JIT_WRITABLE(&InlineTail->SpinLockFutex));
+ 
+   if ((Instr & LDAXR_MASK) == LDAR_INST ||  // LDAR*
+       (Instr & LDAXR_MASK) == LDAPR_INST) { // LDAPR*
+@@ -2113,9 +2114,9 @@ std::optional<int32_t> HandleUnalignedAccess(FEXCore::Core::InternalThreadState*
+     LDR |= DataReg;
+     if (HandleType != UnalignedHandlerType::NonAtomic) {
+       // Ordering matters with cross-thread visibility!
+-      std::atomic_ref<uint32_t>(PC[1]).store(DMB_LD, std::memory_order_release); // Back-patch the half-barrier.
++      std::atomic_ref<uint32_t>(*FEX_JIT_WRITABLE(&PC[1])).store(DMB_LD, std::memory_order_release); // Back-patch the half-barrier.
+     }
+-    std::atomic_ref<uint32_t>(PC[0]).store(LDR, std::memory_order_release);
++    std::atomic_ref<uint32_t>(*FEX_JIT_WRITABLE(&PC[0])).store(LDR, std::memory_order_release);
+     ClearICache(&PC[0], 8);
+     // With the instruction modified, now execute again.
+     return 0;
+@@ -2125,9 +2126,9 @@ std::optional<int32_t> HandleUnalignedAccess(FEXCore::Core::InternalThreadState*
+     STR |= AddrReg << 5;
+     STR |= DataReg;
+     if (HandleType != UnalignedHandlerType::NonAtomic) {
+-      std::atomic_ref<uint32_t>(PC[-1]).store(DMB, std::memory_order_release); // Back-patch the half-barrier.
++      std::atomic_ref<uint32_t>(*FEX_JIT_WRITABLE(&PC[-1])).store(DMB, std::memory_order_release); // Back-patch the half-barrier.
+     }
+-    std::atomic_ref<uint32_t>(PC[0]).store(STR, std::memory_order_release);
++    std::atomic_ref<uint32_t>(*FEX_JIT_WRITABLE(&PC[0])).store(STR, std::memory_order_release);
+     ClearICache(&PC[-1], 8);
+     // Back up one instruction and have another go
+     return -4;
+@@ -2140,9 +2141,9 @@ std::optional<int32_t> HandleUnalignedAccess(FEXCore::Core::InternalThreadState*
+     LDUR |= Instr & (0b1'1111'1111 << 12);
+     if (HandleType != UnalignedHandlerType::NonAtomic) {
+       // Ordering matters with cross-thread visibility!
+-      std::atomic_ref<uint32_t>(PC[1]).store(DMB_LD, std::memory_order_release); // Back-patch the half-barrier.
++      std::atomic_ref<uint32_t>(*FEX_JIT_WRITABLE(&PC[1])).store(DMB_LD, std::memory_order_release); // Back-patch the half-barrier.
+     }
+-    std::atomic_ref<uint32_t>(PC[0]).store(LDUR, std::memory_order_release);
++    std::atomic_ref<uint32_t>(*FEX_JIT_WRITABLE(&PC[0])).store(LDUR, std::memory_order_release);
+     ClearICache(&PC[0], 8);
+     // With the instruction modified, now execute again.
+     return 0;
+@@ -2153,9 +2154,9 @@ std::optional<int32_t> HandleUnalignedAccess(FEXCore::Core::InternalThreadState*
+     STUR |= DataReg;
+     STUR |= Instr & (0b1'1111'1111 << 12);
+     if (HandleType != UnalignedHandlerType::NonAtomic) {
+-      std::atomic_ref<uint32_t>(PC[-1]).store(DMB, std::memory_order_release); // Back-patch the half-barrier.
++      std::atomic_ref<uint32_t>(*FEX_JIT_WRITABLE(&PC[-1])).store(DMB, std::memory_order_release); // Back-patch the half-barrier.
+     }
+-    std::atomic_ref<uint32_t>(PC[0]).store(STUR, std::memory_order_release);
++    std::atomic_ref<uint32_t>(*FEX_JIT_WRITABLE(&PC[0])).store(STUR, std::memory_order_release);
+ 
+     ClearICache(&PC[-1], 8);
+     // Back up one instruction and have another go
+diff --git a/FEXCore/include/FEXCore/Utils/AllocatorHooks.h b/FEXCore/include/FEXCore/Utils/AllocatorHooks.h
+index cccce4d..3072146 100644
+--- a/FEXCore/include/FEXCore/Utils/AllocatorHooks.h
++++ b/FEXCore/include/FEXCore/Utils/AllocatorHooks.h
+@@ -4,7 +4,12 @@
+ #include <FEXCore/Utils/EnumOperators.h>
+ #include <FEXCore/Utils/LogManager.h>
+ 
+-#ifndef _WIN32
++#if defined(__APPLE__)
++#include <FEXCore/Utils/DarwinCompat.h>
++#include <stdlib.h>
++#include <malloc/malloc.h>
++#include <sys/mman.h>
++#elif !defined(_WIN32)
+ #include <stdlib.h>
+ #include <malloc.h>
+ #include <sys/mman.h>
+@@ -113,6 +118,64 @@ FEX_DEFAULT_VISIBILITY extern void VirtualName(const char* Name, void* Ptr, size
+ 
+ // All commit parameters are ignored here, they are unnecessary as Linux supports overcommit
+ 
++#if defined(__APPLE__)
++// Executable memory comes from what the embedding application set up (DarwinCompat.h): no
++// mapping is ever writable and executable at once there, and code is written through the
++// writable twin of the executable mapping.
++inline void* VirtualAlloc(size_t Size, bool Execute = false, bool Commit = true) {
++  if (Execute) {
++    const auto& Memory = FEXCore::Darwin::GetExecutableMemory();
++    void* Result = Memory.Allocate ? Memory.Allocate(Size) : nullptr;
++    LOGMAN_THROW_A_FMT(Result != nullptr, "No executable memory for {} bytes of code", Size);
++    return Result;
++  }
++  return FEXCore::Allocator::mmap(nullptr, Size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
++}
++
++inline void* VirtualAlloc(void* Base, size_t Size, bool Execute = false, bool Commit = true) {
++  if (Execute || Base == nullptr) {
++    return VirtualAlloc(Size, Execute, Commit);
++  }
++  return FEXCore::Allocator::mmap(Base, Size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
++}
++
++inline void VirtualFree(void* Ptr, size_t Size) {
++  const auto& Memory = FEXCore::Darwin::GetExecutableMemory();
++  const auto Address = reinterpret_cast<uintptr_t>(Ptr);
++  if (Address >= Memory.Begin && Address < Memory.End) {
++    if (Memory.Free) {
++      Memory.Free(Ptr);
++    }
++    return;
++  }
++  FEXCore::Allocator::munmap(Ptr, Size);
++}
++
++inline void VirtualDontNeed(void* Ptr, size_t Size, bool Recommit = true) {
++  // Linux hands out zeroed pages afterwards; MADV_DONTNEED here does not, fresh pages do.
++  ::mmap(Ptr, Size, PROT_READ | PROT_WRITE, MAP_FIXED | MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
++}
++
++inline bool VirtualProtect(void* Ptr, size_t Size, ProtectOptions options) {
++  const auto& Memory = FEXCore::Darwin::GetExecutableMemory();
++  const auto Address = reinterpret_cast<uintptr_t>(Ptr);
++  if (Address >= Memory.Begin && Address < Memory.End) {
++    // The executable memory keeps the protection it was made with.
++    return true;
++  }
++  int prot {PROT_NONE};
++  if ((options & ProtectOptions::Read) == ProtectOptions::Read) {
++    prot |= PROT_READ;
++  }
++  if ((options & ProtectOptions::Write) == ProtectOptions::Write) {
++    prot |= PROT_WRITE;
++  }
++  // (Nothing else can be made executable.)
++  return ::mprotect(Ptr, Size, prot) == 0;
++}
++
++inline void VirtualTHPControl(const void*, size_t, THPControl) {}
++#else
+ inline void* VirtualAlloc(size_t Size, bool Execute = false, bool Commit = true) {
+   return FEXCore::Allocator::mmap(nullptr, Size, PROT_READ | PROT_WRITE | (Execute ? PROT_EXEC : 0), MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+ }
+@@ -145,6 +208,7 @@ inline bool VirtualProtect(void* Ptr, size_t Size, ProtectOptions options) {
+ inline void VirtualTHPControl(const void* Ptr, size_t Size, THPControl Control) {
+   ::madvise(const_cast<void*>(Ptr), Size, Control == THPControl::Enable ? MADV_HUGEPAGE : MADV_NOHUGEPAGE);
+ }
++#endif
+ 
+ #endif
+ 
+diff --git a/FEXCore/include/FEXCore/Utils/DarwinCompat.h b/FEXCore/include/FEXCore/Utils/DarwinCompat.h
+new file mode 100644
+index 0000000..1969a7a
+--- /dev/null
++++ b/FEXCore/include/FEXCore/Utils/DarwinCompat.h
+@@ -0,0 +1,85 @@
++// SPDX-License-Identifier: MIT
++#pragma once
++
++// What FEXCore needs on Apple systems (iOS, visionOS, macOS) in place of the Linux interfaces it
++// otherwise uses: futexes, thread ids, and a place to write code into memory that is only ever
++// mapped either writable or executable.
++
++#ifdef __APPLE__
++#include <os/os_sync_wait_on_address.h>
++#include <pthread.h>
++
++#include <atomic>
++#include <cerrno>
++#include <cstddef>
++#include <cstdint>
++#include <ctime>
++
++namespace FEXCore::Darwin {
++
++/// Sleeps while the 32-bit word at `Address` holds `Expected` (or until woken, or the timeout
++/// passed). Returns -1 with errno ETIMEDOUT when the timeout passed.
++inline int FutexWait(void* Address, uint32_t Expected, const struct timespec* Timeout = nullptr) {
++  if (Timeout != nullptr) {
++    const uint64_t Nanoseconds = static_cast<uint64_t>(Timeout->tv_sec) * 1'000'000'000ULL + static_cast<uint64_t>(Timeout->tv_nsec);
++    return os_sync_wait_on_address_with_timeout(Address, Expected, sizeof(uint32_t), OS_SYNC_WAIT_ON_ADDRESS_NONE,
++                                                OS_CLOCK_MACH_ABSOLUTE_TIME, Nanoseconds);
++  }
++  return os_sync_wait_on_address(Address, Expected, sizeof(uint32_t), OS_SYNC_WAIT_ON_ADDRESS_NONE);
++}
++
++inline void FutexWakeOne(void* Address) {
++  os_sync_wake_by_address_any(Address, sizeof(uint32_t), OS_SYNC_WAKE_BY_ADDRESS_NONE);
++}
++
++inline void FutexWakeAll(void* Address) {
++  os_sync_wake_by_address_all(Address, sizeof(uint32_t), OS_SYNC_WAKE_BY_ADDRESS_NONE);
++}
++
++inline int32_t ThreadId() {
++  uint64_t Id {};
++  pthread_threadid_np(nullptr, &Id);
++  return static_cast<int32_t>(Id);
++}
++
++/// The system only hands out memory that can be executed once, as two mappings of the same pages:
++/// code runs at one address and is written at another (see the embedding application). The
++/// embedder tells FEXCore where that memory is before it creates a context; FEXCore takes its
++/// code buffers from it, and writes to them through `Writable`.
++struct ExecutableMemory {
++  /// Hands out `Size` bytes of executable memory, page aligned, or null.
++  void* (*Allocate)(size_t Size) {};
++  /// Gives it back.
++  void (*Free)(void* Executable) {};
++  /// Where the executable mapping is, and how far the writable one is from it.
++  uintptr_t Begin {};
++  uintptr_t End {};
++  intptr_t WriteOffset {};
++};
++
++inline ExecutableMemory& GetExecutableMemory() {
++  static ExecutableMemory Memory {};
++  return Memory;
++}
++
++inline void SetExecutableMemory(const ExecutableMemory& Memory) {
++  GetExecutableMemory() = Memory;
++}
++
++/// The address to write to for the executable address `Address` (itself, outside of it).
++template<typename T>
++inline T* Writable(T* Address) {
++  const auto& Memory = GetExecutableMemory();
++  const auto Value = reinterpret_cast<uintptr_t>(Address);
++  if (Value >= Memory.Begin && Value < Memory.End) {
++    return reinterpret_cast<T*>(Value + Memory.WriteOffset);
++  }
++  return Address;
++}
++
++} // namespace FEXCore::Darwin
++
++#define FEX_JIT_WRITABLE(Address) ::FEXCore::Darwin::Writable(Address)
++#else
++#define FEX_JIT_WRITABLE(Address) (Address)
++#endif
+diff --git a/FEXCore/include/FEXCore/Utils/InterruptableConditionVariable.h b/FEXCore/include/FEXCore/Utils/InterruptableConditionVariable.h
+index d81c376..33136a0 100644
+--- a/FEXCore/include/FEXCore/Utils/InterruptableConditionVariable.h
++++ b/FEXCore/include/FEXCore/Utils/InterruptableConditionVariable.h
+@@ -5,7 +5,10 @@
+ #include <chrono>
+ #include <climits>
+ #include <cstdint>
+-#ifndef _WIN32
++#if defined(__APPLE__)
++#include <FEXCore/Utils/DarwinCompat.h>
++#include <cerrno>
++#elif !defined(_WIN32)
+ #include <linux/futex.h>
+ #include <sys/syscall.h>
+ #else
+@@ -24,7 +27,64 @@ namespace FEXCore {
+  * call can leave the condition variable in an invalid state that breaks later
+  * uses of that object and may cause hangs as a consequence.
+  */
+-#ifndef _WIN32
++#if defined(__APPLE__)
++class InterruptableConditionVariable final {
++public:
++  bool Wait(struct timespec* Timeout = nullptr) {
++    while (true) {
++      uint32_t Expected = SIGNALED;
++      uint32_t Desired = UNSIGNALED;
++
++      // If the mutex was already signaled then we can early exit
++      if (Mutex.compare_exchange_strong(Expected, Desired)) {
++        return true;
++      }
++
++      // Sleeps while the word is still unsignaled.
++      int Result = FEXCore::Darwin::FutexWait(&Mutex, Desired, Timeout);
++      if (Timeout && Result == -1 && errno == ETIMEDOUT) {
++        return false;
++      }
++    }
++  }
++
++  template<class Rep, class Period>
++  bool WaitFor(const std::chrono::duration<Rep, Period>& time) {
++    struct timespec Timeout {};
++    auto SecondsDuration = std::chrono::duration_cast<std::chrono::seconds>(time);
++    Timeout.tv_sec = SecondsDuration.count();
++    Timeout.tv_nsec = std::chrono::duration_cast<std::chrono::nanoseconds>(time - SecondsDuration).count();
++    return Wait(&Timeout);
++  }
++
++  void NotifyOne() {
++    DoNotify(false);
++  }
++
++  void NotifyAll() {
++    DoNotify(true);
++  }
++
++private:
++  std::atomic<uint32_t> Mutex {};
++  constexpr static uint32_t SIGNALED = 1;
++  constexpr static uint32_t UNSIGNALED = 0;
++
++  void DoNotify(bool All) {
++    uint32_t Expected = UNSIGNALED;
++    uint32_t Desired = SIGNALED;
++
++    // If the mutex was in an unsignaled state then signal
++    if (Mutex.compare_exchange_strong(Expected, Desired)) {
++      if (All) {
++        FEXCore::Darwin::FutexWakeAll(&Mutex);
++      } else {
++        FEXCore::Darwin::FutexWakeOne(&Mutex);
++      }
++    }
++  }
++};
++#elif !defined(_WIN32)
+ class InterruptableConditionVariable final {
+ public:
+   bool Wait(struct timespec* Timeout = nullptr) {
+diff --git a/FEXCore/include/FEXCore/Utils/PrctlUtils.h b/FEXCore/include/FEXCore/Utils/PrctlUtils.h
+index 4494ce2..0bab71c 100644
+--- a/FEXCore/include/FEXCore/Utils/PrctlUtils.h
++++ b/FEXCore/include/FEXCore/Utils/PrctlUtils.h
+@@ -3,8 +3,17 @@
+ 
+ #ifndef _WIN32
+ #include <sys/mman.h>
++#ifdef __APPLE__
++#include <cerrno>
++// No prctl on Apple systems: whatever FEXCore asks of it is not there.
++inline int prctl(int, ...) {
++  errno = EINVAL;
++  return -1;
++}
++#else
+ #include <sys/user.h>
+ #include <sys/prctl.h>
++#endif
+ 
+ #ifndef PR_SET_VMA
+ #define PR_SET_VMA 0x53564d41
+diff --git a/FEXCore/include/FEXCore/Utils/SignalScopeGuards.h b/FEXCore/include/FEXCore/Utils/SignalScopeGuards.h
+index 6589cf2..483c5c7 100644
+--- a/FEXCore/include/FEXCore/Utils/SignalScopeGuards.h
++++ b/FEXCore/include/FEXCore/Utils/SignalScopeGuards.h
+@@ -8,7 +8,9 @@
+ #include <mutex>
+ #include <optional>
+ #include <signal.h>
+-#ifndef _WIN32
++#if defined(__APPLE__)
++#include <pthread.h>
++#elif !defined(_WIN32)
+ #include <sys/syscall.h>
+ #endif
+ #include <unistd.h>
+@@ -158,7 +160,15 @@ public:
+   explicit ScopedSignalMasker(uint64_t Mask)
+     : OriginalMask(0) {
+     // Mask all signals, storing the original incoming mask
++#ifdef __APPLE__
++    // (Signal n is bit n - 1 either way; there are 31 of them here.)
++    sigset_t New = static_cast<sigset_t>(Mask & 0xFFFF'FFFFULL);
++    sigset_t Old {};
++    ::pthread_sigmask(SIG_SETMASK, &New, &Old);
++    *OriginalMask = Old;
++#else
+     ::syscall(SYS_rt_sigprocmask, SIG_SETMASK, &Mask, &*OriginalMask, sizeof(*OriginalMask));
++#endif
+   }
+ 
+   // Move-only type
+@@ -171,7 +181,12 @@ public:
+ 
+   ~ScopedSignalMasker() {
+     if (OriginalMask) {
++#ifdef __APPLE__
++      sigset_t Old = static_cast<sigset_t>(*OriginalMask & 0xFFFF'FFFFULL);
++      ::pthread_sigmask(SIG_SETMASK, &Old, nullptr);
++#else
+       ::syscall(SYS_rt_sigprocmask, SIG_SETMASK, &OriginalMask, nullptr, sizeof(*OriginalMask));
++#endif
+     }
+   }
+ private:
+diff --git a/FEXCore/include/FEXCore/Utils/WritePriorityMutex.h b/FEXCore/include/FEXCore/Utils/WritePriorityMutex.h
+index 84742f8..ae16125 100644
+--- a/FEXCore/include/FEXCore/Utils/WritePriorityMutex.h
++++ b/FEXCore/include/FEXCore/Utils/WritePriorityMutex.h
+@@ -3,7 +3,9 @@
+ #include <atomic>
+ #include <cstdint>
+ 
+-#if !defined(_WIN32)
++#if defined(__APPLE__)
++#include <FEXCore/Utils/DarwinCompat.h>
++#elif !defined(_WIN32)
+ #include <linux/futex.h> /* Definition of FUTEX_* constants */
+ #include <sys/syscall.h> /* Definition of SYS_* constants */
+ #include <unistd.h>
+@@ -260,7 +262,7 @@ public:
+     return AtomicFutex.compare_exchange_strong(Expected, Desired, std::memory_order_acq_rel, std::memory_order_acquire);
+   }
+ 
+-#if !defined(_WIN32)
++#if !defined(_WIN32) && !defined(__APPLE__)
+   // Initialize the internal mutex object to its default initializer state.
+   // Should only ever be used in the child process when a Linux fork() has occured.
+   void StealAndDropActiveLocks() {
+@@ -270,7 +272,25 @@ public:
+ 
+ private:
+ 
+-#if !defined(_WIN32)
++#if defined(__APPLE__)
++  // The system waits on whole 32-bit words only: readers and writers wait on the same word, and
++  // are all woken whenever one of them may go on (a waiter that was woken in vain waits again).
++  void FutexWaitForWriteAvailable(uint32_t Expected) {
++    FEXCore::Darwin::FutexWait(&Futex, Expected);
++  }
++
++  void FutexWaitForReadAvailable(uint32_t Expected) {
++    FEXCore::Darwin::FutexWait(&Futex, Expected);
++  }
++
++  void FutexWakeWriter() {
++    FEXCore::Darwin::FutexWakeAll(&Futex);
++  }
++
++  void FutexWakeReaders() {
++    FEXCore::Darwin::FutexWakeAll(&Futex);
++  }
++#elif !defined(_WIN32)
+   void FutexWaitForWriteAvailable(uint32_t Expected) {
+     ::syscall(SYS_futex, &Futex, FUTEX_PRIVATE_FLAG | FUTEX_WAIT_BITSET, Expected, nullptr, nullptr, FUTEX_BITSET_WAIT_WRITERS);
+   }
+diff --git a/FEXHeaderUtils/FEXHeaderUtils/Syscalls.h b/FEXHeaderUtils/FEXHeaderUtils/Syscalls.h
+index e5c2824..d40a160 100644
+--- a/FEXHeaderUtils/FEXHeaderUtils/Syscalls.h
++++ b/FEXHeaderUtils/FEXHeaderUtils/Syscalls.h
+@@ -7,7 +7,10 @@
+ #include <sched.h>
+ #include <signal.h>
+ #include <stdio.h>
+-#ifndef _WIN32
++#if defined(__APPLE__)
++#include <pthread.h>
++#include <cerrno>
++#elif !defined(_WIN32)
+ #include <syscall.h>
+ #else
+ #include <processthreadsapi.h>
+@@ -51,7 +54,29 @@ namespace FHU::Syscalls {
+ #define SYS_pidfd_open 434
+ #endif
+ 
+-#ifndef _WIN32
++#if defined(__APPLE__)
++// Apple systems: what FEXCore embedded in an application needs of these.
++inline int32_t getcpu(uint32_t* cpu, uint32_t* node) {
++  if (cpu) {
++    *cpu = 0;
++  }
++  if (node) {
++    *node = 0;
++  }
++  return 0;
++}
++
++inline int32_t gettid() {
++  uint64_t Id {};
++  pthread_threadid_np(nullptr, &Id);
++  return static_cast<int32_t>(Id);
++}
++
++inline int32_t tgkill(pid_t, pid_t, int) {
++  errno = ENOSYS;
++  return -1;
++}
++#elif !defined(_WIN32)
+ inline int32_t getcpu(uint32_t* cpu, uint32_t* node) {
+   // Third argument is unused
+ #if defined(HAS_SYSCALL_GETCPU) && HAS_SYSCALL_GETCPU
+diff --git a/Source/Common/CMakeLists.txt b/Source/Common/CMakeLists.txt
+index 259dec4..22998bf 100644
+--- a/Source/Common/CMakeLists.txt
++++ b/Source/Common/CMakeLists.txt
+@@ -10,7 +10,7 @@ set(SRCS
+   SHMStats.cpp
+   VolatileMetadata.cpp)
+ 
+-if (NOT MINGW)
++if (NOT MINGW AND NOT APPLE)
+   list(APPEND SRCS
+     FEXServerClient.cpp
+     FileFormatCheck.cpp
+diff --git a/Source/Common/CPUInfo.cpp b/Source/Common/CPUInfo.cpp
+index fe7faae..9956a55 100644
+--- a/Source/Common/CPUInfo.cpp
++++ b/Source/Common/CPUInfo.cpp
+@@ -6,14 +6,14 @@
+ 
+ #include <cstddef>
+ #include <cstdint>
+-#ifdef _WIN32
++#if defined(_WIN32) || defined(__APPLE__)
+ #include <thread>
+ #else
+ #include <linux/limits.h>
+ #endif
+ 
+ namespace FEX::CPUInfo {
+-#ifndef _WIN32
++#if !defined(_WIN32) && !defined(__APPLE__)
+ uint32_t CalculateNumberOfCPUs() {
+   constexpr auto parse_string = FMT_COMPILE("/sys/devices/system/cpu/cpu{}");
+   constexpr auto max_parse_size = ::fmt::formatted_size(parse_string, UINT32_MAX);
+diff --git a/Source/Common/HostFeatures.cpp b/Source/Common/HostFeatures.cpp
+index f43f34c..2c65aab 100644
+--- a/Source/Common/HostFeatures.cpp
++++ b/Source/Common/HostFeatures.cpp
+@@ -14,6 +14,10 @@
+ #include "Common/X86Features.h"
+ #endif
+ 
++#ifdef __APPLE__
++#include <sys/sysctl.h>
++#endif
++
+ namespace FEX {
+ 
+ void FillMIDRInformationViaLinux(FEXCore::HostFeatures* Features) {
+@@ -177,6 +181,79 @@ FEX::CPUFeatures GetCPUFeaturesFromConfig(std::string_view Config) {
+   return CPUFeaturesFromConfig {Config};
+ }
+ 
++#ifdef __APPLE__
++// Apple systems do not let user space read the ID registers (the Linux kernel emulates that):
++// what the CPU can do is in sysctl instead, hw.optional.arm.FEAT_* and a few older names.
++class CPUFeaturesFromDarwin final : public FEX::CPUFeatures {
++public:
++  CPUFeaturesFromDarwin() {
++    const auto Has = [](const char* Name) {
++      int Value {};
++      size_t Size = sizeof(Value);
++      return sysctlbyname(Name, &Value, &Size, nullptr, 0) == 0 && Value != 0;
++    };
++    struct Mapping {
++      const char* Name;
++      Feature Flag;
++    };
++    static constexpr Mapping Mappings[] = {
++      {"hw.optional.arm.FEAT_AES", Feature::AES},
++      {"hw.optional.arm.FEAT_PMULL", Feature::PMULL},
++      {"hw.optional.arm.FEAT_SHA1", Feature::SHA1},
++      {"hw.optional.arm.FEAT_SHA256", Feature::SHA2},
++      {"hw.optional.arm.FEAT_SHA512", Feature::SHA512},
++      {"hw.optional.armv8_crc32", Feature::CRC32},
++      {"hw.optional.arm.FEAT_LSE", Feature::LSE},
++      {"hw.optional.arm.FEAT_LSE128", Feature::LSE128},
++      {"hw.optional.arm.FEAT_RDM", Feature::RDM},
++      {"hw.optional.arm.FEAT_SHA3", Feature::SHA3},
++      {"hw.optional.arm.FEAT_DotProd", Feature::DotProd},
++      {"hw.optional.arm.FEAT_FlagM", Feature::FlagM},
++      {"hw.optional.arm.FEAT_FlagM2", Feature::FlagM2},
++      {"hw.optional.arm.FEAT_RNG", Feature::RNDR},
++      {"hw.optional.arm.FEAT_FP16", Feature::FP16},
++      {"hw.optional.arm.FEAT_FP16", Feature::ASIMD16},
++      {"hw.optional.arm.FEAT_CSV2", Feature::CSV2},
++      {"hw.optional.arm.FEAT_CSV3", Feature::CSV3},
++      {"hw.optional.arm.FEAT_DIT", Feature::DIT},
++      {"hw.optional.arm.FEAT_BTI", Feature::BTI},
++      {"hw.optional.arm.FEAT_SSBS", Feature::SSBS},
++      {"hw.optional.arm.FEAT_DPB", Feature::DPB},
++      {"hw.optional.arm.FEAT_DPB2", Feature::DPB2},
++      {"hw.optional.arm.FEAT_JSCVT", Feature::JSCVT},
++      {"hw.optional.arm.FEAT_FCMA", Feature::FCMA},
++      {"hw.optional.arm.FEAT_LRCPC", Feature::LRCPC},
++      {"hw.optional.arm.FEAT_LRCPC2", Feature::LRCPC2},
++      {"hw.optional.arm.FEAT_FRINTTS", Feature::FRINTTS},
++      {"hw.optional.arm.FEAT_SB", Feature::SB},
++      {"hw.optional.arm.FEAT_SPECRES", Feature::SPECRES},
++      {"hw.optional.arm.FEAT_BF16", Feature::BF16},
++      {"hw.optional.arm.FEAT_I8MM", Feature::I8MM},
++      {"hw.optional.arm.FEAT_ECV", Feature::ECV},
++      {"hw.optional.arm.FEAT_LSE2", Feature::LSE2},
++      {"hw.optional.arm.FEAT_AFP", Feature::AFP},
++      {"hw.optional.arm.FEAT_WFxT", Feature::WFxt},
++      {"hw.optional.arm.FEAT_RPRES", Feature::RPRES},
++      {"hw.optional.arm.FEAT_MOPS", Feature::MOPS},
++      {"hw.optional.arm.FEAT_HBC", Feature::HBC},
++      {"hw.optional.arm.FEAT_CSSC", Feature::CSSC},
++      // (SME is left out: FEXCore's use of streaming mode is not meant for these cores.)
++    };
++    SetFeature(Feature::FP);
++    SetFeature(Feature::ASIMD);
++    for (const auto& Map : Mappings) {
++      if (Has(Map.Name)) {
++        SetFeature(Map.Flag);
++      }
++    }
++    // DCZID_EL0 is readable from user space.
++    uint64_t DCZIDValue {};
++    __asm volatile("mrs %[Res], dczid_el0" : [Res] "=r"(DCZIDValue));
++    DCZID.SetReg(DCZIDValue);
++  }
++};
++#endif
++
+ class CPUFeaturesAll final : public FEX::CPUFeatures {
+ public:
+   CPUFeaturesAll() {
+@@ -604,6 +681,8 @@ FEXCore::HostFeatures FetchHostFeatures() {
+     Features.RemoveFeature(CPUFeatures::Feature::AFP);
+     // Vixl simulator doesn't support RPRES.
+     Features.RemoveFeature(CPUFeatures::Feature::RPRES);
++#elif defined(__APPLE__)
++    Features = CPUFeaturesFromDarwin {};
+ #else
+     Features = GetCPUFeaturesFromIDRegisters();
+ #endif
+@@ -611,7 +690,9 @@ FEXCore::HostFeatures FetchHostFeatures() {
+ 
+   uint64_t CTR = 0;
+   uint64_t MIDR = 0;
+-#if defined(ARCHITECTURE_arm64) && !defined(VIXL_SIMULATOR)
++#if defined(__APPLE__)
++  // Neither CTR_EL0 nor MIDR_EL1 is for user space to read here: the line size is in sysctl.
++#elif defined(ARCHITECTURE_arm64) && !defined(VIXL_SIMULATOR)
+   // We need to get the CPU's cache line size
+   // We expect sane targets that have correct cacheline sizes across clusters
+   __asm volatile("mrs %[ctr], ctr_el0" : [ctr] "=r"(CTR));
+@@ -619,8 +700,22 @@ FEXCore::HostFeatures FetchHostFeatures() {
+ #endif
+ 
+   FEXCore::HostFeatures HostFeatures = {};
++#ifdef __APPLE__
++  HostFeatures.CPUMIDRs.resize(FEX::CPUInfo::CalculateNumberOfCPUs());
++#else
+   FillMIDRInformationViaLinux(&HostFeatures);
++#endif
+   FetchHostFeatures(Features, HostFeatures, true, CTR, MIDR);
++#ifdef __APPLE__
++  {
++    int64_t LineSize {};
++    size_t Size = sizeof(LineSize);
++    if (sysctlbyname("hw.cachelinesize", &LineSize, &Size, nullptr, 0) == 0 && LineSize > 0) {
++      HostFeatures.DCacheLineSize = static_cast<uint32_t>(LineSize);
++      HostFeatures.ICacheLineSize = static_cast<uint32_t>(LineSize);
++    }
++  }
++#endif
+ 
+   HostFeatures.SupportsCPUIndexInTPIDRRO = false;
+   HostFeatures.HostType = FEXCore::HostFeatures::HostTypeEnum::Linux;
+diff --git a/Source/Tools/CommonTools/CMakeLists.txt b/Source/Tools/CommonTools/CMakeLists.txt
+index 6163800..c172de5 100644
+--- a/Source/Tools/CommonTools/CMakeLists.txt
++++ b/Source/Tools/CommonTools/CMakeLists.txt
+@@ -1,6 +1,6 @@
+ set(SRCS DummyHandlers.cpp)
+ 
+-if (NOT MINGW)
++if (NOT MINGW AND NOT APPLE)
+   list(APPEND SRCS Linux/Utils/ELFContainer.cpp)
+ endif()
+ 
