@@ -1,0 +1,69 @@
+## runner macos-15
+Darwin dsm12-be218-a899e02d-8f23-495d-a589-a6bcc5a979d7-D214871E8926.local 24.6.0 Darwin Kernel Version 24.6.0: Tue Jul 21 20:51:34 PDT 2026; root:xnu-11417.140.69.711.44~1/RELEASE_ARM64_VMAPPLE arm64
+ProductName:		macOS
+ProductVersion:		15.7.9
+BuildVersion:		24G830
+5
+15032385536
+## xcode-select
+/Applications/Xcode_16.4.app/Contents/Developer
+Xcode 16.4
+Build version 16F6
+## installed Xcodes
+/Applications/Xcode_16.0.0.app
+/Applications/Xcode_16.0.app
+/Applications/Xcode_16.1.0.app
+/Applications/Xcode_16.1.app
+/Applications/Xcode_16.2.0.app
+/Applications/Xcode_16.2.app
+/Applications/Xcode_16.3.0.app
+/Applications/Xcode_16.3.app
+/Applications/Xcode_16.4.0.app
+/Applications/Xcode_16.4.app
+/Applications/Xcode_16.app
+/Applications/Xcode_26.0.1.app
+/Applications/Xcode_26.0.app
+/Applications/Xcode_26.1.1.app
+/Applications/Xcode_26.1.app
+/Applications/Xcode_26.2.0.app
+/Applications/Xcode_26.2.app
+/Applications/Xcode_26.3.0.app
+/Applications/Xcode_26.3.app
+/Applications/Xcode.app
+## SDKs
+DriverKit SDKs:
+	DriverKit 24.5                	-sdk driverkit24.5
+
+iOS SDKs:
+	iOS 18.5                      	-sdk iphoneos18.5
+
+iOS Simulator SDKs:
+	Simulator - iOS 18.5          	-sdk iphonesimulator18.5
+
+macOS SDKs:
+	macOS 15.5                    	-sdk macosx15.5
+	macOS 15.5                    	-sdk macosx15.5
+
+tvOS SDKs:
+	tvOS 18.5                     	-sdk appletvos18.5
+
+tvOS Simulator SDKs:
+	Simulator - tvOS 18.5         	-sdk appletvsimulator18.5
+
+visionOS SDKs:
+	visionOS 2.5                  	-sdk xros2.5
+
+visionOS Simulator SDKs:
+	Simulator - visionOS 2.5      	-sdk xrsimulator2.5
+
+watchOS SDKs:
+	watchOS 11.5                  	-sdk watchos11.5
+
+watchOS Simulator SDKs:
+	Simulator - watchOS 11.5      	-sdk watchsimulator11.5
+
+## tools
+cmake version 4.4.3
+/opt/homebrew/bin/ninja
+/opt/homebrew/bin/python3
+/opt/homebrew/bin/brew
