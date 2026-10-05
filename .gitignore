@@ -15,6 +15,12 @@
 !/quest-host/
 !/shadps4-arm64-main/
 
+# The Apple Vision Pro port: the app, its build scripts and patches (not what they build).
+!/visionos/
+/visionos/build/
+/visionos/*.xcodeproj/
+!/README-VISIONOS.md
+
 # The PC play folder: only the launcher and its settings, not the emulator built into it, nor
 # its user folder (saves, logs, shader cache).
 !/pc-vr/
