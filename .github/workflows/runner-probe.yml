@@ -17,6 +17,10 @@ jobs:
         runner: [ubuntu-latest, macos-26, macos-15]
     runs-on: ${{ matrix.runner }}
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          submodules: false
       - name: Describe the runner
         run: |
           {
