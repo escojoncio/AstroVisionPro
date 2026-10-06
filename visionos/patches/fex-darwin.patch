@@ -169,6 +169,19 @@ index 8856b44..36ef988 100644
  
    // All are caller saved
    constexpr std::array<ARMEmitter::VRegister, 16> SRAFPR = {
+diff --git a/FEXCore/Source/Interface/Core/CPUBackend.cpp b/FEXCore/Source/Interface/Core/CPUBackend.cpp
+index 7a18d99..dfdf75c 100644
+--- a/FEXCore/Source/Interface/Core/CPUBackend.cpp
++++ b/FEXCore/Source/Interface/Core/CPUBackend.cpp
+@@ -11,7 +11,7 @@
+ 
+ #include <cstdint>
+ 
+-#ifndef _WIN32
++#if !defined(_WIN32) && !defined(__APPLE__)
+ #include <sys/prctl.h>
+ #endif
+ 
 diff --git a/FEXCore/Source/Interface/Core/CodeCache.cpp b/FEXCore/Source/Interface/Core/CodeCache.cpp
 index 3866fa5..ad5820a 100644
 --- a/FEXCore/Source/Interface/Core/CodeCache.cpp
@@ -188,6 +201,23 @@ index 3866fa5..ad5820a 100644
  #endif
    for (size_t i = StartPage; i < EndPage; ++i) {
      auto PageRelocations = SpanPageRelocations(Code, i);
+diff --git a/FEXCore/Source/Interface/Core/Interpreter/Fallbacks/F80Fallbacks.h b/FEXCore/Source/Interface/Core/Interpreter/Fallbacks/F80Fallbacks.h
+index 5c0e656..37a2095 100644
+--- a/FEXCore/Source/Interface/Core/Interpreter/Fallbacks/F80Fallbacks.h
++++ b/FEXCore/Source/Interface/Core/Interpreter/Fallbacks/F80Fallbacks.h
+@@ -369,9 +369,11 @@ struct OpHandlers<IR::OP_F64SINCOS> {
+   FEXCORE_PRESERVE_ALL_ATTR static VectorScalarF64Pair handle(double src, FEXCore::Core::CpuStateFrame* Frame) {
+     FEXCORE_PROFILE_INSTANT_INCREMENT(Frame->Thread, AccumulatedFloatFallbackCount, 1);
+     double sin, cos;
+-#ifdef _WIN32
++#if defined(_WIN32)
+     sin = ::sin(src);
+     cos = ::cos(src);
++#elif defined(__APPLE__)
++    __sincos(src, &sin, &cos);
+ #else
+     sincos(src, &sin, &cos);
+ #endif
 diff --git a/FEXCore/Source/Interface/Core/JIT/JIT.cpp b/FEXCore/Source/Interface/Core/JIT/JIT.cpp
 index 451ee10..ee32675 100644
 --- a/FEXCore/Source/Interface/Core/JIT/JIT.cpp
@@ -250,6 +280,29 @@ index 451ee10..ee32675 100644
      SetCursorOffset(CodeBuffers.LatestOffset + TempSize);
  
      CodeBuffers.LatestOffset = GetCursorOffset();
+diff --git a/FEXCore/Source/Interface/Core/JIT/MiscOps.cpp b/FEXCore/Source/Interface/Core/JIT/MiscOps.cpp
+index 6c2b349..26e7e8f 100644
+--- a/FEXCore/Source/Interface/Core/JIT/MiscOps.cpp
++++ b/FEXCore/Source/Interface/Core/JIT/MiscOps.cpp
+@@ -5,7 +5,7 @@ tags: backend|arm64
+ $end_info$
+ */
+ 
+-#ifndef _WIN32
++#if !defined(_WIN32) && !defined(__APPLE__)
+ #include <syscall.h>
+ #endif
+ 
+@@ -239,6 +239,9 @@ DEF_OP(ProcessorID) {
+     // If on Windows and TPIDRRO isn't supported (like in wine), then this is a programming error.
+     ERROR_AND_DIE_FMT("Unsupported");
+   }
++#elif defined(__APPLE__)
++  // No getcpu here: every thread is on CPU 0 of node 0.
++  LoadConstant(ARMEmitter::Size::i64Bit, GetReg(Node), 0);
+ #else
+   // We always need to spill x8 since we can't know if it is live at this SSA location
+   uint32_t SpillMask = 1U << 8;
 diff --git a/FEXCore/Source/Utils/Allocator.cpp b/FEXCore/Source/Utils/Allocator.cpp
 index 296dc2b..b4d500b 100644
 --- a/FEXCore/Source/Utils/Allocator.cpp
@@ -421,6 +474,19 @@ index 01e5bb2..5aea031 100644
  
      ClearICache(&PC[-1], 8);
      // Back up one instruction and have another go
+diff --git a/FEXCore/Source/Utils/Profiler.cpp b/FEXCore/Source/Utils/Profiler.cpp
+index 67fe0ca..4046454 100644
+--- a/FEXCore/Source/Utils/Profiler.cpp
++++ b/FEXCore/Source/Utils/Profiler.cpp
+@@ -1,7 +1,7 @@
+ // SPDX-License-Identifier: MIT
+ #include <cstdint>
+ #include <fcntl.h>
+-#ifndef _WIN32
++#if !defined(_WIN32) && !defined(__APPLE__)
+ #include <linux/magic.h>
+ #include <sys/stat.h>
+ #include <sys/vfs.h>
 diff --git a/FEXCore/include/FEXCore/Utils/AllocatorHooks.h b/FEXCore/include/FEXCore/Utils/AllocatorHooks.h
 index cccce4d..3072146 100644
 --- a/FEXCore/include/FEXCore/Utils/AllocatorHooks.h
@@ -752,7 +818,7 @@ index 6589cf2..483c5c7 100644
    }
  private:
 diff --git a/FEXCore/include/FEXCore/Utils/WritePriorityMutex.h b/FEXCore/include/FEXCore/Utils/WritePriorityMutex.h
-index 84742f8..ae16125 100644
+index 84742f8..210ceaf 100644
 --- a/FEXCore/include/FEXCore/Utils/WritePriorityMutex.h
 +++ b/FEXCore/include/FEXCore/Utils/WritePriorityMutex.h
 @@ -3,7 +3,9 @@
@@ -766,15 +832,6 @@ index 84742f8..ae16125 100644
  #include <linux/futex.h> /* Definition of FUTEX_* constants */
  #include <sys/syscall.h> /* Definition of SYS_* constants */
  #include <unistd.h>
-@@ -260,7 +262,7 @@ public:
-     return AtomicFutex.compare_exchange_strong(Expected, Desired, std::memory_order_acq_rel, std::memory_order_acquire);
-   }
- 
--#if !defined(_WIN32)
-+#if !defined(_WIN32) && !defined(__APPLE__)
-   // Initialize the internal mutex object to its default initializer state.
-   // Should only ever be used in the child process when a Linux fork() has occured.
-   void StealAndDropActiveLocks() {
 @@ -270,7 +272,25 @@ public:
  
  private:
@@ -802,6 +859,34 @@ index 84742f8..ae16125 100644
    void FutexWaitForWriteAvailable(uint32_t Expected) {
      ::syscall(SYS_futex, &Futex, FUTEX_PRIVATE_FLAG | FUTEX_WAIT_BITSET, Expected, nullptr, nullptr, FUTEX_BITSET_WAIT_WRITERS);
    }
+diff --git a/FEXHeaderUtils/FEXHeaderUtils/Filesystem.h b/FEXHeaderUtils/FEXHeaderUtils/Filesystem.h
+index b00cc58..1511222 100644
+--- a/FEXHeaderUtils/FEXHeaderUtils/Filesystem.h
++++ b/FEXHeaderUtils/FEXHeaderUtils/Filesystem.h
+@@ -9,7 +9,10 @@
+ #include <fcntl.h>
+ #include <memory_resource>
+ #include <string_view>
+-#ifndef _WIN32
++#if defined(__APPLE__)
++#include <copyfile.h>
++#include <limits.h>
++#elif !defined(_WIN32)
+ #include <linux/limits.h>
+ #include <sys/sendfile.h>
+ #else
+@@ -216,7 +219,11 @@ inline bool CopyFile(const fextl::string& From, const fextl::string& To, CopyOpt
+       close(SourceFD);
+       return false;
+     }
++#ifdef __APPLE__
++    bool Result = fcopyfile(SourceFD, DestinationFD, nullptr, COPYFILE_DATA) == 0;
++#else
+     bool Result = sendfile(DestinationFD, SourceFD, nullptr, buf.st_size) == buf.st_size;
++#endif
+     close(DestinationFD);
+     close(SourceFD);
+     return Result;
 diff --git a/FEXHeaderUtils/FEXHeaderUtils/Syscalls.h b/FEXHeaderUtils/FEXHeaderUtils/Syscalls.h
 index e5c2824..d40a160 100644
 --- a/FEXHeaderUtils/FEXHeaderUtils/Syscalls.h
@@ -883,6 +968,22 @@ index fe7faae..9956a55 100644
  uint32_t CalculateNumberOfCPUs() {
    constexpr auto parse_string = FMT_COMPILE("/sys/devices/system/cpu/cpu{}");
    constexpr auto max_parse_size = ::fmt::formatted_size(parse_string, UINT32_MAX);
+diff --git a/Source/Common/Config.cpp b/Source/Common/Config.cpp
+index 7419364..0db96e4 100644
+--- a/Source/Common/Config.cpp
++++ b/Source/Common/Config.cpp
+@@ -16,7 +16,10 @@
+ #include <cstring>
+ #include <fmt/format.h>
+ #include <functional>
+-#ifndef _WIN32
++#if defined(__APPLE__)
++#include <limits.h>
++#include <pwd.h>
++#elif !defined(_WIN32)
+ #include <linux/limits.h>
+ #include <pwd.h>
+ #endif
 diff --git a/Source/Common/HostFeatures.cpp b/Source/Common/HostFeatures.cpp
 index f43f34c..2c65aab 100644
 --- a/Source/Common/HostFeatures.cpp
