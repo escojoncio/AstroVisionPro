@@ -12,6 +12,7 @@ struct LauncherView: View {
     @Environment(\.openWindow) private var openWindow
     @Environment(\.dismissWindow) private var dismissWindow
     @Environment(\.scenePhase) private var scenePhase
+    @State private var shareFiles: [URL]?
 
     var body: some View {
         NavigationStack {
@@ -97,6 +98,23 @@ struct LauncherView: View {
                     }
                 }
 
+                Section {
+                    if model.previousSessionCrashed {
+                        Label("La última partida se cerró de forma inesperada. Comparte los registros para ver qué pasó.",
+                              systemImage: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.orange)
+                    }
+                    Button {
+                        shareFiles = LogFiles.filesToShare(report: model.diagnostics.report(jit: model.jit.state))
+                    } label: {
+                        Label("Compartir registros", systemImage: "square.and.arrow.up")
+                    }
+                } header: {
+                    Text("Registros")
+                } footer: {
+                    Text("También están en la app Archivos: En mi Apple Vision Pro › AstroQuest › Registros. Si la app se cierra de golpe, visionOS guarda además un informe en Ajustes › Privacidad y seguridad › Análisis y mejoras › Datos de análisis (el que empieza por «AstroQuest»).")
+                }
+
                 Section("Ajustes") {
                     LabeledContent("Resolución por ojo", value: model.settings.resolution == "game" ? "la del juego" : "\(model.settings.resolution) (PC VR)")
                     LabeledContent("Imágenes por segundo", value: "\(model.settings.fps) como máximo")
@@ -150,6 +168,9 @@ struct LauncherView: View {
         }
         .onAppear {
             model.openLauncher = openWindow
+        }
+        .sheet(isPresented: Binding(get: { shareFiles != nil }, set: { if !$0 { shareFiles = nil } })) {
+            ShareSheet(items: shareFiles ?? [])
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
@@ -208,4 +229,15 @@ struct LauncherView: View {
             }
         }
     }
+}
+
+/// The system's share sheet (AirDrop, Mail, Save to Files...) for the log files.
+struct ShareSheet: UIViewControllerRepresentable {
+    let items: [URL]
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: items, applicationActivities: nil)
+    }
+
+    func updateUIViewController(_ controller: UIActivityViewController, context: Context) {}
 }
