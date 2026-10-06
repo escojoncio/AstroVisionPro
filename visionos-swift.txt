@@ -1,0 +1,19 @@
+# visionos-swift - f9be00824870c31747a963aa55078c19a0bc17f0 - 2026-10-06T00:24:08Z
+
+## swift.log:        7 lines
+### errors
+1:App/AstroQuestApp.swift:25:44: error: argument type 'GameLayerConfiguration' does not conform to expected type 'CompositorLayerConfiguration'
+2-23 | 
+3-24 |         ImmersiveSpace(id: AppModel.immersiveSpaceID) {
+4-25 |             CompositorLayer(configuration: GameLayerConfiguration(
+5:   |                                            `- error: argument type 'GameLayerConfiguration' does not conform to expected type 'CompositorLayerConfiguration'
+6-26 |                 foveation: model.settings.foveation,
+7-27 |                 renderQuality: model.settings.renderQuality)) { layerRenderer in
+### end
+App/AstroQuestApp.swift:25:44: error: argument type 'GameLayerConfiguration' does not conform to expected type 'CompositorLayerConfiguration'
+23 | 
+24 |         ImmersiveSpace(id: AppModel.immersiveSpaceID) {
+25 |             CompositorLayer(configuration: GameLayerConfiguration(
+   |                                            `- error: argument type 'GameLayerConfiguration' does not conform to expected type 'CompositorLayerConfiguration'
+26 |                 foveation: model.settings.foveation,
+27 |                 renderQuality: model.settings.renderQuality)) { layerRenderer in
