@@ -23,7 +23,9 @@ typedef int net_socket;
 #endif
 #if defined(__APPLE__)
 #include <net/if_dl.h>
+#if !defined(SHADPS4_VISIONOS)
 #include <net/route.h>
+#endif
 #endif
 #if defined(__linux__) || defined(__FreeBSD__)
 #include <fstream>
@@ -164,6 +166,9 @@ bool NetUtilInternal::RetrieveDefaultGateway() {
         }
     }
 
+    return false;
+#elif defined(SHADPS4_VISIONOS)
+    // visionOS apps cannot read the routing table: no default gateway to report.
     return false;
 #elif defined(__APPLE__)
     // adapted from

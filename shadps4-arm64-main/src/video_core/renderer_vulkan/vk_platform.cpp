@@ -6,7 +6,7 @@
 #define VK_USE_PLATFORM_ANDROID_KHR
 #elif defined(_WIN64)
 #define VK_USE_PLATFORM_WIN32_KHR
-#elif defined(__APPLE__)
+#elif defined(__APPLE__) && !defined(VK_USE_PLATFORM_METAL_EXT)
 #define VK_USE_PLATFORM_METAL_EXT
 #else
 #define VK_USE_PLATFORM_WAYLAND_KHR

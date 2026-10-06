@@ -81,6 +81,13 @@ if (NOT TARGET SDL3::SDL3)
     set(SDL_PIPEWIRE OFF)
     set(SDL_AVX512F OFF)
     add_subdirectory(sdl3)
+    if (SHADPS4_VISIONOS)
+        # SDL's curved visionOS windows are Swift, which only Xcode builds (see the stub).
+        set(SDL3_VISIONOS_STUB "${CMAKE_SOURCE_DIR}/src/platform/visionos/sdl3")
+        target_include_directories(SDL3-static PRIVATE
+            "${SDL3_VISIONOS_STUB}" "${CMAKE_CURRENT_SOURCE_DIR}/sdl3/src/video/uikit")
+        target_sources(SDL3-static PRIVATE "${SDL3_VISIONOS_STUB}/sdl3_swift_stub.m")
+    endif()
 endif()
 
 # vulkan-headers
@@ -334,7 +341,17 @@ add_library(minimp3 INTERFACE)
 target_include_directories(minimp3 INTERFACE minimp3)
 
 # ImGuiFileDialog
-add_library(ImGuiFileDialog ImGuiFileDialog/ImGuiFileDialog.cpp)
+if (SHADPS4_VISIONOS)
+    # It makes folders with system("mkdir ..."), which visionOS does not have: a copy that
+    # reports failure there (the emulator does not use the dialog on visionOS).
+    file(READ ImGuiFileDialog/ImGuiFileDialog.cpp IMGUI_FILE_DIALOG_SOURCE)
+    string(REPLACE "std::system(buffer)" "((void)buffer, -1)" IMGUI_FILE_DIALOG_SOURCE "${IMGUI_FILE_DIALOG_SOURCE}")
+    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/ImGuiFileDialog/ImGuiFileDialog.cpp" "${IMGUI_FILE_DIALOG_SOURCE}")
+    add_library(ImGuiFileDialog "${CMAKE_CURRENT_BINARY_DIR}/ImGuiFileDialog/ImGuiFileDialog.cpp")
+    target_include_directories(ImGuiFileDialog PRIVATE ImGuiFileDialog/)
+else()
+    add_library(ImGuiFileDialog ImGuiFileDialog/ImGuiFileDialog.cpp)
+endif()
 target_compile_definitions(ImGuiFileDialog PRIVATE USE_STD_FILESYSTEM)
 target_include_directories(ImGuiFileDialog INTERFACE ImGuiFileDialog/)
 target_link_libraries(ImGuiFileDialog PRIVATE Dear_ImGui)
@@ -399,6 +416,10 @@ endif()
 if (DEFINED SSL_DEPENDENCIES)
     target_link_libraries(Cpp_Httplib INTERFACE ${SSL_DEPENDENCIES})
     target_compile_definitions(Cpp_Httplib INTERFACE CPPHTTPLIB_OPENSSL_SUPPORT)
+    if (SHADPS4_VISIONOS)
+        # The macOS keychain's root certificates are not reachable from a visionOS app.
+        target_compile_definitions(Cpp_Httplib INTERFACE CPPHTTPLIB_DISABLE_MACOSX_AUTOMATIC_ROOT_CERTIFICATES)
+    endif()
     message(STATUS "cpp-httplib: SSL support enabled (TLS connections)")
 else()
     message(STATUS "cpp-httplib: OpenSSL/LibreSSL not available — libSceHttp HTTPS will fall back to mock at runtime.")
