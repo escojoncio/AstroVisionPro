@@ -20,7 +20,7 @@ built for visionOS (FEXCore, MoltenVK, FFmpeg). See [README-VISIONOS.md](README-
 > visionOS gives the app too little memory for the emulator (the PlayStation 4 has 8 GB). Sign it
 > with a tool that enables the *Increased Memory Limit* capability on the app's App ID - as
 > [GetMoreRam](https://github.com/hugeBlack/GetMoreRam) does, or the Vision Pro build of
-> iloaderVP (`visionos-windows` branch) - and keep
+> iLoader-VisionPro (`visionos-windows` branch) - and keep
 > `get-task-allow` (for StikDebug). The app's *Check* tab shows whether it got it.
 
 **The Apple Vision Pro app and every change made for it were written entirely by Claude
