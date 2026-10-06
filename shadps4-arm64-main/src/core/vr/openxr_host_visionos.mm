@@ -14,7 +14,9 @@
 // The frames are images of the emulator's Vulkan device (MoltenVK) that are Metal textures as
 // well (VK_EXT_metal_objects): the app samples them without any copy.
 
+#ifndef VK_USE_PLATFORM_METAL_EXT
 #define VK_USE_PLATFORM_METAL_EXT
+#endif
 
 #import <Metal/Metal.h>
 

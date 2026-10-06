@@ -14,6 +14,13 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <unistd.h>
+// Apple systems have neither flag; the link to a Quest host app is not used there.
+#ifndef SOCK_CLOEXEC
+#define SOCK_CLOEXEC 0
+#endif
+#ifndef MSG_CMSG_CLOEXEC
+#define MSG_CMSG_CLOEXEC 0
+#endif
 #endif
 
 namespace Core::Vr {

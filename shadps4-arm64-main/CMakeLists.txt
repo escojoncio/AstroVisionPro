@@ -1388,11 +1388,13 @@ if (SHADPS4_VISIONOS)
         src/platform/visionos/jit_arena.c
     )
     target_include_directories(shadps4 PRIVATE src/platform/visionos)
-    set_source_files_properties(
-        src/platform/visionos/astro_core.mm
-        src/core/vr/openxr_host_visionos.mm
-        PROPERTIES COMPILE_OPTIONS "-fobjc-arc"
-    )
+    set_source_files_properties(src/platform/visionos/astro_core.mm
+        PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
+    # Vulkan's Metal structures hold Objective-C pointers, which ARC would make non-trivial
+    # (vulkan.hpp needs them trivial): this file is built without ARC. The textures it hands
+    # the app belong to MoltenVK's images, and live as long as they do.
+    set_source_files_properties(src/core/vr/openxr_host_visionos.mm
+        PROPERTIES COMPILE_OPTIONS "-fno-objc-arc")
 endif()
 
 create_target_directory_groups(shadps4)
