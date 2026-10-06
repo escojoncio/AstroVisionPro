@@ -15,7 +15,7 @@ struct AstroQuestApp: App {
     @State private var immersion: ImmersionStyle = .full
 
     var body: some Scene {
-        WindowGroup(id: "launcher") {
+        WindowGroup(id: AppModel.launcherID) {
             LauncherView()
                 .environment(model)
         }
@@ -25,7 +25,11 @@ struct AstroQuestApp: App {
             CompositorLayer(configuration: GameLayerConfiguration(
                 foveation: model.settings.foveation,
                 renderQuality: model.settings.renderQuality)) { layerRenderer in
-                GameRenderer.start(layerRenderer: layerRenderer, settings: model.settings)
+                GameRenderer.start(layerRenderer: layerRenderer, settings: model.settings) { [model] in
+                    Task { @MainActor in
+                        model.immersiveEnded()
+                    }
+                }
             }
         }
         .immersionStyle(selection: $immersion, in: .full)
