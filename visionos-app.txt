@@ -1,58 +1,58 @@
-# visionos-app - 6d7d6817bd5da69076582781ebfd09aae4b16b13 - 2026-10-06T05:53:22Z
+# visionos-app - 5303e7628bfd6bb98f2cae39a3ee9c70d6805d6b - 2026-10-06T06:03:42Z
 
 ## fexcore.log:      346 lines
 ### errors
 ### end
-[48/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_roundToI32.c.o
-[49/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_roundToUI64.c.o
+[48/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_extF80UIToCommonNaN.c.o
+[49/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_roundToI64.c.o
 [50/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_roundPackToF32.c.o
-[51/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_commonNaNToF32UI.c.o
-[52/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_extF80UIToCommonNaN.c.o
-[53/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_commonNaNToF128UI.c.o
-[54/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_propagateNaNExtF80UI.c.o
-[55/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_addMagsExtF80.c.o
-[56/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_commonNaNToF64UI.c.o
-[57/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_roundPackToF64.c.o
-[58/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_normSubnormalExtF80Sig.c.o
-[59/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_roundPackToExtF80.c.o
-[60/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_approxRecipSqrt_1Ks.c.o
-[61/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_approxRecipSqrt32_1.c.o
-[62/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_approxRecip_1Ks.c.o
-[63/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_shiftRightJam128.c.o
-[64/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_subMagsExtF80.c.o
+[51/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/i32_to_f128.c.o
+[52/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_addMagsExtF80.c.o
+[53/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_commonNaNToF32UI.c.o
+[54/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_commonNaNToF64UI.c.o
+[55/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_propagateNaNExtF80UI.c.o
+[56/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_roundPackToExtF80.c.o
+[57/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_f128UIToCommonNaN.c.o
+[58/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_roundPackToF64.c.o
+[59/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_normSubnormalExtF80Sig.c.o
+[60/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_normRoundPackToExtF80.c.o
+[61/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_shiftRightJam128.c.o
+[62/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_approxRecipSqrt32_1.c.o
+[63/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_subMagsExtF80.c.o
+[64/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_approxRecip_1Ks.c.o
 [65/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_shiftRightJam128Extra.c.o
-[66/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_f64UIToCommonNaN.c.o
+[66/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_approxRecipSqrt_1Ks.c.o
 [67/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_commonNaNToExtF80UI.c.o
-[68/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/f64_to_extF80.c.o
-[69/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_normRoundPackToExtF80.c.o
-[70/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/softfloat_raiseFlags.c.o
-[71/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_normSubnormalF64Sig.c.o
-[72/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/extF80_lt.c.o
-[73/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/extF80_roundToInt.c.o
+[68/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/softfloat_raiseFlags.c.o
+[69/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/f64_to_extF80.c.o
+[70/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_f64UIToCommonNaN.c.o
+[71/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/extF80_roundToInt.c.o
+[72/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/f32_to_extF80.c.o
+[73/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_normSubnormalF32Sig.c.o
 [74/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/extF80_eq.c.o
-[75/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_f32UIToCommonNaN.c.o
-[76/178] Generating ../../include/FEXCore/Config/ConfigValues.inl, ../../include/FEXCore/Config/ConfigOptions.inl, ../../generated/FEX.1
-[77/178] Building C object External/cephes/CMakeFiles/cephes_128bit.dir/src/128bit/atanll.c.o
-[78/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/f32_to_extF80.c.o
-[79/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_normSubnormalF32Sig.c.o
+[75/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_normSubnormalF64Sig.c.o
+[76/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_f32UIToCommonNaN.c.o
+[77/178] Generating ../../include/FEXCore/Config/ConfigValues.inl, ../../include/FEXCore/Config/ConfigOptions.inl, ../../generated/FEX.1
+[78/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/extF80_lt.c.o
+[79/178] Building CXX object External/cephes/CMakeFiles/cephes_128bit.dir/src/128bit/Impl.cpp.o
 [80/178] Building C object External/cephes/CMakeFiles/cephes_128bit.dir/src/128bit/constll.c.o
-[81/178] Building C object External/cephes/CMakeFiles/cephes_128bit.dir/src/128bit/floorll.c.o
-[82/178] Linking C static library External/SoftFloat-3e/libsoftfloat_3e.a
-[83/178] Building C object External/cephes/CMakeFiles/cephes_128bit.dir/src/128bit/exp2ll.c.o
-[84/178] Building CXX object External/cephes/CMakeFiles/cephes_128bit.dir/src/128bit/Impl.cpp.o
-[85/178] Building C object External/cephes/CMakeFiles/cephes_128bit.dir/src/128bit/polevll.c.o
+[81/178] Linking C static library External/SoftFloat-3e/libsoftfloat_3e.a
+[82/178] Building C object External/cephes/CMakeFiles/cephes_128bit.dir/src/128bit/log2ll.c.o
+[83/178] Building C object External/cephes/CMakeFiles/cephes_128bit.dir/src/128bit/atanll.c.o
+[84/178] Building C object External/cephes/CMakeFiles/cephes_128bit.dir/src/128bit/polevll.c.o
+[85/178] Building C object External/cephes/CMakeFiles/cephes_128bit.dir/src/128bit/exp2ll.c.o
 [86/178] Building C object External/cephes/CMakeFiles/cephes_128bit.dir/src/128bit/mtherr.c.o
-[87/178] Building C object External/cephes/CMakeFiles/cephes_128bit.dir/src/128bit/log2ll.c.o
+[87/178] Building C object External/cephes/CMakeFiles/cephes_128bit.dir/src/128bit/floorll.c.o
 [88/178] Building C object External/cephes/CMakeFiles/cephes_128bit.dir/src/128bit/sinll.c.o
 [89/178] Generating ../../generated/FEX.1.gz
 [90/178] Generating ../../IR.md
 [91/178] Building C object External/cephes/CMakeFiles/cephes_128bit.dir/src/128bit/tanll.c.o
-[92/178] Linking CXX static library External/cephes/libcephes_128bit.a
-[93/178] Generating ../../include/FEXCore/IR/IRDefines.inc, ../../include/FEXCore/IR/IRDefines_Dispatch.inc
+[92/178] Generating ../../include/FEXCore/IR/IRDefines.inc, ../../include/FEXCore/IR/IRDefines_Dispatch.inc
+[93/178] Linking CXX static library External/cephes/libcephes_128bit.a
 [94/178] Building C object External/tiny-json/CMakeFiles/tiny-json.dir/tiny-json.c.o
-[95/178] Building C object External/xxhash/cmake_unofficial/CMakeFiles/xxhash.dir/__/xxhash.c.o
-[96/178] Building CXX object FEXCore/Source/CMakeFiles/JemallocLibs.dir/Utils/AllocatorHooks.cpp.o
-[97/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_Base.dir/Utils/ForcedAssert.cpp.o
+[95/178] Building CXX object FEXCore/Source/CMakeFiles/JemallocLibs.dir/Utils/AllocatorHooks.cpp.o
+[96/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_Base.dir/Utils/ForcedAssert.cpp.o
+[97/178] Building C object External/xxhash/cmake_unofficial/CMakeFiles/xxhash.dir/__/xxhash.c.o
 [98/178] Linking C static library External/xxhash/cmake_unofficial/libxxhash.a
 [99/178] Building CXX object External/fmt/CMakeFiles/fmt.dir/src/os.cc.o
 [100/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_Base.dir/Utils/WildcardMatcher.cpp.o
@@ -75,8 +75,8 @@
 [117/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/Frontend.cpp.o
 [118/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/CodeCache.cpp.o
 [119/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/Core.cpp.o
-[120/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/OpcodeDispatcher/AVX_128.cpp.o
-[121/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/OpcodeDispatcher/Crypto.cpp.o
+[120/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/OpcodeDispatcher/Crypto.cpp.o
+[121/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/OpcodeDispatcher/AVX_128.cpp.o
 [122/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/OpcodeDispatcher/Flags.cpp.o
 [123/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/OpcodeDispatcher/X87.cpp.o
 [124/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/OpcodeDispatcher/X87F64.cpp.o
@@ -88,8 +88,7 @@
 [130/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/OpcodeDispatcher.cpp.o
 [131/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/JIT/ALUOps.cpp.o
 [132/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/JIT/AtomicOps.cpp.o
-[133/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/JIT/BranchOps.cpp.o
-[134/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/JIT/JIT.cpp.o
+[133/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/JIT/JIT.cpp.o
 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fex-src/FEXCore/Source/Interface/Core/JIT/JIT.cpp:597:50: warning: taking address of packed member 'HostCode' of class or structure 'FEXCore::Context::ExitFunctionLinkData' may result in an unaligned pointer value [-Waddress-of-packed-member]
   597 |     std::atomic_ref<uint64_t>(*FEX_JIT_WRITABLE(&Record->HostCode)).store(HostCode, std::memory_order::seq_cst);
       |                                                  ^~~~~~~~~~~~~~~~
@@ -97,6 +96,7 @@
    82 | #define FEX_JIT_WRITABLE(Address) ::FEXCore::Darwin::Writable(Address)
       |                                                               ^~~~~~~
 1 warning generated.
+[134/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/JIT/BranchOps.cpp.o
 [135/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/JIT/ConversionOps.cpp.o
 [136/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/JIT/EncryptionOps.cpp.o
 [137/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/JIT/MoveOps.cpp.o
@@ -113,8 +113,8 @@
 [148/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/X86Tables/SecondaryModRMTables.cpp.o
 [149/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/GDBJIT/GDBJIT.cpp.o
 [150/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/X86Tables/SecondaryTables.cpp.o
-[151/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/X86Tables/VEXTables.cpp.o
-[152/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/X86Tables/X87Tables.cpp.o
+[151/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/X86Tables/X87Tables.cpp.o
+[152/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/X86Tables/VEXTables.cpp.o
 [153/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/IR/IREmitter.cpp.o
 [154/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/IR/PassManager.cpp.o
 [155/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/IR/IRDumper.cpp.o
@@ -123,19 +123,19 @@
 [158/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Utils/Threads.cpp.o
 [159/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/IR/Passes/IRValidation.cpp.o
 [160/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Utils/Telemetry.cpp.o
-[161/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/IR/Passes/RedundantFlagCalculationElimination.cpp.o
-[162/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Utils/Profiler.cpp.o
+[161/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Utils/Profiler.cpp.o
+[162/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/IR/Passes/RedundantFlagCalculationElimination.cpp.o
 [163/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/IR/Passes/RegisterAllocationPass.cpp.o
 [164/178] Building CXX object Source/Common/CMakeFiles/Common.dir/CPUInfo.cpp.o
 [165/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/IR/Passes/x87StackOptimizationPass.cpp.o
-[166/178] Building CXX object Source/Common/CMakeFiles/Common.dir/JSONPool.cpp.o
-[167/178] Linking CXX static library Source/Common/cpp-optparse/libcpp-optparse.a
-[168/178] Building CXX object Source/Common/CMakeFiles/Common.dir/ArgumentLoader.cpp.o
-[169/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Utils/ArchHelpers/Arm64.cpp.o
-[170/178] Linking CXX static library FEXCore/Source/libJemallocLibs.a
-[171/178] Linking CXX static library FEXCore/Source/libFEXCore.a
-[172/178] Building CXX object Source/Common/CMakeFiles/Common.dir/SHMStats.cpp.o
-[173/178] Building CXX object Source/Common/CMakeFiles/Common.dir/HostFeatures.cpp.o
+[166/178] Building CXX object Source/Common/CMakeFiles/Common.dir/ArgumentLoader.cpp.o
+[167/178] Building CXX object Source/Common/CMakeFiles/Common.dir/JSONPool.cpp.o
+[168/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Utils/ArchHelpers/Arm64.cpp.o
+[169/178] Linking CXX static library Source/Common/cpp-optparse/libcpp-optparse.a
+[170/178] Linking CXX static library FEXCore/Source/libFEXCore.a
+[171/178] Linking CXX static library FEXCore/Source/libJemallocLibs.a
+[172/178] Building CXX object Source/Common/CMakeFiles/Common.dir/HostFeatures.cpp.o
+[173/178] Building CXX object Source/Common/CMakeFiles/Common.dir/SHMStats.cpp.o
 [174/178] Building CXX object Source/Common/CMakeFiles/Common.dir/Config.cpp.o
 [175/178] Building CXX object Source/Tools/CommonTools/CMakeFiles/CommonTools.dir/DummyHandlers.cpp.o
 [176/178] Linking CXX static library Source/Tools/CommonTools/libCommonTools.a
@@ -157,18 +157,173 @@ FEXCore for visionOS:
 ## moltenvk.log:        2 lines
 ### errors
 ### end
-MoltenVK v1.4.2 for visionOS: from the release package (/var/folders/36/tjdph2t965j8snz9_vkdnw0r0000gn/T/tmp.oxUdr7MVkB/MoltenVK/MoltenVK/static/MoltenVK.xcframework/xros-arm64/libMoltenVK.a)
+MoltenVK v1.4.2 for visionOS: from the release package (/var/folders/36/tjdph2t965j8snz9_vkdnw0r0000gn/T/tmp.GSplbrI3kC/MoltenVK/MoltenVK/static/MoltenVK.xcframework/xros-arm64/libMoltenVK.a)
 Non-fat file: /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/moltenvk/libMoltenVK.a is architecture: arm64
 
-## core.log:     3119 lines
+## ffmpeg.log:     1173 lines
 ### errors
 ### end
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavfilter/buffersink.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavfilter/buffersrc.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavfilter/version.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavfilter/version_major.h
+INSTALL	libavfilter/libavfilter.pc
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavformat/avformat.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavformat/avio.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavformat/version.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavformat/version_major.h
+INSTALL	libavformat/libavformat.pc
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavcodec/ac3_parser.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavcodec/adts_parser.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavcodec/avcodec.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavcodec/avdct.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavcodec/avfft.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavcodec/bsf.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavcodec/codec.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavcodec/codec_desc.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavcodec/codec_id.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavcodec/codec_par.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavcodec/d3d11va.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavcodec/defs.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavcodec/dirac.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavcodec/dv_profile.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavcodec/dxva2.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavcodec/jni.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavcodec/mediacodec.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavcodec/packet.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavcodec/qsv.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavcodec/vdpau.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavcodec/version.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavcodec/version_major.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavcodec/videotoolbox.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavcodec/vorbis_parser.h
+INSTALL	libavcodec/libavcodec.pc
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libswresample/swresample.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libswresample/version.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libswresample/version_major.h
+INSTALL	libswresample/libswresample.pc
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libswscale/swscale.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libswscale/version.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libswscale/version_major.h
+INSTALL	libswscale/libswscale.pc
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/adler32.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/aes.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/aes_ctr.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/ambient_viewing_environment.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/attributes.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/audio_fifo.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/avassert.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/avstring.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/avutil.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/base64.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/blowfish.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/bprint.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/bswap.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/buffer.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/cast5.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/camellia.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/channel_layout.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/common.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/cpu.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/crc.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/csp.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/des.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/detection_bbox.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/dict.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/display.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/dovi_meta.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/downmix_info.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/encryption_info.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/error.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/eval.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/executor.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/fifo.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/file.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/frame.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/hash.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/hdr_dynamic_metadata.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/hdr_dynamic_vivid_metadata.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/hmac.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/hwcontext.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/hwcontext_cuda.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/hwcontext_d3d11va.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/hwcontext_d3d12va.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/hwcontext_drm.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/hwcontext_dxva2.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/hwcontext_qsv.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/hwcontext_mediacodec.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/hwcontext_opencl.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/hwcontext_vaapi.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/hwcontext_videotoolbox.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/hwcontext_vdpau.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/hwcontext_vulkan.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/iamf.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/imgutils.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/intfloat.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/intreadwrite.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/lfg.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/log.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/lzo.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/macros.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/mathematics.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/mastering_display_metadata.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/md5.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/mem.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/motion_vector.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/murmur3.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/opt.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/parseutils.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/pixdesc.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/pixelutils.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/pixfmt.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/random_seed.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/rc4.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/rational.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/replaygain.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/ripemd.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/samplefmt.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/sha.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/sha512.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/spherical.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/stereo3d.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/threadmessage.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/time.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/timecode.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/timestamp.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/tree.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/twofish.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/uuid.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/version.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/video_enc_params.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/xtea.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/tea.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/tx.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/film_grain_params.h
+INSTALL	Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg-src/libavutil/video_hint.h
+INSTALL	libavutil/avconfig.h
+INSTALL	libavutil/ffversion.h
+INSTALL	libavutil/libavutil.pc
+total 15040
+drwxr-xr-x  9 runner  staff      288 Oct  6 05:58 .
+drwxr-xr-x  6 runner  staff      192 Oct  6 05:58 ..
+-rw-r--r--  1 runner  staff  4664016 Oct  6 05:58 libavcodec.a
+-rw-r--r--  1 runner  staff   198424 Oct  6 05:58 libavfilter.a
+-rw-r--r--  1 runner  staff   775040 Oct  6 05:58 libavformat.a
+-rw-r--r--  1 runner  staff   969896 Oct  6 05:58 libavutil.a
+-rw-r--r--  1 runner  staff   132224 Oct  6 05:58 libswresample.a
+-rw-r--r--  1 runner  staff   946552 Oct  6 05:58 libswscale.a
+drwxr-xr-x  8 runner  staff      256 Oct  6 05:58 pkgconfig
+
+## core.log:     3052 lines
+### errors
+### end
+[1570/1664] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/frontend/translate/export.cpp.o
 [1571/1664] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/frontend/translate/scalar_alu.cpp.o
 [1572/1664] Building CXX object CMakeFiles/shadps4.dir/src/core/emulator_settings.cpp.o
 [1573/1664] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/frontend/translate/scalar_flow.cpp.o
 [1574/1664] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/frontend/translate/scalar_memory.cpp.o
-[1575/1664] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/frontend/translate/vector_interpolation.cpp.o
-[1576/1664] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/backend/spirv/spirv_emit_context.cpp.o
+[1575/1664] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/backend/spirv/spirv_emit_context.cpp.o
+[1576/1664] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/frontend/translate/vector_interpolation.cpp.o
 [1577/1664] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/frontend/translate/vector_alu.cpp.o
 [1578/1664] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/frontend/copy_shader.cpp.o
 [1579/1664] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/frontend/translate/vector_memory.cpp.o
@@ -184,14 +339,14 @@ Non-fat file: /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/v
 [1589/1664] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/identity_removal_pass.cpp.o
 [1590/1664] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/inject_clip_distance_attributes.cpp.o
 [1591/1664] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/hull_shader_transform.cpp.o
-[1592/1664] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp.o
-[1593/1664] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/lower_buffer_format_to_raw.cpp.o
+[1592/1664] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/lower_buffer_format_to_raw.cpp.o
+[1593/1664] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp.o
 [1594/1664] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/lower_fp64_to_fp32.cpp.o
 [1595/1664] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/readlane_elimination_pass.cpp.o
 [1596/1664] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/ring_access_elimination.cpp.o
 [1597/1664] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/shared_memory_simplify_pass.cpp.o
-[1598/1664] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/resource_tracking_pass.cpp.o
-[1599/1664] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/shared_memory_barrier_pass.cpp.o
+[1598/1664] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/shared_memory_barrier_pass.cpp.o
+[1599/1664] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/resource_tracking_pass.cpp.o
 [1600/1664] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/shared_memory_to_storage_pass.cpp.o
 [1601/1664] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/attribute.cpp.o
 [1602/1664] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/ssa_rewrite_pass.cpp.o
@@ -199,8 +354,8 @@ Non-fat file: /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/v
 [1604/1664] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/patch.cpp.o
 [1605/1664] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/opcodes.cpp.o
 [1606/1664] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/type.cpp.o
-[1607/1664] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/microinstruction.cpp.o
-[1608/1664] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/basic_block.cpp.o
+[1607/1664] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/basic_block.cpp.o
+[1608/1664] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/microinstruction.cpp.o
 [1609/1664] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/shader_info_collection_pass.cpp.o
 [1610/1664] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/ir_emitter.cpp.o
 [1611/1664] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/post_order.cpp.o
@@ -222,12 +377,12 @@ Non-fat file: /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/v
 [1627/1664] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_pipeline_common.cpp.o
 [1628/1664] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_instance.cpp.o
 [1629/1664] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_vr_exporter.cpp.o
-[1630/1664] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp.o
-[1631/1664] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_pipeline_cache.cpp.o
+[1630/1664] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_pipeline_cache.cpp.o
+[1631/1664] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp.o
 [1632/1664] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_platform.cpp.o
 [1633/1664] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_resource_pool.cpp.o
-[1634/1664] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_shader_util.cpp.o
-[1635/1664] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_scheduler.cpp.o
+[1634/1664] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_scheduler.cpp.o
+[1635/1664] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_shader_util.cpp.o
 [1636/1664] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_shader_hle.cpp.o
 [1637/1664] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_rasterizer.cpp.o
 [1638/1664] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_presenter.cpp.o
@@ -267,13 +422,6 @@ Into libastroquest_core.a:
   /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/core/externals/aacdec/libfdk-aac.a
   /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/core/externals/date/libdate-tz.a
   /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/core/externals/epoll-shim/src/libepoll-shim.a
-  /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/core/externals/ffmpeg-94dde08/lib/libavcodec.a
-  /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/core/externals/ffmpeg-94dde08/lib/libavdevice.a
-  /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/core/externals/ffmpeg-94dde08/lib/libavfilter.a
-  /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/core/externals/ffmpeg-94dde08/lib/libavformat.a
-  /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/core/externals/ffmpeg-94dde08/lib/libavutil.a
-  /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/core/externals/ffmpeg-94dde08/lib/libswresample.a
-  /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/core/externals/ffmpeg-94dde08/lib/libswscale.a
   /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/core/externals/freetype/libfreetype.a
   /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/core/externals/glslang/glslang/libglslang.a
   /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/core/externals/libDear_ImGui.a
@@ -308,47 +456,51 @@ Into libastroquest_core.a:
   /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fexcore/Source/Common/cpp-optparse/libcpp-optparse.a
   /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fexcore/Source/Common/libCommon.a
   /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fexcore/Source/Tools/CommonTools/libCommonTools.a
-total 287920
-drwxr-xr-x  4 runner  staff        128 Oct  6 05:53 .
-drwxr-xr-x  3 runner  staff         96 Oct  6 05:53 ..
--rw-r--r--  1 runner  staff  140285712 Oct  6 05:53 libastroquest_core.a
--rw-r--r--  1 runner  staff    7123752 Oct  6 05:53 libMoltenVK.a
+  /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg/lib/libavcodec.a
+  /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg/lib/libavfilter.a
+  /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg/lib/libavformat.a
+  /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg/lib/libavutil.a
+  /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg/lib/libswresample.a
+  /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg/lib/libswscale.a
+total 240504
+drwxr-xr-x  4 runner  staff        128 Oct  6 06:03 .
+drwxr-xr-x  3 runner  staff         96 Oct  6 06:03 ..
+-rw-r--r--  1 runner  staff  116010232 Oct  6 06:03 libastroquest_core.a
+-rw-r--r--  1 runner  staff    7123752 Oct  6 06:03 libMoltenVK.a
 
-## app.log:      354 lines
+## app.log:      367 lines
 ### errors
 343-    cd /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos
 344-    /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -Xlinker -reproducible -target arm64-apple-xros26.0 -isysroot /Applications/Xcode_26.6.app/Contents/Developer/Platforms/XROS.platform/Developer/SDKs/XROS26.5.sdk -Os -L/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Intermediates.noindex/EagerLinkingTBDs/Release-xros -L/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Products/Release-xros -L/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/core -F/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Intermediates.noindex/EagerLinkingTBDs/Release-xros -F/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Products/Release-xros -filelist /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/Objects-normal/arm64/AstroQuest.LinkFileList -Xlinker -rpath -Xlinker @executable_path/Frameworks -Xlinker -dead_strip -Xlinker -object_path_lto -Xlinker /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/Objects-normal/arm64/AstroQuest_lto.o -Xlinker -dependency_info -Xlinker /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/Objects-normal/arm64/AstroQuest_dependency_info.dat -fobjc-link-runtime -L/Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros -L/usr/lib/swift -Xlinker -add_ast_path -Xlinker /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/Objects-normal/arm64/AstroQuest.swiftmodule @/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/Objects-normal/arm64/AstroQuest-linker-args.resp -lastroquest_core -lMoltenVK -lc++ -framework Metal -framework IOSurface -framework QuartzCore -framework CoreFoundation -framework Foundation -framework UIKit -framework AVFoundation -framework AudioToolbox -framework CoreAudio -framework CoreHaptics -framework CoreMotion -framework GameController -framework CoreVideo -framework VideoToolbox -framework Security -framework CoreBluetooth -framework CoreGraphics -framework Metal -liconv -o /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Products/Release-xros/AstroQuest.app/AstroQuest
-345:ld: building for 'visionOS', but linking in object file (/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/core/libastroquest_core.a[557](aacdec.o)) built for 'macOS'
-346:/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/AstroQuest.xcodeproj: AstroQuest: clang: error: linker command failed with exit code 1 (use -v to see invocation)
-347-
-348:** BUILD FAILED **
-349-
-350-
-351-The following build commands failed:
-352-	Ld /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Products/Release-xros/AstroQuest.app/AstroQuest normal (in target 'AstroQuest' from project 'AstroQuest')
-353-	Building project AstroQuest with scheme AstroQuest and configuration Release
-354-(2 failures)
+345:/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/AstroQuest.xcodeproj: AstroQuest: ld: warning: object file (/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/core/libMoltenVK.a[2](libMoltenVK.a-arm64-prelink.o)) was built for newer 'visionOS' version (26.5) than being linked (26.0)
+346:/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/AstroQuest.xcodeproj: AstroQuest: ld: warning: Could not find or use auto-linked framework 'CoreAudioTypes': framework 'CoreAudioTypes' not found
+347:/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/AstroQuest.xcodeproj: AstroQuest: ld: warning: Could not find or use auto-linked framework 'UIUtilities': framework 'UIUtilities' not found
+348:/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/AstroQuest.xcodeproj: AstroQuest: ld: warning: Could not parse or use implicit file '/Applications/Xcode_26.6.app/Contents/Developer/Platforms/XROS.platform/Developer/SDKs/XROS.sdk/System/Library/Frameworks/SwiftUICore.framework/SwiftUICore.tbd': cannot link directly with 'SwiftUICore' because product being built is not an allowed client of it
+349-Undefined symbols for architecture arm64:
+350-  "_usbi_get_monotonic_time", referenced from:
+351-      _usbi_log in libastroquest_core.a[1166](core.c.o)
+352-      _libusb_init_context in libastroquest_core.a[1166](core.c.o)
+353-      _libusb_submit_transfer in libastroquest_core.a[1169](io.c.o)
+354-      _handle_timeouts in libastroquest_core.a[1169](io.c.o)
+--
+356-  "_usbi_get_real_time", referenced from:
+357-      _usbi_cond_timedwait in libastroquest_core.a[1173](threads_posix.c.o)
+358:ld: symbol(s) not found for architecture arm64
+359:/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/AstroQuest.xcodeproj: AstroQuest: clang: error: linker command failed with exit code 1 (use -v to see invocation)
+360-
+361:** BUILD FAILED **
+362-
+363-
+364-The following build commands failed:
+365-	Ld /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Products/Release-xros/AstroQuest.app/AstroQuest normal (in target 'AstroQuest' from project 'AstroQuest')
+366-	Building project AstroQuest with scheme AstroQuest and configuration Release
+367-(2 failures)
 ### end
-
-SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/notify-55S7PZEOB41T7SGYZC6LAWCYK.pcm
-
-SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/XPC-BY43L6MIP08UCLG8LJ2PIEV1.pcm
-
-SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CoreFoundation-501OZT2QIZ99K19CU258XMAG.pcm
-
-SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/os-CIHKKEOLFLKAINKYYXMUNTT01.pcm
-
-SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CoreServices-1S34MO11RI2Z6WN0310TZ02WS.pcm
-
-SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CFNetwork-2B848046ARX376BVN7RLSBN41.pcm
-
 SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CoreGraphics-5PNS35A5JLC5D0JP2A8QRXVQT.pcm
 
 SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/Security-24RT8MACEN4VFVC5WKY6H3U8K.pcm
 
 SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CoreAudioTypes-E12K4G58SFT3UI763RCDOF6FA.pcm
-
-SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/Foundation-E7Z53TOE86M09HKBHVAAYLG63.pcm
 
 SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CoreAudio-9A8EY0TNLWP0ZE071S2PSN75N.pcm
 
@@ -356,75 +508,77 @@ SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/
 
 SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/ImageIO-8YDUC5C5WZYQMZAZAC2ULR82Q.pcm
 
-SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/DataDetection-2C2EV0M2IN9GKKA1M5WCIEX3F.pcm
-
-SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/_LocationEssentials-E7JZ1FLJGW4L1P9KPTG420UVF.pcm
-
-SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/OSLog-3HRIOGQEBYPEI9V34K9FEWX2I.pcm
-
-SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/UniformTypeIdentifiers-8YLN5W7G84XE9WGZ2T09OFZV2.pcm
-
-SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/Network-DIGP7UKQ52JB5GBR2GM8W6CII.pcm
-
-SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/UserNotifications-DSR19L7U3IURMK4NZY2OAW92A.pcm
-
-SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CoreData-AUNYXUNA4XYHVDYVJU48NO7QY.pcm
-
-SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CoreLocation-F33HX2BY6PWGU8455IHH4WO7E.pcm
-
-SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/FileProvider-4X824MKF1A0G6M29O4MNAMVOV.pcm
-
-SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CoreTransferable-9VX8KM4ZV1XIROUVE3CME6RSX.pcm
-
-SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/AVRouting-3ADK288VOB1IYSFOBI9XAQXVY.pcm
-
-SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/UIUtilities-BLV3XQOGLHGX228MOR26XP3MM.pcm
+SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/Foundation-E7Z53TOE86M09HKBHVAAYLG63.pcm
 
 SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/Accessibility-Z4OW4BQ6A2UD9L9QHDZR20H.pcm
 
-SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CoreHaptics-5BITLAIGM8QZNWUIXMPNVYQUN.pcm
+SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/LocalAuthentication-1YV4ERKHVDQDDWL95U48R6ROZ.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CoreTransferable-9VX8KM4ZV1XIROUVE3CME6RSX.pcm
 
 SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/Symbols-D5QPBIFH41FTU4HBB3LDNMJMQ.pcm
 
-SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CloudKit-E1U5X1P21VB74RDK9RCYZOGEU.pcm
+SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CoreData-AUNYXUNA4XYHVDYVJU48NO7QY.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CoreHaptics-5BITLAIGM8QZNWUIXMPNVYQUN.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/UniformTypeIdentifiers-8YLN5W7G84XE9WGZ2T09OFZV2.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/UIUtilities-BLV3XQOGLHGX228MOR26XP3MM.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/FileProvider-4X824MKF1A0G6M29O4MNAMVOV.pcm
 
 SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/IOSurface-DN830F9I8A15ZPAWLXY2SSOIV.pcm
 
-SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CoreMotion-3EHZVQAGAYV09GVQSN2GJT8KQ.pcm
+SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/_LocationEssentials-E7JZ1FLJGW4L1P9KPTG420UVF.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/DataDetection-2C2EV0M2IN9GKKA1M5WCIEX3F.pcm
 
 SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CoreMIDI-3HIQL6RZD5FXUZYVB18KTS7X6.pcm
 
-SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/LocalAuthentication-1YV4ERKHVDQDDWL95U48R6ROZ.pcm
-
-SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/Metal-DSH41D8QR1RQYDTMSN40TDDPV.pcm
+SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/UserNotifications-DSR19L7U3IURMK4NZY2OAW92A.pcm
 
 SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/OpenGLES-A9IJ5B6X0JEUKS1433AEHWSB2.pcm
 
+SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/Metal-DSH41D8QR1RQYDTMSN40TDDPV.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CoreLocation-F33HX2BY6PWGU8455IHH4WO7E.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/OSLog-3HRIOGQEBYPEI9V34K9FEWX2I.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/Network-DIGP7UKQ52JB5GBR2GM8W6CII.pcm
+
 SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/AudioToolbox-DBPS00DKBSMGLWZD9ZDQQ106H.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CloudKit-E1U5X1P21VB74RDK9RCYZOGEU.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CoreMotion-3EHZVQAGAYV09GVQSN2GJT8KQ.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/AVRouting-3ADK288VOB1IYSFOBI9XAQXVY.pcm
 
 SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CoreVideo-2WNB6QD7BJTFOD5TVB1E0QWCV.pcm
 
-SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CoreMedia-BXUWOCSRYKASLE5LHIXWUEXI8.pcm
+SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CoreImage-9RX7BEOI2JFW6O3NL2QZEYIWK.pcm
 
-SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/ARKit-D5WMG6PQDPIMG0CZRAE8XY0CD.pcm
+SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CoreMedia-BXUWOCSRYKASLE5LHIXWUEXI8.pcm
 
 SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/QuartzCore-52WC3B4J1INQZ1GH1NQQ4833E.pcm
 
-SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CoreImage-9RX7BEOI2JFW6O3NL2QZEYIWK.pcm
+SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/ARKit-D5WMG6PQDPIMG0CZRAE8XY0CD.pcm
 
 SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/SwiftUICore-9G5LI68IC61QPOSO0234XO4CW.pcm
 
-SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/UIKit-8O5LASIOD90VCR8IZWEUVWMI6.pcm
+SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/MediaToolbox-AVRJ5JPELN2ET6PSNZTYHYA6J.pcm
 
 SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/AVFAudio-8DWL1P6AJ3E3PK2VXEMQ4QBTR.pcm
 
-SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/MediaToolbox-AVRJ5JPELN2ET6PSNZTYHYA6J.pcm
+SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/UIKit-8O5LASIOD90VCR8IZWEUVWMI6.pcm
 
 SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/AVFoundation-1MQS1GK9Z4XXG365OB1J3B16L.pcm
 
-SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/MultipeerConnectivity-99ITNYP076TR3UXQJ2F4JCYRE.pcm
-
 SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/SwiftUI-70AQJ3RTIT7ZO6W78D1LVY6J2.pcm
+
+SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/MultipeerConnectivity-99ITNYP076TR3UXQJ2F4JCYRE.pcm
 
 SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/GameController-579DDS4CK70YWAS82KPMY6UG6.pcm
 
@@ -434,7 +588,7 @@ SwiftGeneratePch normal arm64 Compiling\ bridging\ header (in target 'AstroQuest
 
 SwiftDriverJobDiscovery normal arm64 Compiling bridging header (in target 'AstroQuest' from project 'AstroQuest')
 
-SwiftCompile normal arm64 Compiling\ AppModel.swift,\ AstroQuestApp.swift,\ AstroSettings.swift,\ GameRenderer.swift,\ HeadsetTracking.swift,\ JITGate.swift,\ LauncherView.swift,\ PlayStationController.swift /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/App/Core/AppModel.swift /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/App/AstroQuestApp.swift /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/App/Core/AstroSettings.swift /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/App/Render/GameRenderer.swift /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/App/Tracking/HeadsetTracking.swift /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/App/JIT/JITGate.swift /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/App/Views/LauncherView.swift /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/App/Controller/PlayStationController.swift /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/UniformTypeIdentifiers.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/CoreGraphics.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/CoreMedia.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/CoreMotion.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/DataDetection.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/AVFAudio.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/Metal.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/GameController.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/Network.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/LocalAuthentication.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/CoreData.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/Spatial.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/SwiftUICore.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/_StringProcessing.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/Distributed.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/_CompositorServices_SwiftUI.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/CryptoKit.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/GroupActivities.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/ObjectiveC.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/SwiftUI.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/Symbols.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/CompositorServices.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/ARKit.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/_Builtin_float.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/CoreFoundation.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/_DarwinFoundation3.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/AVFoundation.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/Darwin.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/XPC.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/DeveloperToolsSupport.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/_Concurrency.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/OSLog.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/CoreMIDI.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/CoreAudio.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/Dispatch.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/Synchronization.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/RealityKit.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/Observation.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/CoreVideo.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/simd.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/RealityFoundation.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/Accessibility.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/CoreTransferable.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/UIKit.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/Combine.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/QuartzCore.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/_DarwinFoundation1.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/System.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/AudioToolbox.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/FileProvider.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/CoreText.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/Foundation.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/os.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/CoreImage.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/Swift.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/CloudKit.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/_DarwinFoundation2.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/CoreLocation.swiftmodule/arm64e-apple-xros.swiftmodule /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/_Builtin_limits-AYMVUSO35N1XVOX76FAIRDBVQ.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/GameController-579DDS4CK70YWAS82KPMY6UG6.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/_DarwinFoundation3-12TADA1CD39AMLHLOEXRUBSNW.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/UIKit-8O5LASIOD90VCR8IZWEUVWMI6.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CoreAudio-9A8EY0TNLWP0ZE071S2PSN75N.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/_Builtin_intrinsics-9ZQ9QM3WTTEUA8DV82S7K7H7U.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/_Builtin_stddef-CYNA0Q5SUCIXF4VB590G9BWJK.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/GroupActivities-CPKSSDR0KT981KPXFQL8BVU1E.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/simd-1SKTXLHI6P11B1020TG22OG4W.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/Dispatch-DMFQ16BRBZIS3MVVAZGPHOLGQ.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/MachO-9G034EDKJAKP1SXTPJB91INQD.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/ptrauth-3C2LN9VXP9HCACC1VKX76YXHN.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/Spatial-3P62KVB0E4ZK4AVSHGE24SKHL.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/Metal-DSH41D8QR1RQYDTMSN40TDDPV.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/XPC-BY43L6MIP08UCLG8LJ2PIEV1.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/_Builtin_stdint-2BWPKMDQZUND6I55I725I37K8.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/_Builtin_stdarg-93KS5QM4F9XG8CA1G1Z7GSXJO.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CoreMIDI-3HIQL6RZD5FXUZYVB18KTS7X6.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/SwiftUI-70AQJ3RTIT7ZO6W78D1LVY6J2.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CoreData-AUNYXUNA4XYHVDYVJU48NO7QY.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/Symbols-D5QPBIFH41FTU4HBB3LDNMJMQ.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/UniformTypeIdentifiers-8YLN5W7G84XE9WGZ2T09OFZV2.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/Security-24RT8MACEN4VFVC5WKY6H3U8K.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/QuartzCore-52WC3B4J1INQZ1GH1NQQ4833E.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/Darwin-5XCGM6IZ30298ZBNZMUH55Z4G.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CompositorServices-5WN8AI2T71UBN7QG2JJXCCBWZ.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/Foundation-E7Z53TOE86M09HKBHVAAYLG63.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/_LocationEssentials-E7JZ1FLJGW4L1P9KPTG420UVF.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/ptrcheck-66EKZGHEVZJBLCQ795TR21FB3.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/_Builtin_inttypes-7FTHBFPXRUTCRDAQ5WXO0ILHK.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CFNetwork-2B848046ARX376BVN7RLSBN41.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/os_object-CZ8128HSJ6OA0XZDY37RLU2M1.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/_Builtin_float-DEOAQGCR9M9YI8TU5RAZE3WWG.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/OpenGLES-A9IJ5B6X0JEUKS1433AEHWSB2.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/ObjectiveC-AKPE0DOMWOA0QCV27BQ9J28B8.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/sys_types-AQG89X3JWNOIBRB590RMMQV92.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/LocalAuthentication-1YV4ERKHVDQDDWL95U48R6ROZ.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/dnssd-1URU1LPQQP7LFVA40UMDIBDA2.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/os_workgroup-1X870YNILHOGOQAVHTEXMA77T.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/Accessibility-Z4OW4BQ6A2UD9L9QHDZR20H.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/notify-55S7PZEOB41T7SGYZC6LAWCYK.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/IOSurface-DN830F9I8A15ZPAWLXY2SSOIV.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/_AvailabilityInternal-7FWHYC2WE3X8UXYAHU4O8MIJ0.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CoreGraphics-5PNS35A5JLC5D0JP2A8QRXVQT.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CoreAudioTypes-E12K4G58SFT3UI763RCDOF6FA.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/_SwiftConcurrencyShims-227F39MQWGFJXUET3SJ6UF9LI.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/SwiftShims-8QLMP9IZTUP50TGT9KCVGKM3W.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/AVRouting-3ADK288VOB1IYSFOBI9XAQXVY.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/UserNotifications-DSR19L7U3IURMK4NZY2OAW92A.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CoreVideo-2WNB6QD7BJTFOD5TVB1E0QWCV.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/_Builtin_tgmath-A8CRBCSX2QDXNUIUF1DQR9WRD.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/_Builtin_stdbool-992WM3S4ONCBZG2ASV29HFX8S.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/OSLog-3HRIOGQEBYPEI9V34K9FEWX2I.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CoreFoundation-501OZT2QIZ99K19CU258XMAG.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/ARKit-D5WMG6PQDPIMG0CZRAE8XY0CD.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/DataDetection-2C2EV0M2IN9GKKA1M5WCIEX3F.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/os-CIHKKEOLFLKAINKYYXMUNTT01.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/_Builtin_stdatomic-DTGP8EOJKR8XOKUSUP8ZWE6EG.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/AVFoundation-1MQS1GK9Z4XXG365OB1J3B16L.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CoreMedia-BXUWOCSRYKASLE5LHIXWUEXI8.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/AudioToolbox-DBPS00DKBSMGLWZD9ZDQQ106H.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CoreMotion-3EHZVQAGAYV09GVQSN2GJT8KQ.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CoreServices-1S34MO11RI2Z6WN0310TZ02WS.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/Network-DIGP7UKQ52JB5GBR2GM8W6CII.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CoreTransferable-9VX8KM4ZV1XIROUVE3CME6RSX.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CoreHaptics-5BITLAIGM8QZNWUIXMPNVYQUN.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/_DarwinFoundation2-3S6OMPOY464U8PFIUOBZ7FFTM.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/SwiftUICore-9G5LI68IC61QPOSO0234XO4CW.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/MediaToolbox-AVRJ5JPELN2ET6PSNZTYHYA6J.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CoreLocation-F33HX2BY6PWGU8455IHH4WO7E.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/MultipeerConnectivity-99ITNYP076TR3UXQJ2F4JCYRE.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/UIUtilities-BLV3XQOGLHGX228MOR26XP3MM.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/FileProvider-4X824MKF1A0G6M29O4MNAMVOV.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/DeveloperToolsSupport-48E98J5W503JVYDBM28HHTP4K.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/ImageIO-8YDUC5C5WZYQMZAZAC2ULR82Q.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CoreText-572UTW3CX6N9GOBLG4267MP71.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/_DarwinFoundation1-6ZZ20X9MAS3L4F28WO15CFIW7.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/AVFAudio-8DWL1P6AJ3E3PK2VXEMQ4QBTR.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CoreImage-9RX7BEOI2JFW6O3NL2QZEYIWK.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CloudKit-E1U5X1P21VB74RDK9RCYZOGEU.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/Objects-normal/arm64/AstroQuest-dependencies-1.json /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/Objects-normal/arm64/AstroQuest-primary-Bridging-header.pch (in target 'AstroQuest' from project 'AstroQuest')
+SwiftCompile normal arm64 Compiling\ AppModel.swift,\ AstroQuestApp.swift,\ AstroSettings.swift,\ GameRenderer.swift,\ HeadsetTracking.swift,\ JITGate.swift,\ LauncherView.swift,\ PlayStationController.swift /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/App/Core/AppModel.swift /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/App/AstroQuestApp.swift /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/App/Core/AstroSettings.swift /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/App/Render/GameRenderer.swift /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/App/Tracking/HeadsetTracking.swift /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/App/JIT/JITGate.swift /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/App/Views/LauncherView.swift /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/App/Controller/PlayStationController.swift /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/DataDetection.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/SwiftUICore.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/CoreData.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/System.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/CoreGraphics.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/_Concurrency.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/Foundation.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/SwiftUI.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/Spatial.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/CoreMedia.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/RealityKit.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/Observation.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/OSLog.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/UIKit.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/ARKit.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/QuartzCore.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/CoreAudio.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/CoreText.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/_StringProcessing.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/DeveloperToolsSupport.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/Accessibility.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/_Builtin_float.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/Distributed.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/Metal.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/Combine.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/RealityFoundation.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/CoreFoundation.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/Synchronization.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/Swift.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/CompositorServices.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/_DarwinFoundation2.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/CoreTransferable.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/LocalAuthentication.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/Darwin.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/CoreMIDI.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/Dispatch.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/AudioToolbox.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/CoreImage.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/CoreLocation.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/GroupActivities.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/os.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/ObjectiveC.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/CoreMotion.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/Network.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/CryptoKit.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/_DarwinFoundation3.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/_DarwinFoundation1.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/CloudKit.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/_CompositorServices_SwiftUI.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/GameController.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/XPC.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/UniformTypeIdentifiers.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/FileProvider.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/CoreVideo.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/Symbols.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/AVFoundation.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/AVFAudio.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/simd.swiftmodule/arm64e-apple-xros.swiftmodule /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/UIUtilities-BLV3XQOGLHGX228MOR26XP3MM.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CoreMIDI-3HIQL6RZD5FXUZYVB18KTS7X6.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/_Builtin_limits-AYMVUSO35N1XVOX76FAIRDBVQ.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/Network-DIGP7UKQ52JB5GBR2GM8W6CII.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/_Builtin_intrinsics-9ZQ9QM3WTTEUA8DV82S7K7H7U.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CoreLocation-F33HX2BY6PWGU8455IHH4WO7E.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/LocalAuthentication-1YV4ERKHVDQDDWL95U48R6ROZ.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CoreImage-9RX7BEOI2JFW6O3NL2QZEYIWK.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/GameController-579DDS4CK70YWAS82KPMY6UG6.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/DataDetection-2C2EV0M2IN9GKKA1M5WCIEX3F.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/XPC-BY43L6MIP08UCLG8LJ2PIEV1.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/Security-24RT8MACEN4VFVC5WKY6H3U8K.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/SwiftUI-70AQJ3RTIT7ZO6W78D1LVY6J2.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/ptrauth-3C2LN9VXP9HCACC1VKX76YXHN.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/OSLog-3HRIOGQEBYPEI9V34K9FEWX2I.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/_Builtin_inttypes-7FTHBFPXRUTCRDAQ5WXO0ILHK.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/AVFoundation-1MQS1GK9Z4XXG365OB1J3B16L.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CoreTransferable-9VX8KM4ZV1XIROUVE3CME6RSX.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/_DarwinFoundation2-3S6OMPOY464U8PFIUOBZ7FFTM.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CoreData-AUNYXUNA4XYHVDYVJU48NO7QY.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/_Builtin_tgmath-A8CRBCSX2QDXNUIUF1DQR9WRD.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/_Builtin_stdatomic-DTGP8EOJKR8XOKUSUP8ZWE6EG.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/GroupActivities-CPKSSDR0KT981KPXFQL8BVU1E.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CoreHaptics-5BITLAIGM8QZNWUIXMPNVYQUN.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/ObjectiveC-AKPE0DOMWOA0QCV27BQ9J28B8.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/Dispatch-DMFQ16BRBZIS3MVVAZGPHOLGQ.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CoreVideo-2WNB6QD7BJTFOD5TVB1E0QWCV.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/_LocationEssentials-E7JZ1FLJGW4L1P9KPTG420UVF.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/Darwin-5XCGM6IZ30298ZBNZMUH55Z4G.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CompositorServices-5WN8AI2T71UBN7QG2JJXCCBWZ.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/Metal-DSH41D8QR1RQYDTMSN40TDDPV.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/DeveloperToolsSupport-48E98J5W503JVYDBM28HHTP4K.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CoreAudio-9A8EY0TNLWP0ZE071S2PSN75N.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/_Builtin_float-DEOAQGCR9M9YI8TU5RAZE3WWG.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/_Builtin_stdbool-992WM3S4ONCBZG2ASV29HFX8S.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CloudKit-E1U5X1P21VB74RDK9RCYZOGEU.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CoreMedia-BXUWOCSRYKASLE5LHIXWUEXI8.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/QuartzCore-52WC3B4J1INQZ1GH1NQQ4833E.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/_Builtin_stdarg-93KS5QM4F9XG8CA1G1Z7GSXJO.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CoreGraphics-5PNS35A5JLC5D0JP2A8QRXVQT.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/AVFAudio-8DWL1P6AJ3E3PK2VXEMQ4QBTR.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CoreAudioTypes-E12K4G58SFT3UI763RCDOF6FA.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/os_workgroup-1X870YNILHOGOQAVHTEXMA77T.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/MediaToolbox-AVRJ5JPELN2ET6PSNZTYHYA6J.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/ARKit-D5WMG6PQDPIMG0CZRAE8XY0CD.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/simd-1SKTXLHI6P11B1020TG22OG4W.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/Accessibility-Z4OW4BQ6A2UD9L9QHDZR20H.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/AVRouting-3ADK288VOB1IYSFOBI9XAQXVY.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CoreServices-1S34MO11RI2Z6WN0310TZ02WS.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/dnssd-1URU1LPQQP7LFVA40UMDIBDA2.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CoreMotion-3EHZVQAGAYV09GVQSN2GJT8KQ.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/sys_types-AQG89X3JWNOIBRB590RMMQV92.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/_Builtin_stddef-CYNA0Q5SUCIXF4VB590G9BWJK.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/notify-55S7PZEOB41T7SGYZC6LAWCYK.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/_DarwinFoundation1-6ZZ20X9MAS3L4F28WO15CFIW7.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/OpenGLES-A9IJ5B6X0JEUKS1433AEHWSB2.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/UIKit-8O5LASIOD90VCR8IZWEUVWMI6.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/ptrcheck-66EKZGHEVZJBLCQ795TR21FB3.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/os-CIHKKEOLFLKAINKYYXMUNTT01.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/MachO-9G034EDKJAKP1SXTPJB91INQD.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/FileProvider-4X824MKF1A0G6M29O4MNAMVOV.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/IOSurface-DN830F9I8A15ZPAWLXY2SSOIV.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/Foundation-E7Z53TOE86M09HKBHVAAYLG63.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/_DarwinFoundation3-12TADA1CD39AMLHLOEXRUBSNW.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/SwiftUICore-9G5LI68IC61QPOSO0234XO4CW.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/ImageIO-8YDUC5C5WZYQMZAZAC2ULR82Q.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/Spatial-3P62KVB0E4ZK4AVSHGE24SKHL.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/UniformTypeIdentifiers-8YLN5W7G84XE9WGZ2T09OFZV2.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/_SwiftConcurrencyShims-227F39MQWGFJXUET3SJ6UF9LI.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/AudioToolbox-DBPS00DKBSMGLWZD9ZDQQ106H.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CoreText-572UTW3CX6N9GOBLG4267MP71.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/MultipeerConnectivity-99ITNYP076TR3UXQJ2F4JCYRE.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/_AvailabilityInternal-7FWHYC2WE3X8UXYAHU4O8MIJ0.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CFNetwork-2B848046ARX376BVN7RLSBN41.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/UserNotifications-DSR19L7U3IURMK4NZY2OAW92A.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CoreFoundation-501OZT2QIZ99K19CU258XMAG.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/SwiftShims-8QLMP9IZTUP50TGT9KCVGKM3W.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/_Builtin_stdint-2BWPKMDQZUND6I55I725I37K8.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/os_object-CZ8128HSJ6OA0XZDY37RLU2M1.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/Symbols-D5QPBIFH41FTU4HBB3LDNMJMQ.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/Objects-normal/arm64/AstroQuest-dependencies-1.json /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/Objects-normal/arm64/AstroQuest-primary-Bridging-header.pch (in target 'AstroQuest' from project 'AstroQuest')
 
 CompileSwift normal arm64 (in target 'AstroQuest' from project 'AstroQuest')
     cd /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos
@@ -450,10 +604,6 @@ SwiftMergeGeneratedHeaders /Users/runner/work/AstroQuestVisionPro/AstroQuestVisi
     cd /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos
     builtin-swiftHeaderTool -arch arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/Objects-normal/arm64/AstroQuest-Swift.h -o /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/DerivedSources/AstroQuest-Swift.h
 
-Copy /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Products/Release-xros/AstroQuest.swiftmodule/arm64-apple-xros.swiftdoc /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/Objects-normal/arm64/AstroQuest.swiftdoc (in target 'AstroQuest' from project 'AstroQuest')
-    cd /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos
-    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -resolve-src-symlinks -rename /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/Objects-normal/arm64/AstroQuest.swiftdoc /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Products/Release-xros/AstroQuest.swiftmodule/arm64-apple-xros.swiftdoc
-
 Copy /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Products/Release-xros/AstroQuest.swiftmodule/arm64-apple-xros.swiftmodule /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/Objects-normal/arm64/AstroQuest.swiftmodule (in target 'AstroQuest' from project 'AstroQuest')
     cd /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos
     builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -resolve-src-symlinks -rename /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/Objects-normal/arm64/AstroQuest.swiftmodule /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Products/Release-xros/AstroQuest.swiftmodule/arm64-apple-xros.swiftmodule
@@ -462,6 +612,10 @@ Copy /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/d
     cd /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos
     builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -resolve-src-symlinks -rename /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/Objects-normal/arm64/AstroQuest.abi.json /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Products/Release-xros/AstroQuest.swiftmodule/arm64-apple-xros.abi.json
 
+Copy /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Products/Release-xros/AstroQuest.swiftmodule/arm64-apple-xros.swiftdoc /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/Objects-normal/arm64/AstroQuest.swiftdoc (in target 'AstroQuest' from project 'AstroQuest')
+    cd /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos
+    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -resolve-src-symlinks -rename /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/Objects-normal/arm64/AstroQuest.swiftdoc /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Products/Release-xros/AstroQuest.swiftmodule/arm64-apple-xros.swiftdoc
+
 Copy /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Products/Release-xros/AstroQuest.swiftmodule/Project/arm64-apple-xros.swiftsourceinfo /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/Objects-normal/arm64/AstroQuest.swiftsourceinfo (in target 'AstroQuest' from project 'AstroQuest')
     cd /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos
     builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -resolve-src-symlinks -rename /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/Objects-normal/arm64/AstroQuest.swiftsourceinfo /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Products/Release-xros/AstroQuest.swiftmodule/Project/arm64-apple-xros.swiftsourceinfo
@@ -469,7 +623,20 @@ Copy /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/d
 Ld /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Products/Release-xros/AstroQuest.app/AstroQuest normal (in target 'AstroQuest' from project 'AstroQuest')
     cd /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos
     /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -Xlinker -reproducible -target arm64-apple-xros26.0 -isysroot /Applications/Xcode_26.6.app/Contents/Developer/Platforms/XROS.platform/Developer/SDKs/XROS26.5.sdk -Os -L/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Intermediates.noindex/EagerLinkingTBDs/Release-xros -L/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Products/Release-xros -L/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/core -F/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Intermediates.noindex/EagerLinkingTBDs/Release-xros -F/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Products/Release-xros -filelist /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/Objects-normal/arm64/AstroQuest.LinkFileList -Xlinker -rpath -Xlinker @executable_path/Frameworks -Xlinker -dead_strip -Xlinker -object_path_lto -Xlinker /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/Objects-normal/arm64/AstroQuest_lto.o -Xlinker -dependency_info -Xlinker /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/Objects-normal/arm64/AstroQuest_dependency_info.dat -fobjc-link-runtime -L/Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros -L/usr/lib/swift -Xlinker -add_ast_path -Xlinker /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/Objects-normal/arm64/AstroQuest.swiftmodule @/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/Objects-normal/arm64/AstroQuest-linker-args.resp -lastroquest_core -lMoltenVK -lc++ -framework Metal -framework IOSurface -framework QuartzCore -framework CoreFoundation -framework Foundation -framework UIKit -framework AVFoundation -framework AudioToolbox -framework CoreAudio -framework CoreHaptics -framework CoreMotion -framework GameController -framework CoreVideo -framework VideoToolbox -framework Security -framework CoreBluetooth -framework CoreGraphics -framework Metal -liconv -o /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Products/Release-xros/AstroQuest.app/AstroQuest
-ld: building for 'visionOS', but linking in object file (/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/core/libastroquest_core.a[557](aacdec.o)) built for 'macOS'
+/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/AstroQuest.xcodeproj: AstroQuest: ld: warning: object file (/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/core/libMoltenVK.a[2](libMoltenVK.a-arm64-prelink.o)) was built for newer 'visionOS' version (26.5) than being linked (26.0)
+/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/AstroQuest.xcodeproj: AstroQuest: ld: warning: Could not find or use auto-linked framework 'CoreAudioTypes': framework 'CoreAudioTypes' not found
+/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/AstroQuest.xcodeproj: AstroQuest: ld: warning: Could not find or use auto-linked framework 'UIUtilities': framework 'UIUtilities' not found
+/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/AstroQuest.xcodeproj: AstroQuest: ld: warning: Could not parse or use implicit file '/Applications/Xcode_26.6.app/Contents/Developer/Platforms/XROS.platform/Developer/SDKs/XROS.sdk/System/Library/Frameworks/SwiftUICore.framework/SwiftUICore.tbd': cannot link directly with 'SwiftUICore' because product being built is not an allowed client of it
+Undefined symbols for architecture arm64:
+  "_usbi_get_monotonic_time", referenced from:
+      _usbi_log in libastroquest_core.a[1166](core.c.o)
+      _libusb_init_context in libastroquest_core.a[1166](core.c.o)
+      _libusb_submit_transfer in libastroquest_core.a[1169](io.c.o)
+      _handle_timeouts in libastroquest_core.a[1169](io.c.o)
+      _libusb_get_next_timeout in libastroquest_core.a[1169](io.c.o)
+  "_usbi_get_real_time", referenced from:
+      _usbi_cond_timedwait in libastroquest_core.a[1173](threads_posix.c.o)
+ld: symbol(s) not found for architecture arm64
 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/AstroQuest.xcodeproj: AstroQuest: clang: error: linker command failed with exit code 1 (use -v to see invocation)
 
 ** BUILD FAILED **
