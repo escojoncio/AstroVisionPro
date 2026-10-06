@@ -26,9 +26,19 @@ The unsigned app is in the [`visionos-latest` release](../../releases/tag/vision
 > [iLoader-VisionPro](../../../iLoader-VisionPro/tree/visionos-windows) (`visionos-windows` branch) - and keep
 > `get-task-allow` (for StikDebug). The app's *Check* tab shows whether it got it.
 
+> [!IMPORTANT]
+> **StikDebug for visionOS needs the visionOS Developer Disk Image (DDI), which you have to get
+> yourself.** It is the `DDI` folder with `Image.dmg`, `Image.dmg.trustcache` and
+> `BuildManifest.plist`, copied into StikDebug's folder (Files app: *On My Apple Vision Pro ›
+> StikDebug › DDI*); without it StikDebug cannot enable JIT. These are Apple's files, so they
+> cannot be published here. They come with Xcode on a Mac (an Xcode that supports your visionOS
+> version): the xrOS DDI in `Xcode.app/Contents/Resources/CoreDeviceDDIs/xrOS_DDI.dmg` or
+> `/Library/Developer/DeveloperDiskImages/xrOS_DDI` - in its `Restore` folder, the personalized
+> image and its trust cache named in `BuildManifest.plist`.
+
 **The Apple Vision Pro app and every change made for it were written entirely by Claude
 (Anthropic's AI), following all the instructions and ideas of
-the repository owner.**
+the repository owner.** **The owner of this repository guided all of this work: every idea, and every instruction about what Claude had to do, came from them.**
 
 ### Thanks
 
