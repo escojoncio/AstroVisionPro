@@ -45,6 +45,15 @@ bool astro_jit_get_arena(AstroJitArena* arena);
 /// killed by the system here, so the app notes that it is about to try first.)
 int astro_jit_self_test(void);
 
+// --- logs ------------------------------------------------------------------------------------
+
+/// Sends standard output and error (the app's messages, FEX's, the crash reporter's) to a new
+/// file in `directory`. Returns its path, or NULL.
+const char* astro_log_begin(const char* directory);
+
+/// A line of the app's own in that file, with the time.
+void astro_log(const char* message);
+
 // --- the launcher's check --------------------------------------------------------------------
 
 /// The entitlements this copy of the app is signed with (an XML property list) into `buffer`.
