@@ -69,6 +69,13 @@ int astro_core_start(const char* game_path, const char* const* environment, int 
     // No window and no display of its own: SDL is there for events and sound only, and the
     // frames go to the app (core/vr/openxr_host_visionos.mm).
     setenv("SHADPS4_HEADLESS", "1", 1);
+    // SDL must not reach for what the app already does or a visionOS app may not use: the
+    // controller is read by the app (GameController) and handed over, so SDL leaves controllers
+    // alone (its HIDAPI driver would also reach for Bluetooth); the PlayStation Camera is the
+    // emulator's virtual one, so SDL opens no camera.
+    setenv("SDL_JOYSTICK_MFI", "0", 1);
+    setenv("SDL_JOYSTICK_HIDAPI", "0", 1);
+    setenv("SDL_CAMERA_DRIVER", "dummy", 1);
     // (The app is SwiftUI's; SDL's own main is not used. This is the main thread.)
     SDL_SetMainReady();
 
