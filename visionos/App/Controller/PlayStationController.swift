@@ -390,14 +390,14 @@ final class PlayStationController: @unchecked Sendable {
         // Right: ✕ (lower) and ○ (upper).
         set(AstroPadCross.rawValue, pressed(right, [a, x]))
         set(AstroPadCircle.rawValue, pressed(right, [b, y]))
-        set(AstroPadL1.rawValue, pressed(left, [GCInputGripButton.rawValue, GCInputLeftShoulder]))
-        set(AstroPadR1.rawValue, pressed(right, [GCInputGripButton.rawValue, GCInputRightShoulder]))
-        let l2 = value(left, [GCInputTrigger.rawValue, GCInputLeftTrigger])
-        let r2 = value(right, [GCInputTrigger.rawValue, GCInputRightTrigger])
+        set(AstroPadL1.rawValue, pressed(left, [__GCInputButtonName.gripButton.rawValue, GCInputLeftShoulder]))
+        set(AstroPadR1.rawValue, pressed(right, [__GCInputButtonName.gripButton.rawValue, GCInputRightShoulder]))
+        let l2 = value(left, [__GCInputButtonName.trigger.rawValue, GCInputLeftTrigger])
+        let r2 = value(right, [__GCInputButtonName.trigger.rawValue, GCInputRightTrigger])
         set(AstroPadL2.rawValue, l2 > 0.5)
         set(AstroPadR2.rawValue, r2 > 0.5)
-        set(AstroPadL3.rawValue, pressed(left, [GCInputThumbstickButton.rawValue, GCInputLeftThumbstickButton]))
-        set(AstroPadR3.rawValue, pressed(right, [GCInputThumbstickButton.rawValue, GCInputRightThumbstickButton]))
+        set(AstroPadL3.rawValue, pressed(left, [__GCInputButtonName.thumbstickButton.rawValue, GCInputLeftThumbstickButton]))
+        set(AstroPadR3.rawValue, pressed(right, [__GCInputButtonName.thumbstickButton.rawValue, GCInputRightThumbstickButton]))
         set(AstroPadOptions.rawValue, pressed(right, [GCInputButtonOptions, GCInputButtonMenu]))
         set(AstroPadTouchPad.rawValue, pressed(left, [GCInputButtonShare, GCInputButtonMenu, GCInputButtonOptions]))
         state.buttons = buttons
@@ -406,8 +406,8 @@ final class PlayStationController: @unchecked Sendable {
             let v = flipped ? -value : value
             return UInt8(clamping: Int(((v + 1.0) * 127.5).rounded()))
         }
-        let (lx, ly) = stick(left, [GCInputThumbstick.rawValue, GCInputLeftThumbstick])
-        let (rx, ry) = stick(right, [GCInputThumbstick.rawValue, GCInputRightThumbstick])
+        let (lx, ly) = stick(left, [__GCInputDirectionPadName.thumbstick.rawValue, GCInputLeftThumbstick])
+        let (rx, ry) = stick(right, [__GCInputDirectionPadName.thumbstick.rawValue, GCInputRightThumbstick])
         state.left_x = axis(lx)
         state.left_y = axis(ly, flipped: true)
         state.right_x = axis(rx)
