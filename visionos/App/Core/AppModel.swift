@@ -18,6 +18,8 @@ final class AppModel {
     var coreState: AstroCoreState = AstroCoreStateIdle
     var message: String?
     var immersiveOpen = false
+    /// The launcher's check (Diagnostics.swift), redone when the app comes back to the front.
+    var diagnostics = Diagnostics.run()
 
     init() {
         findGame()
@@ -33,6 +35,10 @@ final class AppModel {
 
     /// Where the game is: the `game=` setting, else a folder with eboot.bin in the app's
     /// Documents (put there with the Files app), its "games" folder, or one level below either.
+    func refreshDiagnostics() {
+        diagnostics = Diagnostics.run()
+    }
+
     func findGame() {
         settings = AstroSettings.load()
         let manager = FileManager.default

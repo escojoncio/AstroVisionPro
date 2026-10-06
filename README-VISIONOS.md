@@ -36,6 +36,19 @@ En Xcode elige tu equipo de desarrollo en *Signing & Capabilities* y ejecuta en 
 
 Con el `.ipa` sin firmar, fírmalo e instálalo con tu cuenta de desarrollador (Xcode, o una herramienta de sideload que use tu cuenta de pago y conserve los entitlements del `.ipa`). Comprueba que la firma conserve `get-task-allow` (sin él StikDebug no puede conectarse).
 
+## Comprobación al abrir la app
+
+Al abrir AstroQuest, el apartado **Comprobación** dice por separado qué tiene esta copia de la app y qué le falta, antes de intentar jugar:
+
+- **Memoria extra** (`increased-memory-limit`): si la firma incluye el permiso y cuánta memoria deja usar el sistema de verdad (hacen falta unos 6 GB).
+- **Espacio de direcciones** (`extended-virtual-addressing`): si la firma incluye el permiso y cuántos GB seguidos se pueden reservar (el emulador necesita 24).
+- **Se puede depurar** (`get-task-allow`): sin esto StikDebug no puede conectarse.
+- **JIT**: el resultado de activar el JIT con StikDebug, incluida la prueba de ejecutar código.
+
+También muestra el *Bundle ID* con el que quedó instalada, y **Copiar informe** copia todo el resultado como texto.
+
+Los dos permisos de memoria dependen de las *capabilities* del App ID en tu cuenta de Apple: la herramienta con la que firmas la app tiene que activarlas en ese App ID.
+
 ## 3. JIT con StikDebug para visionOS
 
 visionOS solo permite memoria ejecutable nueva a una app con un depurador conectado. AstroQuest lo resuelve con StikDebug para visionOS, que se conecta a la app y ejecuta el script `universal.js`:
