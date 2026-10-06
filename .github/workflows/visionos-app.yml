@@ -35,11 +35,11 @@ jobs:
             PATHS+=("$P")
           done < <(git config -f .gitmodules --get-regexp '\.path$' | awk '{print $2}')
           for ATTEMPT in 1 2 3; do
-            git submodule update --init --depth 1 --jobs 8 -- "${PATHS[@]}" && break
+            git submodule update --init --recursive --depth 1 --jobs 8 -- "${PATHS[@]}" && break
             sleep 10
           done
           # A pinned commit that is not a branch tip cannot always be fetched shallowly.
-          git submodule update --init --jobs 8 -- "${PATHS[@]}"
+          git submodule update --init --recursive --jobs 8 -- "${PATHS[@]}"
 
       - name: Tools
         run: |
