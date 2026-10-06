@@ -1,155 +1,142 @@
-# visionos-swift - 8d9021a627ae6529a06c6005f989991fdac8f40f - 2026-10-06T15:00:57Z
+# visionos-swift - 509bee24f4057c9eb74225e50ab7ae354b7dc18c - 2026-10-06T15:09:55Z
 
-## swift.log:      285 lines
+## swift.log:      137 lines
 ### errors
 ### end
-@end
-API_AVAILABLE(macos(11.0), ios(14.0), tvos(14.0))
-__attribute__((objc_non_runtime_protocol)) NS_REFINED_FOR_SWIFT
-@protocol GCDirectionPadElementName <GCPhysicalInputElementName>
-@end
-typedef NSString<GCPhysicalInputElementName> *const GCInputElementName NS_REFINED_FOR_SWIFT NS_TYPED_EXTENSIBLE_ENUM;
-typedef NSString<GCButtonElementName> *const GCInputButtonName NS_REFINED_FOR_SWIFT NS_TYPED_EXTENSIBLE_ENUM;
-typedef NSString<GCAxisElementName> *const GCInputAxisName NS_REFINED_FOR_SWIFT NS_TYPED_EXTENSIBLE_ENUM;
-typedef NSString<GCSwitchElementName> *const GCInputSwitchName NS_REFINED_FOR_SWIFT NS_TYPED_EXTENSIBLE_ENUM;
-typedef NSString<GCDirectionPadElementName> *const GCInputDirectionPadName NS_REFINED_FOR_SWIFT NS_TYPED_EXTENSIBLE_ENUM;
-A set of commonly used strings that can be used to access controller buttons
- 
-@example controller.physicalInputProfile.buttons[GCInputButtonA]
- 
-@see GCController.h
-@see GCPhysicalInputProfile.h
-*/
-GAMECONTROLLER_EXPORT GCInputButtonName GCInputButtonA API_AVAILABLE(macos(11.0), ios(14.0), tvos(14.0)) NS_SWIFT_NAME(a);
-GAMECONTROLLER_EXPORT GCInputButtonName GCInputButtonB API_AVAILABLE(macos(11.0), ios(14.0), tvos(14.0)) NS_SWIFT_NAME(b);
-GAMECONTROLLER_EXPORT GCInputButtonName GCInputButtonX API_AVAILABLE(macos(11.0), ios(14.0), tvos(14.0)) NS_SWIFT_NAME(x);
-GAMECONTROLLER_EXPORT GCInputButtonName GCInputButtonY API_AVAILABLE(macos(11.0), ios(14.0), tvos(14.0)) NS_SWIFT_NAME(y);
-GAMECONTROLLER_EXPORT GCInputDirectionPadName GCInputDirectionPad API_AVAILABLE(macos(11.0), ios(14.0), tvos(14.0)) NS_SWIFT_NAME(directionPad);
-GAMECONTROLLER_EXPORT GCInputDirectionPadName GCInputThumbstick API_AVAILABLE(macos(26.0), ios(26.0), tvos(26.0), visionos(26.0));
-GAMECONTROLLER_EXPORT GCInputDirectionPadName GCInputLeftThumbstick API_AVAILABLE(macos(11.0), ios(14.0), tvos(14.0));
-GAMECONTROLLER_EXPORT GCInputDirectionPadName GCInputRightThumbstick API_AVAILABLE(macos(11.0), ios(14.0), tvos(14.0));
-GAMECONTROLLER_EXPORT GCInputButtonName GCInputThumbstickButton API_AVAILABLE(macos(26.0), ios(26.0), tvos(26.0), visionos(26.0));
-GAMECONTROLLER_EXPORT GCInputButtonName GCInputLeftThumbstickButton API_AVAILABLE(macos(11.0), ios(14.0), tvos(14.0));
-GAMECONTROLLER_EXPORT GCInputButtonName GCInputRightThumbstickButton API_AVAILABLE(macos(11.0), ios(14.0), tvos(14.0));
-/*
-GAMECONTROLLER_EXTERN GCInputButtonName GCInputGripButton API_AVAILABLE(macos(26.0), ios(26.0), tvos(26.0), visionos(26.0));
-/*
-GAMECONTROLLER_EXPORT GCInputButtonName GCInputLeftShoulder API_AVAILABLE(macos(11.0), ios(14.0), tvos(14.0));
-GAMECONTROLLER_EXPORT GCInputButtonName GCInputRightShoulder API_AVAILABLE(macos(11.0), ios(14.0), tvos(14.0));
-GAMECONTROLLER_EXPORT GCInputButtonName GCInputLeftBumper API_AVAILABLE(macos(14.4), ios(17.4), tvos(17.4), visionos(1.1));
-GAMECONTROLLER_EXPORT GCInputButtonName GCInputRightBumper API_AVAILABLE(macos(14.4), ios(17.4), tvos(17.4), visionos(1.1));
-GAMECONTROLLER_EXPORT GCInputButtonName GCInputTrigger API_AVAILABLE(macos(26.0), ios(26.0), tvos(26.0), visionos(26.0));
-GAMECONTROLLER_EXPORT GCInputButtonName GCInputLeftTrigger API_AVAILABLE(macos(11.0), ios(14.0), tvos(14.0));
-GAMECONTROLLER_EXPORT GCInputButtonName GCInputRightTrigger API_AVAILABLE(macos(11.0), ios(14.0), tvos(14.0));
-GAMECONTROLLER_EXPORT GCInputButtonName GCInputLeftSideButton API_AVAILABLE(macos(26.4), ios(26.4), tvos(26.4), visionos(26.4));
-GAMECONTROLLER_EXPORT GCInputButtonName GCInputRightSideButton API_AVAILABLE(macos(26.4), ios(26.4), tvos(26.4), visionos(26.4));
-/*
-/* Note: The `position` argument begins at index 0. */
-GAMECONTROLLER_EXPORT GCInputButtonName GCInputBackLeftButton(NSInteger position) NS_REFINED_FOR_SWIFT API_AVAILABLE(macos(14.4), ios(17.4), tvos(17.4), visionos(1.1));
-GAMECONTROLLER_EXPORT GCInputButtonName GCInputBackRightButton(NSInteger position) NS_REFINED_FOR_SWIFT API_AVAILABLE(macos(14.4), ios(17.4), tvos(17.4), visionos(1.1));
-GAMECONTROLLER_EXPORT GCInputButtonName GCInputButtonHome API_AVAILABLE(macos(11.0), ios(14.0), tvos(14.0));
-GAMECONTROLLER_EXPORT GCInputButtonName GCInputButtonMenu API_AVAILABLE(macos(11.0), ios(14.0), tvos(14.0));
-GAMECONTROLLER_EXPORT GCInputButtonName GCInputButtonOptions API_AVAILABLE(macos(11.0), ios(14.0), tvos(14.0));
-GAMECONTROLLER_EXPORT GCInputButtonName GCInputButtonShare API_AVAILABLE(macos(12.0), ios(15.0), tvos(15.0));
-A set of strings commonly used to access Xbox buttons
- 
-@example controller.physicalInputProfile.buttons[GCInputButtonPaddleOne]
- 
-@see GCController.h
-@see GCPhysicalInputProfile.h
-*/
-GAMECONTROLLER_EXPORT GCInputButtonName GCInputXboxPaddleOne API_AVAILABLE(macos(11.0), ios(14.0), tvos(14.0));
-GAMECONTROLLER_EXPORT GCInputButtonName GCInputXboxPaddleTwo API_AVAILABLE(macos(11.0), ios(14.0), tvos(14.0));
-GAMECONTROLLER_EXPORT GCInputButtonName GCInputXboxPaddleThree API_AVAILABLE(macos(11.0), ios(14.0), tvos(14.0));
-GAMECONTROLLER_EXPORT GCInputButtonName GCInputXboxPaddleFour API_AVAILABLE(macos(11.0), ios(14.0), tvos(14.0));
-A set of strings commonly used to access DualShock buttons
- 
-@example controller.physicalInputProfile.dpads[GCInputDualShockTouchpadOne]
- 
-@see GCController.h
-@see GCPhysicalInputProfile.h
-*/
-GAMECONTROLLER_EXPORT GCInputDirectionPadName GCInputDualShockTouchpadOne API_AVAILABLE(macos(11.0), ios(14.0), tvos(14.0));
-GAMECONTROLLER_EXPORT GCInputDirectionPadName GCInputDualShockTouchpadTwo API_AVAILABLE(macos(11.0), ios(14.0), tvos(14.0));
-GAMECONTROLLER_EXPORT GCInputButtonName GCInputDualShockTouchpadButton API_AVAILABLE(macos(11.0), ios(14.0), tvos(14.0));
-A set of strings commonly used by racing wheels.
-*/
-GAMECONTROLLER_EXPORT GCInputAxisName GCInputSteeringWheel API_AVAILABLE(macos(13.0), macCatalyst(16.0)) API_UNAVAILABLE(ios, tvos);
-GAMECONTROLLER_EXPORT GCInputElementName GCInputShifter API_AVAILABLE(macos(13.0), macCatalyst(16.0)) API_UNAVAILABLE(ios, tvos);
-GAMECONTROLLER_EXPORT GCInputButtonName GCInputPedalAccelerator API_AVAILABLE(macos(13.0), macCatalyst(16.0)) API_UNAVAILABLE(ios, tvos);
-GAMECONTROLLER_EXPORT GCInputButtonName GCInputPedalBrake API_AVAILABLE(macos(13.0), macCatalyst(16.0)) API_UNAVAILABLE(ios, tvos);
-GAMECONTROLLER_EXPORT GCInputButtonName GCInputPedalClutch API_AVAILABLE(macos(13.0), macCatalyst(16.0)) API_UNAVAILABLE(ios, tvos);
-GAMECONTROLLER_EXPORT GCInputButtonName GCInputLeftPaddle API_AVAILABLE(macos(13.0), macCatalyst(16.0)) API_UNAVAILABLE(ios, tvos);
-GAMECONTROLLER_EXPORT GCInputButtonName GCInputRightPaddle API_AVAILABLE(macos(13.0), macCatalyst(16.0)) API_UNAVAILABLE(ios, tvos);
-/// Gets the name of an arcade button at a certain position.
-GAMECONTROLLER_EXPORT GCInputButtonName GCInputArcadeButtonName(NSInteger row, NSInteger column) NS_REFINED_FOR_SWIFT API_AVAILABLE(macos(13.0), ios(16.0), tvos(16.0));
-#pragma mark - (Spatial) Stylus Buttons
-GAMECONTROLLER_EXPORT GCInputButtonName GCInputStylusTip API_AVAILABLE(visionos(26.0)) API_UNAVAILABLE(macos, ios, tvos);
-GAMECONTROLLER_EXPORT GCInputButtonName GCInputStylusPrimaryButton API_AVAILABLE(visionos(26.0)) API_UNAVAILABLE(macos, ios, tvos);
-GAMECONTROLLER_EXPORT GCInputButtonName GCInputStylusSecondaryButton API_AVAILABLE(visionos(26.0)) API_UNAVAILABLE(macos, ios, tvos);
-## Spatial headers
-GameController.h
-GCAxis2DInput.h
-GCAxisElement.h
-GCAxisInput.h
-GCButtonElement.h
-GCColor.h
-GCController.h
-GCControllerAxisInput.h
-GCControllerButtonInput.h
-GCControllerDirectionPad.h
-GCControllerElement.h
-GCControllerInput.h
-GCControllerTouchpad.h
-GCDevice.h
-GCDeviceBattery.h
-GCDeviceCursor.h
-GCDeviceHaptics.h
-GCDeviceLight.h
-GCDevicePhysicalInput.h
-GCDevicePhysicalInputState.h
-GCDevicePhysicalInputStateDiff.h
-GCDirectionalGamepad.h
-GCDirectionPadElement.h
-GCDualSenseAdaptiveTrigger.h
-GCDualSenseGamepad.h
-GCDualShockGamepad.h
-GCEventInteraction.h
-GCEventViewController.h
-GCExtendedGamepad.h
-GCExtendedGamepadSnapshot.h
-GCExtern.h
-GCGameControllerActivationContext.h
-GCGameControllerSceneDelegate.h
-GCGamepad.h
-GCGamepadSnapshot.h
-GCGearShifterElement.h
-GCInputNames.h
-GCKeyboard.h
-GCKeyboardInput.h
-GCKeyCodes.h
-GCKeyNames.h
-GCLinearInput.h
-GCMicroGamepad.h
-GCMicroGamepadSnapshot.h
-GCMotion.h
-GCMouse.h
-GCMouseInput.h
-GCPhysicalInputElement.h
-GCPhysicalInputExtents.h
-GCPhysicalInputProfile.h
-GCPhysicalInputSource.h
-GCPressedStateInput.h
-GCProductCategories.h
-GCRacingWheel.h
-GCRacingWheelInput.h
-GCRelativeInput.h
-GCSteeringWheelElement.h
-GCStylus.h
-GCSwitchElement.h
-GCSwitchPositionInput.h
-GCSyntheticDeviceKeys.h
-GCTouchedStateInput.h
-GCTypes.h
-GCVirtualController.h
-GCXboxGamepad.h
+App/Tracking/SenseTracking.swift:36:14: warning: instance method 'lock' is unavailable from asynchronous contexts; Use async-safe scoped locking instead; this is an error in the Swift 6 language mode
+ 34 |     func track(_ controllers: [GCController]) async {
+ 35 |         let wanted = Set(controllers.map(ObjectIdentifier.init))
+ 36 |         lock.lock()
+    |              `- warning: instance method 'lock' is unavailable from asynchronous contexts; Use async-safe scoped locking instead; this is an error in the Swift 6 language mode
+ 37 |         let current = Set(tracked.keys)
+ 38 |         if wanted == current || starting {
+
+Foundation.NSLock.lock:2:11: note: 'lock()' declared here
+1 | class NSLock {
+2 | open func lock()}
+  |           `- note: 'lock()' declared here
+3 | 
+
+App/Tracking/SenseTracking.swift:39:18: warning: instance method 'unlock' is unavailable from asynchronous contexts; Use async-safe scoped locking instead; this is an error in the Swift 6 language mode
+ 37 |         let current = Set(tracked.keys)
+ 38 |         if wanted == current || starting {
+ 39 |             lock.unlock()
+    |                  `- warning: instance method 'unlock' is unavailable from asynchronous contexts; Use async-safe scoped locking instead; this is an error in the Swift 6 language mode
+ 40 |             return
+ 41 |         }
+
+Foundation.NSLock.unlock:2:11: note: 'unlock()' declared here
+1 | class NSLock {
+2 | open func unlock()}
+  |           `- note: 'unlock()' declared here
+3 | 
+
+App/Tracking/SenseTracking.swift:43:14: warning: instance method 'unlock' is unavailable from asynchronous contexts; Use async-safe scoped locking instead; this is an error in the Swift 6 language mode
+ 41 |         }
+ 42 |         starting = true
+ 43 |         lock.unlock()
+    |              `- warning: instance method 'unlock' is unavailable from asynchronous contexts; Use async-safe scoped locking instead; this is an error in the Swift 6 language mode
+ 44 |         defer {
+ 45 |             lock.lock()
+
+Foundation.NSLock.unlock:2:11: note: 'unlock()' declared here
+1 | class NSLock {
+2 | open func unlock()}
+  |           `- note: 'unlock()' declared here
+3 | 
+
+App/Tracking/SenseTracking.swift:45:18: warning: instance method 'lock' is unavailable from asynchronous contexts; Use async-safe scoped locking instead; this is an error in the Swift 6 language mode
+ 43 |         lock.unlock()
+ 44 |         defer {
+ 45 |             lock.lock()
+    |                  `- warning: instance method 'lock' is unavailable from asynchronous contexts; Use async-safe scoped locking instead; this is an error in the Swift 6 language mode
+ 46 |             starting = false
+ 47 |             lock.unlock()
+
+Foundation.NSLock.lock:2:11: note: 'lock()' declared here
+1 | class NSLock {
+2 | open func lock()}
+  |           `- note: 'lock()' declared here
+3 | 
+
+App/Tracking/SenseTracking.swift:47:18: warning: instance method 'unlock' is unavailable from asynchronous contexts; Use async-safe scoped locking instead; this is an error in the Swift 6 language mode
+ 45 |             lock.lock()
+ 46 |             starting = false
+ 47 |             lock.unlock()
+    |                  `- warning: instance method 'unlock' is unavailable from asynchronous contexts; Use async-safe scoped locking instead; this is an error in the Swift 6 language mode
+ 48 |         }
+ 49 | 
+
+Foundation.NSLock.unlock:2:11: note: 'unlock()' declared here
+1 | class NSLock {
+2 | open func unlock()}
+  |           `- note: 'unlock()' declared here
+3 | 
+
+App/Tracking/SenseTracking.swift:74:14: warning: instance method 'lock' is unavailable from asynchronous contexts; Use async-safe scoped locking instead; this is an error in the Swift 6 language mode
+ 72 |             return
+ 73 |         }
+ 74 |         lock.lock()
+    |              `- warning: instance method 'lock' is unavailable from asynchronous contexts; Use async-safe scoped locking instead; this is an error in the Swift 6 language mode
+ 75 |         self.session = session
+ 76 |         self.provider = provider
+
+Foundation.NSLock.lock:2:11: note: 'lock()' declared here
+1 | class NSLock {
+2 | open func lock()}
+  |           `- note: 'lock()' declared here
+3 | 
+
+App/Tracking/SenseTracking.swift:78:14: warning: instance method 'unlock' is unavailable from asynchronous contexts; Use async-safe scoped locking instead; this is an error in the Swift 6 language mode
+ 76 |         self.provider = provider
+ 77 |         self.tracked = accessories
+ 78 |         lock.unlock()
+    |              `- warning: instance method 'unlock' is unavailable from asynchronous contexts; Use async-safe scoped locking instead; this is an error in the Swift 6 language mode
+ 79 |     }
+ 80 | 
+
+Foundation.NSLock.unlock:2:11: note: 'unlock()' declared here
+1 | class NSLock {
+2 | open func unlock()}
+  |           `- note: 'unlock()' declared here
+3 | 
+
+App/Tracking/SenseTracking.swift:112:27: warning: string interpolation produces a debug description for an optional value; did you mean to make this explicit?
+110 |         var bestIsRight = false
+111 |         for anchor in provider.latestAnchors where anchor.isTracked {
+112 |             let held = "\(anchor.heldChirality)".lowercased()
+    |                           |      |- note: use a default value parameter to avoid this warning
+    |                           |      |- note: provide a default value to avoid this warning
+    |                           |      `- note: use 'String(describing:)' to silence this warning
+    |                           `- warning: string interpolation produces a debug description for an optional value; did you mean to make this explicit?
+113 |             let inherent = "\(anchor.accessory.inherentChirality)".lowercased()
+114 |             let isRight = held.contains("right") || (!held.contains("left") && inherent.contains("right"))
+Swift and Metal: OK
+## ARKit authorization
+36:           ar_authorization_type_none = 0,
+41:           ar_authorization_type_hand_tracking = (1 << 0),
+50:           ar_authorization_type_world_sensing = (1 << 1),
+55:           ar_authorization_type_camera_access API_AVAILABLE(visionos(2.0)) = (1 << 3),
+58:                - Accessory tracking
+59:                    @see `ar_accessory_tracking_provider_t`
+61:           ar_authorization_type_accessory_tracking = (1 << 5),
+77:AR_EXTERN ar_authorization_type_t ar_authorization_result_get_authorization_type(ar_authorization_result_t authorization_result) AR_REFINED_FOR_SWIFT;
+718- @return Authorization type.
+719- */
+720-API_AVAILABLE(visionos(26.0))
+721:AR_EXTERN ar_authorization_type_t ar_accessory_tracking_provider_get_required_authorization_type(void) AR_REFINED_FOR_SWIFT;
+722-
+723-#pragma mark - Accessory Tracking Prediction
+724-
+725-/**
+726- Retrieves the latest anchors updated with the most recent inertial data.
+727-
+728- These anchors provide higher frequency, lower latency and slightly lower accuracy than the anchors from the update handler.
+729- Use them directly or in combination with `ar_accessory_tracking_provider_predict_anchor_at_timestamp`.
+730-
+731- @param[in] accessory_tracking_provider  An accessory tracking provider.
+732-
+733- @note This collection is managed by the provider and is not safe for the caller to release. It has the same lifetime as this
+## Info.plist keys mentioned in the SDK headers
+  71 ExtendedGamepad
+   3 GCSupportsMultipleMicroGamepads
