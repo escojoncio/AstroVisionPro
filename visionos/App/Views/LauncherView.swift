@@ -36,6 +36,10 @@ struct LauncherView: View {
                             model.refreshDiagnostics()
                         }
                         Spacer()
+                        Button("Probar reserva de 24 GB") {
+                            model.testReservation()
+                        }
+                        Spacer()
                         Button("Copiar informe") {
                             UIPasteboard.general.string = model.diagnostics.report(jit: model.jit.state)
                             model.message = "Informe copiado."
