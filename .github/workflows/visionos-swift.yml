@@ -37,6 +37,16 @@ jobs:
             xcrun --sdk xros metal -c App/Render/Shaders.metal -I App/Render -o /tmp/Shaders.air
             echo "Swift and Metal: OK"
           } 2>&1 | tee ../swift.log
+      - name: SDK declarations (for reference)
+        if: always()
+        run: |
+          SDK=$(xcrun --sdk xros --show-sdk-path)
+          {
+            echo "## CompositorLayer declarations in $SDK"
+            find "$SDK" -name '*.swiftinterface' -path '*arm64*' \( -path '*SwiftUI*' -o -path '*CompositorServices*' \) -not -path '*simulator*' | while read -r F; do
+              grep -n -E "protocol CompositorLayerConfiguration|struct CompositorLayer\b|struct CompositorLayer |func makeConfiguration|init\(configuration" "$F" | sed "s|^|$(basename "$(dirname "$F")"): |" | head -40
+            done
+          } >> swift.log 2>&1 || true
       - name: Publish the log
         if: always()
         run: bash visionos/scripts/ci-publish-log.sh visionos-swift swift.log
