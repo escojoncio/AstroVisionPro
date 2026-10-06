@@ -1,7 +1,76 @@
-# visionos-swift - f78d4c46305bd1cd99d42a975114525316ff3e25 - 2026-10-06T13:33:11Z
+# visionos-swift - 83c75f57cc0ac346a27821ca24f0546b5a1b402f - 2026-10-06T13:38:30Z
 
-## swift.log:      177 lines
+## swift.log:      347 lines
 ### errors
+107-113 |             let inherent = "\(anchor.accessory.inherentChirality)".lowercased()
+108-114 |             let isRight = held.contains("right") || (!held.contains("left") && inherent.contains("right"))
+109:App/Controller/PlayStationController.swift:393:49: error: cannot convert value of type '__GCInputButtonName' to expected element type 'Array<String>.ArrayLiteralElement' (aka 'String')
+110-391 |         set(AstroPadCross.rawValue, pressed(right, [a, x]))
+111-392 |         set(AstroPadCircle.rawValue, pressed(right, [b, y]))
+112-393 |         set(AstroPadL1.rawValue, pressed(left, [GCInputGripButton, GCInputLeftShoulder]))
+113:    |                                                 `- error: cannot convert value of type '__GCInputButtonName' to expected element type 'Array<String>.ArrayLiteralElement' (aka 'String')
+114-394 |         set(AstroPadR1.rawValue, pressed(right, [GCInputGripButton, GCInputRightShoulder]))
+115-395 |         let l2 = value(left, [GCInputTrigger, GCInputLeftTrigger])
+116-
+117:App/Controller/PlayStationController.swift:394:50: error: cannot convert value of type '__GCInputButtonName' to expected element type 'Array<String>.ArrayLiteralElement' (aka 'String')
+118-392 |         set(AstroPadCircle.rawValue, pressed(right, [b, y]))
+119-393 |         set(AstroPadL1.rawValue, pressed(left, [GCInputGripButton, GCInputLeftShoulder]))
+120-394 |         set(AstroPadR1.rawValue, pressed(right, [GCInputGripButton, GCInputRightShoulder]))
+121:    |                                                  `- error: cannot convert value of type '__GCInputButtonName' to expected element type 'Array<String>.ArrayLiteralElement' (aka 'String')
+122-395 |         let l2 = value(left, [GCInputTrigger, GCInputLeftTrigger])
+123-396 |         let r2 = value(right, [GCInputTrigger, GCInputRightTrigger])
+124-
+125:App/Controller/PlayStationController.swift:395:31: error: cannot convert value of type '__GCInputButtonName' to expected element type 'Array<String>.ArrayLiteralElement' (aka 'String')
+126-393 |         set(AstroPadL1.rawValue, pressed(left, [GCInputGripButton, GCInputLeftShoulder]))
+127-394 |         set(AstroPadR1.rawValue, pressed(right, [GCInputGripButton, GCInputRightShoulder]))
+128-395 |         let l2 = value(left, [GCInputTrigger, GCInputLeftTrigger])
+129:    |                               `- error: cannot convert value of type '__GCInputButtonName' to expected element type 'Array<String>.ArrayLiteralElement' (aka 'String')
+130-396 |         let r2 = value(right, [GCInputTrigger, GCInputRightTrigger])
+131-397 |         set(AstroPadL2.rawValue, l2 > 0.5)
+132-
+133:App/Controller/PlayStationController.swift:396:32: error: cannot convert value of type '__GCInputButtonName' to expected element type 'Array<String>.ArrayLiteralElement' (aka 'String')
+134-394 |         set(AstroPadR1.rawValue, pressed(right, [GCInputGripButton, GCInputRightShoulder]))
+135-395 |         let l2 = value(left, [GCInputTrigger, GCInputLeftTrigger])
+136-396 |         let r2 = value(right, [GCInputTrigger, GCInputRightTrigger])
+137:    |                                `- error: cannot convert value of type '__GCInputButtonName' to expected element type 'Array<String>.ArrayLiteralElement' (aka 'String')
+138-397 |         set(AstroPadL2.rawValue, l2 > 0.5)
+139-398 |         set(AstroPadR2.rawValue, r2 > 0.5)
+140-
+141:App/Controller/PlayStationController.swift:399:49: error: cannot convert value of type '__GCInputButtonName' to expected element type 'Array<String>.ArrayLiteralElement' (aka 'String')
+142-397 |         set(AstroPadL2.rawValue, l2 > 0.5)
+143-398 |         set(AstroPadR2.rawValue, r2 > 0.5)
+144-399 |         set(AstroPadL3.rawValue, pressed(left, [GCInputThumbstickButton, GCInputLeftThumbstickButton]))
+145:    |                                                 `- error: cannot convert value of type '__GCInputButtonName' to expected element type 'Array<String>.ArrayLiteralElement' (aka 'String')
+146-400 |         set(AstroPadR3.rawValue, pressed(right, [GCInputThumbstickButton, GCInputRightThumbstickButton]))
+147-401 |         set(AstroPadOptions.rawValue, pressed(right, [GCInputButtonOptions, GCInputButtonMenu]))
+148-
+149:App/Controller/PlayStationController.swift:400:50: error: cannot convert value of type '__GCInputButtonName' to expected element type 'Array<String>.ArrayLiteralElement' (aka 'String')
+150-398 |         set(AstroPadR2.rawValue, r2 > 0.5)
+151-399 |         set(AstroPadL3.rawValue, pressed(left, [GCInputThumbstickButton, GCInputLeftThumbstickButton]))
+152-400 |         set(AstroPadR3.rawValue, pressed(right, [GCInputThumbstickButton, GCInputRightThumbstickButton]))
+153:    |                                                  `- error: cannot convert value of type '__GCInputButtonName' to expected element type 'Array<String>.ArrayLiteralElement' (aka 'String')
+154-401 |         set(AstroPadOptions.rawValue, pressed(right, [GCInputButtonOptions, GCInputButtonMenu]))
+155-402 |         set(AstroPadTouchPad.rawValue, pressed(left, [GCInputButtonShare, GCInputButtonMenu, GCInputButtonOptions]))
+156-
+157:App/Controller/PlayStationController.swift:409:37: error: cannot convert value of type '__GCInputDirectionPadName' to expected element type 'Array<String>.ArrayLiteralElement' (aka 'String')
+158-407 |             return UInt8(clamping: Int(((v + 1.0) * 127.5).rounded()))
+159-408 |         }
+160-409 |         let (lx, ly) = stick(left, [GCInputThumbstick, GCInputLeftThumbstick])
+161:    |                                     `- error: cannot convert value of type '__GCInputDirectionPadName' to expected element type 'Array<String>.ArrayLiteralElement' (aka 'String')
+162-410 |         let (rx, ry) = stick(right, [GCInputThumbstick, GCInputRightThumbstick])
+163-411 |         state.left_x = axis(lx)
+164-
+165:App/Controller/PlayStationController.swift:410:38: error: cannot convert value of type '__GCInputDirectionPadName' to expected element type 'Array<String>.ArrayLiteralElement' (aka 'String')
+166-408 |         }
+167-409 |         let (lx, ly) = stick(left, [GCInputThumbstick, GCInputLeftThumbstick])
+168-410 |         let (rx, ry) = stick(right, [GCInputThumbstick, GCInputRightThumbstick])
+169:    |                                      `- error: cannot convert value of type '__GCInputDirectionPadName' to expected element type 'Array<String>.ArrayLiteralElement' (aka 'String')
+170-411 |         state.left_x = axis(lx)
+171-412 |         state.left_y = axis(ly, flipped: true)
+172-## ARKit module files
+173-module.modulemap
+174-## GCInputNames.h
+175-//
 ### end
 @end
 API_AVAILABLE(macos(11.0), ios(14.0), tvos(14.0))
