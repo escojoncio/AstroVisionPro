@@ -35,7 +35,9 @@ struct Diagnostics {
     let entitlementsReadable: Bool
     let availableMemoryGB: Double
     let addressSpaceGB: UInt32
-    let canReserveNeeded: Bool
+    /// Only filled in when asked for (a reservation test while the app is drawing can take memory
+    /// its text needs): nil until then.
+    var canReserveNeeded: Bool?
     let debuggerAttached: Bool
 
     static func run() -> Diagnostics {
@@ -61,7 +63,7 @@ struct Diagnostics {
             entitlementsReadable: !entitlements.isEmpty,
             availableMemoryGB: Double(astro_diag_available_memory()) / 1_073_741_824,
             addressSpaceGB: astro_diag_address_space_gb(),
-            canReserveNeeded: astro_diag_can_reserve_gb(neededAddressSpaceGB),
+            canReserveNeeded: nil,
             debuggerAttached: astro_jit_process_is_debugged())
     }
 
@@ -87,7 +89,12 @@ struct Diagnostics {
 
         // Address space.
         let extended = has("com.apple.developer.kernel.extended-virtual-addressing")
-        let spaceVerdict: Verdict = canReserveNeeded ? .ok : .missing
+        let spaceVerdict: Verdict
+        if let canReserveNeeded {
+            spaceVerdict = canReserveNeeded ? .ok : .missing
+        } else {
+            spaceVerdict = addressSpaceGB >= Self.neededAddressSpaceGB + 4 ? .ok : .missing
+        }
         items.append(Item(
             id: "address", title: "Espacio de direcciones (extended-virtual-addressing)",
             verdict: spaceVerdict,
@@ -95,8 +102,9 @@ struct Diagnostics {
                      ? (extended ? "Firmada con el permiso. " : "La firma NO incluye el permiso. ")
                      : "")
                 + "Espacio de direcciones de la app: \(addressSpaceGB) GB. "
-                + (canReserveNeeded ? "Se pueden reservar los \(Self.neededAddressSpaceGB) GB que necesita el emulador."
-                   : "No se pueden reservar los \(Self.neededAddressSpaceGB) GB que necesita el emulador.")))
+                + (canReserveNeeded.map { $0 ? "La reserva de prueba de \(Self.neededAddressSpaceGB) GB ha funcionado."
+                       : "La reserva de prueba de \(Self.neededAddressSpaceGB) GB ha fallado." }
+                   ?? "El emulador necesita \(Self.neededAddressSpaceGB) GB.")))
 
         // JIT.
         let taskAllow = has("get-task-allow")
