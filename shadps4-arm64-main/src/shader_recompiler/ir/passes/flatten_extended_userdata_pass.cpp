@@ -15,6 +15,7 @@
 #include "common/arch.h"
 #include "common/decoder.h"
 #include "common/io_file.h"
+#include "common/jit_arena.h"
 #include "common/logging/log.h"
 #include "common/path_util.h"
 #include "common/signal_context.h"
@@ -31,7 +32,7 @@
 
 #if defined(ARCH_ARM64) && defined(__linux__)
 #include <sys/mman.h>
-#include <sys/ucontext.h>
+#include "common/host_context.h"
 #include <unistd.h>
 #endif
 
@@ -342,9 +343,15 @@ struct SrtCodeMapping {
     u8* data{};
     size_t size{};
 
+    bool in_jit_arena{};
+
     ~SrtCodeMapping() {
         if (data != nullptr) {
-            munmap(data, size);
+            if (in_jit_arena) {
+                Common::JitArena::Free(data);
+            } else {
+                munmap(data, size);
+            }
         }
     }
 };
@@ -376,10 +383,10 @@ bool SrtWalkerSignalHandler(void* context, void* fault_address) {
     std::memcpy(&instruction, reinterpret_cast<const void*>(pc), sizeof(instruction));
     auto* signal_context = static_cast<ucontext_t*>(context);
     if (instruction == Arm64LoadPointer) {
-        signal_context->uc_mcontext.regs[2] = 0;
+        HOST_CONTEXT_REGS(signal_context)[2] = 0;
     } else if ((instruction & 0xffc003ffu) == 0xb9400043u ||
                instruction == Arm64LoadDataRegisterOffset) {
-        signal_context->uc_mcontext.regs[3] = 0;
+        HOST_CONTEXT_REGS(signal_context)[3] = 0;
     } else {
         return false;
     }
@@ -509,6 +516,19 @@ PFN_SrtWalker RegisterWalkerCode(const u8* ptr, size_t size) {
     const size_t page_size = static_cast<size_t>(page_size_result);
     const size_t mapping_size = (size + page_size - 1) & ~(page_size - 1);
     auto mapping = std::make_unique<SrtCodeMapping>();
+    if (Common::JitArena::Available()) {
+        // visionOS: written through the arena's writable mapping, run from its executable one.
+        const auto block = Common::JitArena::Allocate(size);
+        if (!block) {
+            LOG_CRITICAL(Render_Recompiler, "The JIT arena is full: no room for an SRT walker");
+            std::abort();
+        }
+        std::memcpy(block->rw, ptr, size);
+        Common::JitArena::FlushInstructionCache(block->rx, size);
+        mapping->data = block->rx;
+        mapping->size = block->size;
+        mapping->in_jit_arena = true;
+    } else {
     mapping->data = static_cast<u8*>(
         mmap(nullptr, mapping_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));
     mapping->size = mapping_size;
@@ -523,6 +543,7 @@ PFN_SrtWalker RegisterWalkerCode(const u8* ptr, size_t size) {
     if (mprotect(mapping->data, mapping_size, PROT_READ | PROT_EXEC) != 0) {
         LOG_CRITICAL(Render_Recompiler, "Unable to protect ARM64 SRT walker: errno {}", errno);
         std::abort();
+    }
     }
 
     std::call_once(g_srt_signal_once, [] {

@@ -528,7 +528,7 @@ void WindowSDL::OnGamepadEvent(const SDL_Event* event) {
     }
 }
 
-#ifndef __APPLE__
+#if !defined(__APPLE__) || defined(SHADPS4_VISIONOS)
 void SetWindowIcon(SDL_Window* window, const std::vector<u8>& png) {
     int imageWidth = 0;
     int imageHeight = 0;

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 
 #include "fex_hle_bridge.h"
+#include "common/host_context.h"
 #include "guest_watchdog.h"
 #include "hle_trace.h"
 
@@ -71,7 +72,7 @@ ThreadActivity* ClaimActivity() {
         NumActivities.store(MaxTrackedThreads, std::memory_order_relaxed);
         return nullptr;
     }
-    Activities[index].tid.store(static_cast<int>(syscall(SYS_gettid)), std::memory_order_relaxed);
+    Activities[index].tid.store(Common::HostThreadId(), std::memory_order_relaxed);
     return &Activities[index];
 }
 

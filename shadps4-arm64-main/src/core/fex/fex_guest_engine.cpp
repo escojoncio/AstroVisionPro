@@ -19,7 +19,11 @@
 
 #include <sys/mman.h>
 #include <unistd.h>
-#include <ucontext.h>
+#include "common/host_context.h"
+#if defined(SHADPS4_VISIONOS)
+#include "common/jit_arena.h"
+#include <FEXCore/Utils/DarwinCompat.h>
+#endif
 
 #include <array>
 #include <algorithm>
@@ -994,8 +998,8 @@ bool DeliverGuestOrbisSignal(int orbis_sig, siginfo_t* info, void* rawContext,
 #if defined(__aarch64__)
   if (rawContext != nullptr) {
     const auto* context = reinterpret_cast<const ucontext_t*>(rawContext);
-    host_pc = static_cast<std::uint64_t>(context->uc_mcontext.pc);
-    host_sp = static_cast<std::uint64_t>(context->uc_mcontext.sp);
+    host_pc = static_cast<std::uint64_t>(HOST_CONTEXT_PC(context));
+    host_sp = static_cast<std::uint64_t>(HOST_CONTEXT_SP(context));
     if (ActiveFexExecution.Context != nullptr && ActiveFexExecution.Thread != nullptr) {
       in_jit = ActiveFexExecution.Context->IsAddressInCodeBuffer(
           ActiveFexExecution.Thread, static_cast<std::uintptr_t>(host_pc));
@@ -1031,12 +1035,12 @@ bool HandleGuestSignal(int signal, siginfo_t* info, void* rawContext) noexcept {
   }
 
   auto* context = reinterpret_cast<ucontext_t*>(rawContext);
-  const auto pc = static_cast<std::uintptr_t>(context->uc_mcontext.pc);
+  const auto pc = static_cast<std::uintptr_t>(HOST_CONTEXT_PC(context));
   if (!ActiveFexExecution.Context->IsAddressInCodeBuffer(ActiveFexExecution.Thread, pc)) {
     return false;
   }
 
-  auto* registers = reinterpret_cast<std::uint64_t*>(context->uc_mcontext.regs);
+  auto* registers = HOST_CONTEXT_REGS(context);
   if (info->si_code != BUS_ADRALN) return false;
   const auto adjustment = FEXCore::ArchHelpers::Arm64::HandleUnalignedAccess(
       ActiveFexExecution.Thread,
@@ -1044,7 +1048,7 @@ bool HandleGuestSignal(int signal, siginfo_t* info, void* rawContext) noexcept {
   if (!adjustment.has_value()) {
     return false;
   }
-  context->uc_mcontext.pc = pc + *adjustment;
+  HOST_CONTEXT_PC(context) = pc + *adjustment;
   return true;
 #else
   static_cast<void>(signal);
@@ -1300,6 +1304,14 @@ GuestEngine::~GuestEngine() {
   }
 }
 
+// Guest (x86) code pages the emulator writes: FEX reads them, the host CPU never runs them, and
+// visionOS refuses executable pages outside the JIT arena.
+#if defined(SHADPS4_VISIONOS)
+constexpr int kGuestCodeProtection = PROT_READ;
+#else
+constexpr int kGuestCodeProtection = PROT_READ | PROT_EXEC;
+#endif
+
 EngineResult<std::unique_ptr<GuestEngine>> GuestEngine::Create(GuestBridge& bridge) {
   const auto pageSize = sysconf(_SC_PAGESIZE);
   if (pageSize != kRequiredPageSize) return Failure(EngineStage::Mapping, ENOTSUP);
@@ -1315,6 +1327,25 @@ EngineResult<std::unique_ptr<GuestEngine>> GuestEngine::Create(GuestBridge& brid
     return original;
   };
 
+#if defined(SHADPS4_VISIONOS)
+  // visionOS: FEX writes its code into the JIT arena StikDebug opened (through its writable
+  // mapping) and runs it from the executable one; nothing else can be made executable.
+  if (!Common::JitArena::Available()) return Failure(EngineStage::Mapping, ENOEXEC);
+  {
+    const auto [begin, end] = Common::JitArena::Range();
+    FEXCore::Darwin::ExecutableMemory memory {};
+    memory.Allocate = [](size_t size) -> void* {
+      const auto block = Common::JitArena::Allocate(size);
+      return block ? block->rx : nullptr;
+    };
+    memory.Free = [](void* executable) { Common::JitArena::Free(executable); };
+    memory.Begin = begin;
+    memory.End = end;
+    memory.WriteOffset = Common::JitArena::WriteOffset();
+    FEXCore::Darwin::SetExecutableMemory(memory);
+  }
+#endif
+
   impl->HostFeatures = FEX::FetchHostFeatures();
   impl->Context = FEXCore::Context::Context::CreateNewContext(impl->HostFeatures);
   if (impl->Context == nullptr) {
@@ -1328,7 +1359,7 @@ EngineResult<std::unique_ptr<GuestEngine>> GuestEngine::Create(GuestBridge& brid
   *static_cast<uint8_t*>(impl->FunctionReturn->Get()) = 0xf4;
   __builtin___clear_cache(static_cast<char*>(impl->FunctionReturn->Get()),
                           static_cast<char*>(impl->FunctionReturn->Get()) + impl->PageSize);
-  const auto functionProtection = impl->FunctionReturn->Protect(PROT_READ | PROT_EXEC);
+  const auto functionProtection = impl->FunctionReturn->Protect(kGuestCodeProtection);
   if (const auto* failure = std::get_if<EngineFailure>(&functionProtection)) {
     return fail(*failure);
   }
@@ -1343,7 +1374,7 @@ EngineResult<std::unique_ptr<GuestEngine>> GuestEngine::Create(GuestBridge& brid
   callbackReturn[1] = 0x3e;
   __builtin___clear_cache(static_cast<char*>(impl->CallbackReturn->Get()),
                           static_cast<char*>(impl->CallbackReturn->Get()) + impl->PageSize);
-  const auto callbackProtection = impl->CallbackReturn->Protect(PROT_READ | PROT_EXEC);
+  const auto callbackProtection = impl->CallbackReturn->Protect(kGuestCodeProtection);
   if (const auto* failure = std::get_if<EngineFailure>(&callbackProtection)) {
     return fail(*failure);
   }
