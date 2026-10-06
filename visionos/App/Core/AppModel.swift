@@ -33,6 +33,14 @@ final class AppModel {
     var diagnostics = Diagnostics.run()
 
     init() {
+        // Files copied in read-only or locked could not be deleted from the Files app
+        // (error -5000): the app gives itself back the right to change everything in its folder.
+        Task.detached {
+            let changed = Storage.unlock()
+            if changed > 0 {
+                LogFiles.log("Unlocked \(changed) files and folders in the app's folder")
+            }
+        }
         findGame()
         let controllers = PlayStationController.shared
         controllers.onStatusChange = { [weak self] status in

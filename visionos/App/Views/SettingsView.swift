@@ -69,6 +69,8 @@ struct SettingsView: View {
                     Text("Mando y manos")
                 }
 
+                StorageSection()
+
                 Section {
                     Picker("Memoria ejecutable", selection: number("jit_arena_mb", \.jitArenaMB)) {
                         Text("256 MB").tag(256)
