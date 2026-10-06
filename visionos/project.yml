@@ -18,8 +18,12 @@ targets:
   AstroQuest:
     type: application
     platform: visionOS
+    scheme: {}
     sources:
       - path: App
+        excludes:
+          - Info.plist
+          - AstroQuest.entitlements
     settings:
       base:
         PRODUCT_NAME: AstroQuest
@@ -54,9 +58,13 @@ targets:
           - -framework CoreVideo
           - -framework VideoToolbox
           - -framework Security
+          - -framework CoreBluetooth
+          - -framework CoreGraphics
+          - -framework Metal
+          - -liconv
         ENABLE_BITCODE: NO
         DEAD_CODE_STRIPPING: YES
         # The emulator's main thread asks for a large stack, and its memory for the console's.
         MTL_ENABLE_DEBUG_INFO: NO
-        SUPPORTED_PLATFORMS: "xros xrsimulator"
+        SUPPORTED_PLATFORMS: "xros"
         TARGETED_DEVICE_FAMILY: "7"
