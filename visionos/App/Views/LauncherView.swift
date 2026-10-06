@@ -9,6 +9,8 @@ import UIKit
 struct LauncherView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.openImmersiveSpace) private var openImmersiveSpace
+    @Environment(\.openWindow) private var openWindow
+    @Environment(\.dismissWindow) private var dismissWindow
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
@@ -112,6 +114,9 @@ struct LauncherView: View {
                                 switch await openImmersiveSpace(id: AppModel.immersiveSpaceID) {
                                 case .opened:
                                     model.immersiveOpen = true
+                                    // Only the game in view: the launcher comes back when the
+                                    // game's space closes.
+                                    dismissWindow(id: AppModel.launcherID)
                                 default:
                                     model.message = "No se pudo abrir el espacio inmersivo."
                                 }
@@ -129,6 +134,7 @@ struct LauncherView: View {
                             Task {
                                 if case .opened = await openImmersiveSpace(id: AppModel.immersiveSpaceID) {
                                     model.immersiveOpen = true
+                                    dismissWindow(id: AppModel.launcherID)
                                 }
                             }
                         }
@@ -141,6 +147,9 @@ struct LauncherView: View {
                 }
             }
             .navigationTitle("AstroQuest")
+        }
+        .onAppear {
+            model.openLauncher = openWindow
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {

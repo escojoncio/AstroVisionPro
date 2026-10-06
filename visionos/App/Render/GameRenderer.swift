@@ -73,10 +73,16 @@ final class GameRenderer: @unchecked Sendable {
     private var framesSinceOptics = 0
     private var fovSamples = 0
 
-    static func start(layerRenderer: LayerRenderer, settings: AstroSettings) {
+    /// Called once the space is gone (the Digital Crown, or the system closed it).
+    private var onEnd: (@Sendable () -> Void)?
+
+    static func start(layerRenderer: LayerRenderer, settings: AstroSettings,
+                      onEnd: @escaping @Sendable () -> Void) {
         guard let renderer = GameRenderer(layerRenderer: layerRenderer, settings: settings) else {
+            onEnd()
             return
         }
+        renderer.onEnd = onEnd
         let thread = Thread {
             renderer.run()
         }
@@ -160,6 +166,8 @@ final class GameRenderer: @unchecked Sendable {
         }
         frame = nil
         frameTexture = nil
+        onEnd?()
+        onEnd = nil
     }
 
     private func renderFrame() {
