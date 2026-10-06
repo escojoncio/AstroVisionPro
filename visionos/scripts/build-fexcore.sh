@@ -48,6 +48,7 @@ cmake -S "$SRC" -B "$BUILD" -G Ninja \
   -DCMAKE_C_COMPILER="$(xcrun --find clang)" \
   -DCMAKE_CXX_COMPILER="$(xcrun --find clang++)" \
   -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_MACOSX_BUNDLE=OFF \
   -DTUNE_CPU=none \
   -DBUILD_FEXCORE_ONLY=ON \
   -DFEXCORE_SMOKE_SOURCE="$CORE/runtime/probes/fexcore-smoke.cpp" \
