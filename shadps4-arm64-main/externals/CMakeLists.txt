@@ -274,6 +274,7 @@ if (NOT TARGET libusb::usb)
             "${LIBUSB_SOURCE}/os/events_posix.c"
             "${LIBUSB_SOURCE}/os/threads_posix.c"
             "${LIBUSB_SOURCE}/os/null_usb.c"
+            "${CMAKE_SOURCE_DIR}/src/platform/visionos/libusb_time.c"
         )
         target_include_directories(usb-null PRIVATE ${LIBUSB_PRIVATE_INCLUDES})
         target_include_directories(usb-null SYSTEM PUBLIC "${LIBUSB_SOURCE}")
