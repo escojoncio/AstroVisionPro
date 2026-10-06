@@ -31,6 +31,10 @@
 #ifdef __APPLE__
 #include <mach-o/dyld.h>
 #endif
+#ifdef SHADPS4_VISIONOS
+extern "C" VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetInstanceProcAddr(VkInstance instance,
+                                                                       const char* name);
+#endif
 
 namespace Vulkan {
 
@@ -279,6 +283,11 @@ vk::UniqueInstance CreateInstance(Frontend::WindowSystemType window_type, bool e
                                   bool enable_crash_diagnostic) {
     LOG_INFO(Render_Vulkan, "Creating vulkan instance");
 
+#if defined(SHADPS4_VISIONOS)
+    // visionOS: MoltenVK is linked into the app (no loader, no driver files), and its
+    // vkGetInstanceProcAddr is the entry point.
+    VULKAN_HPP_DEFAULT_DISPATCHER.init(&::vkGetInstanceProcAddr);
+#else
 #if defined(__APPLE__)
     // Initialize the environment with the path to the included ICD, so that the loader will
     // find it.
@@ -294,6 +303,7 @@ vk::UniqueInstance CreateInstance(Frontend::WindowSystemType window_type, bool e
     static vk::detail::DynamicLoader dl;
     VULKAN_HPP_DEFAULT_DISPATCHER.init(
         dl.getProcAddress<PFN_vkGetInstanceProcAddr>("vkGetInstanceProcAddr"));
+#endif
 
     const auto [available_version_result, available_version] =
         VULKAN_HPP_DEFAULT_DISPATCHER.vkEnumerateInstanceVersion
