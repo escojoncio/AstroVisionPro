@@ -1,4 +1,6 @@
-# AstroQuest for Apple Vision Pro
+# AstroVisionPro
+
+**AstroQuest for Apple Vision Pro** - ASTRO BOT Rescue Mission (PlayStation VR) as a native visionOS app.
 
 > [!WARNING]
 > **Work in progress - not functional yet.** The Apple Vision Pro app builds and opens, but the
@@ -14,13 +16,14 @@ rendering, ARKit head and hand tracking, PlayStation controllers through GameCon
 PlayStation VR2 Sense controller tracking, JIT through
 [StikDebug for visionOS](https://github.com/rebelancap/StikDebug-visionos), and the emulator
 built for visionOS (FEXCore, MoltenVK, FFmpeg). See [README-VISIONOS.md](README-VISIONOS.md).
+The unsigned app is in the [`visionos-latest` release](../../releases/tag/visionos-latest).
 
 > [!IMPORTANT]
 > **The app must be installed with the memory extension (Increased Memory Limit).** Without it
 > visionOS gives the app too little memory for the emulator (the PlayStation 4 has 8 GB). Sign it
 > with a tool that enables the *Increased Memory Limit* capability on the app's App ID - as
 > [GetMoreRam](https://github.com/hugeBlack/GetMoreRam) does, or the Vision Pro build of
-> iLoader-VisionPro (`visionos-windows` branch) - and keep
+> [iLoader-VisionPro](../../../iLoader-VisionPro/tree/visionos-windows) (`visionos-windows` branch) - and keep
 > `get-task-allow` (for StikDebug). The app's *Check* tab shows whether it got it.
 
 **The Apple Vision Pro app and every change made for it were written entirely by Claude
