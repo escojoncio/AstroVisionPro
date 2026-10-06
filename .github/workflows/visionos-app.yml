@@ -67,6 +67,16 @@ jobs:
           set -o pipefail
           bash visionos/scripts/build-moltenvk.sh 2>&1 | tee moltenvk.log
 
+      - uses: actions/cache@v4
+        with:
+          path: build/visionos/ffmpeg
+          key: ffmpeg-visionos-n7.1.1-${{ hashFiles('visionos/scripts/build-ffmpeg.sh') }}
+
+      - name: FFmpeg for visionOS
+        run: |
+          set -o pipefail
+          bash visionos/scripts/build-ffmpeg.sh 2>&1 | tee ffmpeg.log
+
       - name: The emulator for visionOS
         run: |
           set -o pipefail
@@ -90,7 +100,7 @@ jobs:
 
       - name: Publish the logs
         if: always()
-        run: bash visionos/scripts/ci-publish-log.sh visionos-app fexcore.log moltenvk.log core.log app.log
+        run: bash visionos/scripts/ci-publish-log.sh visionos-app fexcore.log moltenvk.log ffmpeg.log core.log app.log
 
       - uses: actions/upload-artifact@v4
         if: success()

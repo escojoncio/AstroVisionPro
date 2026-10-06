@@ -18,6 +18,7 @@ FEX_BUILD="$ROOT/build/visionos/fexcore"
 
 [[ -f "$FEX_BUILD/FEXCore/Source/libFEXCore.a" ]] || bash "$ROOT/visionos/scripts/build-fexcore.sh"
 bash "$ROOT/visionos/scripts/build-moltenvk.sh"
+bash "$ROOT/visionos/scripts/build-ffmpeg.sh"
 
 # Dear ImGui's font embedder runs while building, so it is built for this Mac.
 HOST_TOOLS="$ROOT/build/visionos/host-tools"
@@ -53,6 +54,7 @@ cmake -S "$CORE" -B "$BUILD" -G Ninja \
   -DIMGUI_FONT_EMBED_EXECUTABLE="$HOST_TOOLS/binary_to_compressed_c" \
   -DSDL_SHARED=OFF -DSDL_STATIC=ON -DSDL_TEST_LIBRARY=OFF \
   -DLIBUSB_BUILD_SHARED_LIBS=OFF \
+  -DFFMPEG_VISIONOS_DIR="$ROOT/build/visionos/ffmpeg" \
   -DALLOWS_ONESHOT_TIMERS_WITH_TIMEOUT_ZERO_EXITCODE=0 \
   "${LAUNCHER[@]}"
 
@@ -65,11 +67,17 @@ while IFS= read -r LIB; do
   case "$(basename "$LIB")" in
     libshadps4.a|libusb-1.0.a|libhwinfo*.a) continue ;;
   esac
+  case "$LIB" in
+    */ffmpeg-*/lib/*) continue ;;
+  esac
   LIBS+=("$LIB")
 done < <(find "$BUILD" -name '*.a' -not -path '*/CMakeFiles/*' | sort)
 while IFS= read -r LIB; do
   LIBS+=("$LIB")
 done < <(find "$FEX_BUILD" -name '*.a' -not -path '*/CMakeFiles/*' -not -name 'librpmalloc.a' | sort)
+while IFS= read -r LIB; do
+  LIBS+=("$LIB")
+done < <(find "$ROOT/build/visionos/ffmpeg/lib" -name '*.a' | sort)
 
 printf 'Into libastroquest_core.a:\n'; printf '  %s\n' "${LIBS[@]}"
 rm -f "$OUT/libastroquest_core.a"
