@@ -19,7 +19,7 @@ struct AstroQuestApp: App {
             LauncherView()
                 .environment(model)
         }
-        .defaultSize(width: 760, height: 720)
+        .defaultSize(width: 1280, height: 760)
 
         ImmersiveSpace(id: AppModel.immersiveSpaceID) {
             CompositorLayer(configuration: GameLayerConfiguration(
