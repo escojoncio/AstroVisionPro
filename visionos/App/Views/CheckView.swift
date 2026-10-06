@@ -36,6 +36,46 @@ struct CheckView: View {
                     jitDetail
                 }
 
+                Section("Juego") {
+                    if let path = model.gamePath {
+                        Label(path.lastPathComponent, systemImage: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                        Text(path.path)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Label("No se encuentra el juego", systemImage: "xmark.octagon.fill")
+                            .foregroundStyle(.red)
+                        Text("Copia la carpeta CUSA12392 (la que tiene eboot.bin, sce_sys y sce_module) en «En mi Apple Vision Pro › AstroQuest» con la app Archivos, por ejemplo desde una carpeta compartida de tu PC (Archivos › Conectarse a un servidor).")
+                            .font(.callout)
+                    }
+                    Button("Buscar de nuevo") {
+                        model.findGame()
+                    }
+                }
+
+                Section("Mando") {
+                    if let controller = model.controller {
+                        Label(controller.name, systemImage: "gamecontroller.fill")
+                            .foregroundStyle(controller.isPlayStation ? .green : .orange)
+                        if controller.kind == .sense {
+                            Text("Mandos PlayStation VR2 Sense: el mando del juego sigue la posición del mando derecho (o del izquierdo si el derecho no se ve). Sin cruceta ni panel táctil: el botón Create del mando izquierdo hace de panel táctil.")
+                                .font(.callout)
+                        } else if !controller.isPlayStation {
+                            Text("No es un mando de PlayStation: faltarán el panel táctil y los sensores de movimiento con los que el juego coloca el mando.")
+                                .font(.callout)
+                        } else if !controller.hasMotion {
+                            Text("El mando no informa de sus sensores de movimiento.")
+                                .font(.callout)
+                        }
+                    } else {
+                        Label("Ningún mando conectado", systemImage: "gamecontroller")
+                            .foregroundStyle(.orange)
+                        Text("Empareja un DualSense en Ajustes › Bluetooth (mantén Crear y el botón PS hasta que parpadee la barra de luz).")
+                            .font(.callout)
+                    }
+                }
+
                 Section {
                     LabeledContent("Bundle ID", value: model.diagnostics.bundleIdentifier)
                     LabeledContent("Team ID", value: model.diagnostics.teamIdentifier.isEmpty ? "—" : model.diagnostics.teamIdentifier)
