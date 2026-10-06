@@ -5,7 +5,7 @@ name: AstroQuest
 options:
   bundleIdPrefix: com.astroquest
   deploymentTarget:
-    visionOS: "26.0"
+    visionOS: "26.5"
   createIntermediateGroups: true
   xcodeVersion: "26.0"
 settings:
