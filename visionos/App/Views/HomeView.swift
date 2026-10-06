@@ -79,24 +79,24 @@ struct HomeView: View {
         switch state {
         case .ready(let megabytes):
             verdict = .ok
-            detail = "Activo, \(megabytes) MB"
+            detail = L("Activo, \(megabytes) MB", "Active, \(megabytes) MB")
         case .waitingForDebugger:
             verdict = .warning
-            detail = "Esperando a StikDebug…"
+            detail = L("Esperando a StikDebug…", "Waiting for StikDebug…")
         case .preparing:
             verdict = .warning
-            detail = "Preparando la memoria…"
+            detail = L("Preparando la memoria…", "Preparing memory…")
         case .failed:
             verdict = .missing
-            detail = "No se pudo activar"
+            detail = L("No se pudo activar", "Could not be enabled")
         case .idle:
             verdict = .warning
-            detail = model.jit.stikDebugInstalled ? "Sin activar" : "Hace falta StikDebug"
+            detail = model.jit.stikDebugInstalled ? L("Sin activar", "Not enabled") : L("Hace falta StikDebug", "StikDebug is needed")
         }
         return StatusCard(title: "JIT", symbol: "bolt.fill", verdict: verdict, detail: detail) {
             switch state {
             case .idle, .failed:
-                Button(state == .idle ? "Activar" : "Reintentar") {
+                Button(state == .idle ? L("Activar", "Enable") : L("Reintentar", "Retry")) {
                     model.jit.enable(arenaMegabytes: model.settings.jitArenaMB)
                 }
             default:
@@ -106,11 +106,11 @@ struct HomeView: View {
     }
 
     private var gameCard: some View {
-        StatusCard(title: "Juego", symbol: "opticaldisc.fill",
+        StatusCard(title: L("Juego", "Game"), symbol: "opticaldisc.fill",
                    verdict: model.gamePath != nil ? .ok : .missing,
-                   detail: model.gamePath?.lastPathComponent ?? "Copia CUSA12392 con Archivos") {
+                   detail: model.gamePath?.lastPathComponent ?? L("Copia CUSA12392 con Archivos", "Copy CUSA12392 with Files")) {
             if model.gamePath == nil {
-                Button("Buscar") {
+                Button(L("Buscar", "Find")) {
                     model.findGame()
                 }
             }
@@ -121,8 +121,8 @@ struct HomeView: View {
         let controller = model.controller
         let verdict: Diagnostics.Verdict = controller == nil ? .missing
             : (controller!.isPlayStation ? .ok : .warning)
-        return StatusCard(title: "Mando", symbol: "gamecontroller.fill", verdict: verdict,
-                          detail: controller?.name ?? "Empareja un DualSense") {
+        return StatusCard(title: L("Mando", "Controller"), symbol: "gamecontroller.fill", verdict: verdict,
+                          detail: controller?.name ?? L("Empareja un DualSense", "Pair a DualSense")) {
             EmptyView()
         }
     }
@@ -136,7 +136,7 @@ struct HomeView: View {
                 Button {
                     open()
                 } label: {
-                    Label("Volver al juego", systemImage: "arrow.uturn.forward")
+                    Label(L("Volver al juego", "Back to the game"), systemImage: "arrow.uturn.forward")
                         .padding(.horizontal, 12)
                 }
                 .buttonStyle(.borderedProminent)
@@ -148,7 +148,7 @@ struct HomeView: View {
                         open()
                     }
                 } label: {
-                    Label("Jugar", systemImage: "play.fill")
+                    Label(L("Jugar", "Play"), systemImage: "play.fill")
                         .padding(.horizontal, 24)
                 }
                 .buttonStyle(.borderedProminent)
@@ -172,10 +172,10 @@ struct HomeView: View {
 
     private var hint: String {
         if !model.jit.isReady {
-            return "Activa el JIT para poder jugar."
+            return L("Activa el JIT para poder jugar.", "Enable JIT to play.")
         }
         if model.gamePath == nil {
-            return "Falta el juego."
+            return L("Falta el juego.", "The game is missing.")
         }
         return ""
     }
@@ -189,7 +189,7 @@ struct HomeView: View {
                 // Only the game in view: the launcher comes back when the game's space closes.
                 dismissWindow(id: AppModel.launcherID)
             default:
-                model.message = "No se pudo abrir el espacio inmersivo."
+                model.message = L("No se pudo abrir el espacio inmersivo.", "The immersive space could not be opened.")
             }
         }
     }
