@@ -36,7 +36,14 @@ final class AppModel {
     /// Where the game is: the `game=` setting, else a folder with eboot.bin in the app's
     /// Documents (put there with the Files app), its "games" folder, or one level below either.
     func refreshDiagnostics() {
+        let tested = diagnostics.canReserveNeeded
         diagnostics = Diagnostics.run()
+        diagnostics.canReserveNeeded = tested
+    }
+
+    /// Reserves the emulator's 24 GB of address space once and gives it back.
+    func testReservation() {
+        diagnostics.canReserveNeeded = astro_diag_can_reserve_gb(Diagnostics.neededAddressSpaceGB)
     }
 
     func findGame() {
