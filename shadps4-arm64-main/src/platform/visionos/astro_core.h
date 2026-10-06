@@ -45,6 +45,20 @@ bool astro_jit_get_arena(AstroJitArena* arena);
 /// killed by the system here, so the app notes that it is about to try first.)
 int astro_jit_self_test(void);
 
+// --- the launcher's check --------------------------------------------------------------------
+
+/// The entitlements this copy of the app is signed with (an XML property list) into `buffer`.
+/// Returns its length, or -1.
+int astro_diag_entitlements(void* buffer, uint32_t capacity);
+
+/// How many more bytes the system lets this process use before it ends it (the memory limit
+/// that com.apple.developer.kernel.increased-memory-limit raises).
+uint64_t astro_diag_available_memory(void);
+
+/// The largest single stretch of address space this process can reserve, in GB, trying from
+/// `up_to_gb` down (com.apple.developer.kernel.extended-virtual-addressing raises it).
+uint32_t astro_diag_largest_reservation_gb(uint32_t up_to_gb);
+
 // --- the emulator ----------------------------------------------------------------------------
 
 typedef enum AstroCoreState {

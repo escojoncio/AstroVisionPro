@@ -1386,6 +1386,7 @@ if (SHADPS4_VISIONOS)
         src/platform/visionos/astro_core.h
         src/platform/visionos/astro_core.mm
         src/platform/visionos/jit_arena.c
+        src/platform/visionos/diagnostics.c
     )
     target_include_directories(shadps4 PRIVATE src/platform/visionos)
     set_source_files_properties(src/platform/visionos/astro_core.mm

@@ -4,6 +4,7 @@
 // starts it.
 
 import SwiftUI
+import UIKit
 
 struct LauncherView: View {
     @Environment(AppModel.self) private var model
@@ -16,6 +17,34 @@ struct LauncherView: View {
                 Section {
                     Text("ASTRO BOT Rescue Mission en Apple Vision Pro, con tu propia copia del juego (CUSA12392, versión 1.00) y un mando de PlayStation.")
                         .foregroundStyle(.secondary)
+                }
+
+                Section {
+                    ForEach(model.diagnostics.items(jit: model.jit.state)) { item in
+                        VStack(alignment: .leading, spacing: 4) {
+                            Label(item.title, systemImage: symbol(item.verdict))
+                                .foregroundStyle(color(item.verdict))
+                            Text(item.detail)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    LabeledContent("Bundle ID", value: model.diagnostics.bundleIdentifier)
+                        .font(.caption)
+                    HStack {
+                        Button("Comprobar de nuevo") {
+                            model.refreshDiagnostics()
+                        }
+                        Spacer()
+                        Button("Copiar informe") {
+                            UIPasteboard.general.string = model.diagnostics.report(jit: model.jit.state)
+                            model.message = "Informe copiado."
+                        }
+                    }
+                } header: {
+                    Text("Comprobación")
+                } footer: {
+                    Text("Si falta la memoria extra o el espacio de direcciones, es la forma de instalar la app (los permisos de su App ID); si falla el JIT, es StikDebug.")
                 }
 
                 Section("1. Memoria ejecutable (JIT)") {
@@ -109,7 +138,24 @@ struct LauncherView: View {
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
                 model.findGame()
+                model.refreshDiagnostics()
             }
+        }
+    }
+
+    private func symbol(_ verdict: Diagnostics.Verdict) -> String {
+        switch verdict {
+        case .ok: "checkmark.circle.fill"
+        case .warning: "questionmark.circle"
+        case .missing: "xmark.octagon.fill"
+        }
+    }
+
+    private func color(_ verdict: Diagnostics.Verdict) -> Color {
+        switch verdict {
+        case .ok: .green
+        case .warning: .orange
+        case .missing: .red
         }
     }
 
