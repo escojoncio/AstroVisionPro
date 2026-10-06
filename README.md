@@ -1,3 +1,37 @@
+# AstroQuest for Apple Vision Pro
+
+**This is an Apple Vision Pro (visionOS) port of [AstroQuest](https://github.com/bigmak94/AstroQuest)
+by [bigmak94](https://github.com/bigmak94).** Everything that makes ASTRO BOT Rescue Mission
+playable in VR - the PlayStation VR emulation on top of shadPS4, the fixes for the game's timing
+and resolution, the controller placement from hand tracking - is the original project's work.
+This repository adds a native visionOS app around it: Compositor Services with foveated
+rendering, ARKit head and hand tracking, PlayStation controllers through GameController,
+PlayStation VR2 Sense controller tracking, JIT through
+[StikDebug for visionOS](https://github.com/rebelancap/StikDebug-visionos), and the emulator
+built for visionOS (FEXCore, MoltenVK, FFmpeg). See [README-VISIONOS.md](README-VISIONOS.md).
+
+**The Apple Vision Pro app and every change made for it were written entirely by Claude
+(Anthropic's AI), following all the instructions and ideas of
+the repository owner.**
+
+### Thanks
+
+- **[bigmak94](https://github.com/bigmak94), the author of the original AstroQuest.** This port
+  only exists because of the enormous work that went into making ASTRO BOT run in VR on the
+  Quest 3 and the PC. Thank you!
+- Everyone the original project thanks below - the [shadPS4](https://github.com/shadps4-emu/shadPS4)
+  team, [FEX-Emu](https://github.com/FEX-Emu/FEX) and the rest.
+- [rebelancap](https://github.com/rebelancap) for
+  [StikDebug for visionOS](https://github.com/rebelancap/StikDebug-visionos), and the
+  [StikDebug](https://github.com/StikDebug/StikDebug) project it is based on, which give the
+  app its JIT.
+- [MoltenVK](https://github.com/KhronosGroup/MoltenVK) (Vulkan on Metal) and
+  [FFmpeg](https://ffmpeg.org/).
+
+The original project's README follows.
+
+---
+
 # AstroQuest
 
 **ASTRO BOT Rescue Mission (PS4 / PlayStation VR) in virtual reality on Meta Quest 3**, played
