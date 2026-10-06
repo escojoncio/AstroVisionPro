@@ -57,6 +57,10 @@
 	<string>Las manos que sujetan el mando colocan el mando dentro del juego, como hacía la cámara de PlayStation VR.</string>
 	<key>NSWorldSensingUsageDescription</key>
 	<string>El seguimiento de la cabeza sitúa al jugador en el juego.</string>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>Los mandos de PlayStation se conectan por Bluetooth.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>AstroQuest no usa la cámara: la cámara de PlayStation se simula con el seguimiento del visor.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>El juego escucha el micrófono para soplar a las cosas, como con el micrófono de PlayStation VR.</string>
 </dict>

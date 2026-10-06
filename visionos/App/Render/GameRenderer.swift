@@ -123,12 +123,11 @@ final class GameRenderer: @unchecked Sendable {
     }
 
     private func run() {
-        let started = DispatchSemaphore(value: 0)
-        Task { [tracking, settings] in
+        // Tracking starts on its own time (asking for permission can take as long as the player
+        // takes to answer); until it runs, the head and hands are simply not known yet.
+        Task.detached { [tracking, settings] in
             await tracking.start(trackHands: settings.hands)
-            started.signal()
         }
-        started.wait()
 
         layerRenderer.waitUntilRunning()
         astro_core_set_session_running(true)
@@ -194,6 +193,8 @@ final class GameRenderer: @unchecked Sendable {
         tracking.updatePad(at: presentation)
 
         layerFrame.startSubmission()
+        // A frame whose submission was started has to be ended, whatever happens.
+        defer { layerFrame.endSubmission() }
         let drawables = layerFrame.queryDrawables()
         guard !drawables.isEmpty, let commandBuffer = commandQueue.makeCommandBuffer() else {
             return
@@ -224,7 +225,6 @@ final class GameRenderer: @unchecked Sendable {
             }
         }
         commandBuffer.commit()
-        layerFrame.endSubmission()
     }
 
     /// The distance between the eyes, and what the headset shows, for the emulator (which tells
