@@ -1,48 +1,155 @@
-# visionos-swift - c602c5d2a4523de884ab21566fa2bc35b07b6f2c - 2026-10-06T13:31:06Z
+# visionos-swift - f78d4c46305bd1cd99d42a975114525316ff3e25 - 2026-10-06T13:33:11Z
 
-## swift.log:       43 lines
+## swift.log:      177 lines
 ### errors
 ### end
-Swift and Metal: OK
-## Swift interfaces
-/Applications/Xcode_26.6.app/Contents/Developer/Platforms/XROS.platform/Developer/SDKs/XROS26.5.sdk/System/Library/Frameworks/GameController.framework/Modules/GameController.swiftmodule/arm64e-apple-xros.swiftinterface
-## ARKit accessory declarations (./.github/workflows/visionos-swift.yml)
-48:            F=$(grep -rl "AccessoryTrackingProvider" $(find "$SDK" -name '*.swiftinterface' 2>/dev/null) 2>/dev/null | head -n 1)
-50:            grep -n -E "Accessory|Chirality|isHeld|heldChirality" "$F" | head -150
-## GameController spatial controller
-
-GAMECONTROLLER_EXPORT NSString *const GCProductCategoryDualSense API_AVAILABLE(macos(12.0), ios(15.0), tvos(15.0));
-GAMECONTROLLER_EXPORT NSString *const GCProductCategoryDualShock4 API_AVAILABLE(macos(12.0), ios(15.0), tvos(15.0));
-GAMECONTROLLER_EXPORT NSString *const GCProductCategoryMFi API_AVAILABLE(macos(12.0), ios(15.0), tvos(15.0));
-GAMECONTROLLER_EXPORT NSString *const GCProductCategoryXboxOne API_AVAILABLE(macos(12.0), ios(15.0), tvos(15.0));
-GAMECONTROLLER_EXPORT NSString *const GCProductCategoryHID API_AVAILABLE(macos(13.0), ios(16.0), tvos(16.0));
-
-/** The category for game controller products that support 6DoF tracking on visionOS. */
-GAMECONTROLLER_EXPORT NSString *const GCProductCategorySpatialController API_AVAILABLE(macos(26.0), ios(26.0), tvos(26.0), visionos(26.0));
-
-
-GAMECONTROLLER_EXPORT NSString *const GCProductCategoryArcadeStick API_AVAILABLE(macos(14.0), ios(17.0), tvos(17.0));
-
-
-
-/// Remote Product Categories
-/Applications/Xcode_26.6.app/Contents/Developer/Platforms/XROS.platform/Developer/SDKs/XROS26.5.sdk/System/Library/Frameworks/GameController.framework/Headers/GCDevicePhysicalInputStateDiff.h:33:@protocol GCDevicePhysicalInputStateDiff <NSObject>
-/Applications/Xcode_26.6.app/Contents/Developer/Platforms/XROS.platform/Developer/SDKs/XROS26.5.sdk/System/Library/Frameworks/GameController.framework/Headers/GCMouse.h:11:#import <GameController/GCDevice.h>
-/Applications/Xcode_26.6.app/Contents/Developer/Platforms/XROS.platform/Developer/SDKs/XROS26.5.sdk/System/Library/Frameworks/GameController.framework/Headers/GCMouse.h:72:@interface GCMouse : NSObject<GCDevice>
-/Applications/Xcode_26.6.app/Contents/Developer/Platforms/XROS.platform/Developer/SDKs/XROS26.5.sdk/System/Library/Frameworks/GameController.framework/Headers/GCDevice.h:2://  GCDevice.h
-/Applications/Xcode_26.6.app/Contents/Developer/Platforms/XROS.platform/Developer/SDKs/XROS26.5.sdk/System/Library/Frameworks/GameController.framework/Headers/GCDevice.h:13:@protocol GCDevicePhysicalInput;
-/Applications/Xcode_26.6.app/Contents/Developer/Platforms/XROS.platform/Developer/SDKs/XROS26.5.sdk/System/Library/Frameworks/GameController.framework/Headers/GCDevice.h:19:@protocol GCDevice <NSObject>
-/Applications/Xcode_26.6.app/Contents/Developer/Platforms/XROS.platform/Developer/SDKs/XROS26.5.sdk/System/Library/Frameworks/GameController.framework/Headers/GCKeyboard.h:11:#import <GameController/GCDevice.h>
-/Applications/Xcode_26.6.app/Contents/Developer/Platforms/XROS.platform/Developer/SDKs/XROS26.5.sdk/System/Library/Frameworks/GameController.framework/Headers/GCKeyboard.h:40:@interface GCKeyboard : NSObject <GCDevice>
-/Applications/Xcode_26.6.app/Contents/Developer/Platforms/XROS.platform/Developer/SDKs/XROS26.5.sdk/System/Library/Frameworks/GameController.framework/Headers/GCDevicePhysicalInputState.h:17:@protocol GCDevice;
-/Applications/Xcode_26.6.app/Contents/Developer/Platforms/XROS.platform/Developer/SDKs/XROS26.5.sdk/System/Library/Frameworks/GameController.framework/Headers/GCDevicePhysicalInputState.h:28:@protocol GCDevicePhysicalInputState <NSObject>
-/Applications/Xcode_26.6.app/Contents/Developer/Platforms/XROS.platform/Developer/SDKs/XROS26.5.sdk/System/Library/Frameworks/GameController.framework/Headers/GCDevicePhysicalInputState.h:33:@property (weak, readonly) id<GCDevice> device;
-/Applications/Xcode_26.6.app/Contents/Developer/Platforms/XROS.platform/Developer/SDKs/XROS26.5.sdk/System/Library/Frameworks/GameController.framework/Headers/GCDevicePhysicalInput.h:13:@protocol GCDevice;
-/Applications/Xcode_26.6.app/Contents/Developer/Platforms/XROS.platform/Developer/SDKs/XROS26.5.sdk/System/Library/Frameworks/GameController.framework/Headers/GCDevicePhysicalInput.h:23:@protocol GCDevicePhysicalInput <GCDevicePhysicalInputState>
-/Applications/Xcode_26.6.app/Contents/Developer/Platforms/XROS.platform/Developer/SDKs/XROS26.5.sdk/System/Library/Frameworks/GameController.framework/Headers/GCDevicePhysicalInput.h:28:@property (weak, readonly) id<GCDevice> device;
-/Applications/Xcode_26.6.app/Contents/Developer/Platforms/XROS.platform/Developer/SDKs/XROS26.5.sdk/System/Library/Frameworks/GameController.framework/Headers/GCStylus.h:11:#import <GameController/GCDevice.h>
-/Applications/Xcode_26.6.app/Contents/Developer/Platforms/XROS.platform/Developer/SDKs/XROS26.5.sdk/System/Library/Frameworks/GameController.framework/Headers/GCStylus.h:15:@protocol GCDevicePhysicalInput;
-/Applications/Xcode_26.6.app/Contents/Developer/Platforms/XROS.platform/Developer/SDKs/XROS26.5.sdk/System/Library/Frameworks/GameController.framework/Headers/GCStylus.h:119:@interface GCStylus : NSObject <GCDevice>
-/Applications/Xcode_26.6.app/Contents/Developer/Platforms/XROS.platform/Developer/SDKs/XROS26.5.sdk/System/Library/Frameworks/GameController.framework/Headers/GCRacingWheel.h:40:@interface GCRacingWheel : NSObject <GCDevice>
-/Applications/Xcode_26.6.app/Contents/Developer/Platforms/XROS.platform/Developer/SDKs/XROS26.5.sdk/System/Library/Frameworks/GameController.framework/Headers/GameController.h:18:#import <GameController/GCDevice.h>
-/Applications/Xcode_26.6.app/Contents/Developer/Platforms/XROS.platform/Developer/SDKs/XROS26.5.sdk/System/Library/Frameworks/GameController.framework/Headers/GCController.h:11:#import <GameController/GCDevice.h>
+@end
+API_AVAILABLE(macos(11.0), ios(14.0), tvos(14.0))
+__attribute__((objc_non_runtime_protocol)) NS_REFINED_FOR_SWIFT
+@protocol GCDirectionPadElementName <GCPhysicalInputElementName>
+@end
+typedef NSString<GCPhysicalInputElementName> *const GCInputElementName NS_REFINED_FOR_SWIFT NS_TYPED_EXTENSIBLE_ENUM;
+typedef NSString<GCButtonElementName> *const GCInputButtonName NS_REFINED_FOR_SWIFT NS_TYPED_EXTENSIBLE_ENUM;
+typedef NSString<GCAxisElementName> *const GCInputAxisName NS_REFINED_FOR_SWIFT NS_TYPED_EXTENSIBLE_ENUM;
+typedef NSString<GCSwitchElementName> *const GCInputSwitchName NS_REFINED_FOR_SWIFT NS_TYPED_EXTENSIBLE_ENUM;
+typedef NSString<GCDirectionPadElementName> *const GCInputDirectionPadName NS_REFINED_FOR_SWIFT NS_TYPED_EXTENSIBLE_ENUM;
+A set of commonly used strings that can be used to access controller buttons
+ 
+@example controller.physicalInputProfile.buttons[GCInputButtonA]
+ 
+@see GCController.h
+@see GCPhysicalInputProfile.h
+*/
+GAMECONTROLLER_EXPORT GCInputButtonName GCInputButtonA API_AVAILABLE(macos(11.0), ios(14.0), tvos(14.0)) NS_SWIFT_NAME(a);
+GAMECONTROLLER_EXPORT GCInputButtonName GCInputButtonB API_AVAILABLE(macos(11.0), ios(14.0), tvos(14.0)) NS_SWIFT_NAME(b);
+GAMECONTROLLER_EXPORT GCInputButtonName GCInputButtonX API_AVAILABLE(macos(11.0), ios(14.0), tvos(14.0)) NS_SWIFT_NAME(x);
+GAMECONTROLLER_EXPORT GCInputButtonName GCInputButtonY API_AVAILABLE(macos(11.0), ios(14.0), tvos(14.0)) NS_SWIFT_NAME(y);
+GAMECONTROLLER_EXPORT GCInputDirectionPadName GCInputDirectionPad API_AVAILABLE(macos(11.0), ios(14.0), tvos(14.0)) NS_SWIFT_NAME(directionPad);
+GAMECONTROLLER_EXPORT GCInputDirectionPadName GCInputThumbstick API_AVAILABLE(macos(26.0), ios(26.0), tvos(26.0), visionos(26.0));
+GAMECONTROLLER_EXPORT GCInputDirectionPadName GCInputLeftThumbstick API_AVAILABLE(macos(11.0), ios(14.0), tvos(14.0));
+GAMECONTROLLER_EXPORT GCInputDirectionPadName GCInputRightThumbstick API_AVAILABLE(macos(11.0), ios(14.0), tvos(14.0));
+GAMECONTROLLER_EXPORT GCInputButtonName GCInputThumbstickButton API_AVAILABLE(macos(26.0), ios(26.0), tvos(26.0), visionos(26.0));
+GAMECONTROLLER_EXPORT GCInputButtonName GCInputLeftThumbstickButton API_AVAILABLE(macos(11.0), ios(14.0), tvos(14.0));
+GAMECONTROLLER_EXPORT GCInputButtonName GCInputRightThumbstickButton API_AVAILABLE(macos(11.0), ios(14.0), tvos(14.0));
+/*
+GAMECONTROLLER_EXTERN GCInputButtonName GCInputGripButton API_AVAILABLE(macos(26.0), ios(26.0), tvos(26.0), visionos(26.0));
+/*
+GAMECONTROLLER_EXPORT GCInputButtonName GCInputLeftShoulder API_AVAILABLE(macos(11.0), ios(14.0), tvos(14.0));
+GAMECONTROLLER_EXPORT GCInputButtonName GCInputRightShoulder API_AVAILABLE(macos(11.0), ios(14.0), tvos(14.0));
+GAMECONTROLLER_EXPORT GCInputButtonName GCInputLeftBumper API_AVAILABLE(macos(14.4), ios(17.4), tvos(17.4), visionos(1.1));
+GAMECONTROLLER_EXPORT GCInputButtonName GCInputRightBumper API_AVAILABLE(macos(14.4), ios(17.4), tvos(17.4), visionos(1.1));
+GAMECONTROLLER_EXPORT GCInputButtonName GCInputTrigger API_AVAILABLE(macos(26.0), ios(26.0), tvos(26.0), visionos(26.0));
+GAMECONTROLLER_EXPORT GCInputButtonName GCInputLeftTrigger API_AVAILABLE(macos(11.0), ios(14.0), tvos(14.0));
+GAMECONTROLLER_EXPORT GCInputButtonName GCInputRightTrigger API_AVAILABLE(macos(11.0), ios(14.0), tvos(14.0));
+GAMECONTROLLER_EXPORT GCInputButtonName GCInputLeftSideButton API_AVAILABLE(macos(26.4), ios(26.4), tvos(26.4), visionos(26.4));
+GAMECONTROLLER_EXPORT GCInputButtonName GCInputRightSideButton API_AVAILABLE(macos(26.4), ios(26.4), tvos(26.4), visionos(26.4));
+/*
+/* Note: The `position` argument begins at index 0. */
+GAMECONTROLLER_EXPORT GCInputButtonName GCInputBackLeftButton(NSInteger position) NS_REFINED_FOR_SWIFT API_AVAILABLE(macos(14.4), ios(17.4), tvos(17.4), visionos(1.1));
+GAMECONTROLLER_EXPORT GCInputButtonName GCInputBackRightButton(NSInteger position) NS_REFINED_FOR_SWIFT API_AVAILABLE(macos(14.4), ios(17.4), tvos(17.4), visionos(1.1));
+GAMECONTROLLER_EXPORT GCInputButtonName GCInputButtonHome API_AVAILABLE(macos(11.0), ios(14.0), tvos(14.0));
+GAMECONTROLLER_EXPORT GCInputButtonName GCInputButtonMenu API_AVAILABLE(macos(11.0), ios(14.0), tvos(14.0));
+GAMECONTROLLER_EXPORT GCInputButtonName GCInputButtonOptions API_AVAILABLE(macos(11.0), ios(14.0), tvos(14.0));
+GAMECONTROLLER_EXPORT GCInputButtonName GCInputButtonShare API_AVAILABLE(macos(12.0), ios(15.0), tvos(15.0));
+A set of strings commonly used to access Xbox buttons
+ 
+@example controller.physicalInputProfile.buttons[GCInputButtonPaddleOne]
+ 
+@see GCController.h
+@see GCPhysicalInputProfile.h
+*/
+GAMECONTROLLER_EXPORT GCInputButtonName GCInputXboxPaddleOne API_AVAILABLE(macos(11.0), ios(14.0), tvos(14.0));
+GAMECONTROLLER_EXPORT GCInputButtonName GCInputXboxPaddleTwo API_AVAILABLE(macos(11.0), ios(14.0), tvos(14.0));
+GAMECONTROLLER_EXPORT GCInputButtonName GCInputXboxPaddleThree API_AVAILABLE(macos(11.0), ios(14.0), tvos(14.0));
+GAMECONTROLLER_EXPORT GCInputButtonName GCInputXboxPaddleFour API_AVAILABLE(macos(11.0), ios(14.0), tvos(14.0));
+A set of strings commonly used to access DualShock buttons
+ 
+@example controller.physicalInputProfile.dpads[GCInputDualShockTouchpadOne]
+ 
+@see GCController.h
+@see GCPhysicalInputProfile.h
+*/
+GAMECONTROLLER_EXPORT GCInputDirectionPadName GCInputDualShockTouchpadOne API_AVAILABLE(macos(11.0), ios(14.0), tvos(14.0));
+GAMECONTROLLER_EXPORT GCInputDirectionPadName GCInputDualShockTouchpadTwo API_AVAILABLE(macos(11.0), ios(14.0), tvos(14.0));
+GAMECONTROLLER_EXPORT GCInputButtonName GCInputDualShockTouchpadButton API_AVAILABLE(macos(11.0), ios(14.0), tvos(14.0));
+A set of strings commonly used by racing wheels.
+*/
+GAMECONTROLLER_EXPORT GCInputAxisName GCInputSteeringWheel API_AVAILABLE(macos(13.0), macCatalyst(16.0)) API_UNAVAILABLE(ios, tvos);
+GAMECONTROLLER_EXPORT GCInputElementName GCInputShifter API_AVAILABLE(macos(13.0), macCatalyst(16.0)) API_UNAVAILABLE(ios, tvos);
+GAMECONTROLLER_EXPORT GCInputButtonName GCInputPedalAccelerator API_AVAILABLE(macos(13.0), macCatalyst(16.0)) API_UNAVAILABLE(ios, tvos);
+GAMECONTROLLER_EXPORT GCInputButtonName GCInputPedalBrake API_AVAILABLE(macos(13.0), macCatalyst(16.0)) API_UNAVAILABLE(ios, tvos);
+GAMECONTROLLER_EXPORT GCInputButtonName GCInputPedalClutch API_AVAILABLE(macos(13.0), macCatalyst(16.0)) API_UNAVAILABLE(ios, tvos);
+GAMECONTROLLER_EXPORT GCInputButtonName GCInputLeftPaddle API_AVAILABLE(macos(13.0), macCatalyst(16.0)) API_UNAVAILABLE(ios, tvos);
+GAMECONTROLLER_EXPORT GCInputButtonName GCInputRightPaddle API_AVAILABLE(macos(13.0), macCatalyst(16.0)) API_UNAVAILABLE(ios, tvos);
+/// Gets the name of an arcade button at a certain position.
+GAMECONTROLLER_EXPORT GCInputButtonName GCInputArcadeButtonName(NSInteger row, NSInteger column) NS_REFINED_FOR_SWIFT API_AVAILABLE(macos(13.0), ios(16.0), tvos(16.0));
+#pragma mark - (Spatial) Stylus Buttons
+GAMECONTROLLER_EXPORT GCInputButtonName GCInputStylusTip API_AVAILABLE(visionos(26.0)) API_UNAVAILABLE(macos, ios, tvos);
+GAMECONTROLLER_EXPORT GCInputButtonName GCInputStylusPrimaryButton API_AVAILABLE(visionos(26.0)) API_UNAVAILABLE(macos, ios, tvos);
+GAMECONTROLLER_EXPORT GCInputButtonName GCInputStylusSecondaryButton API_AVAILABLE(visionos(26.0)) API_UNAVAILABLE(macos, ios, tvos);
+## Spatial headers
+GameController.h
+GCAxis2DInput.h
+GCAxisElement.h
+GCAxisInput.h
+GCButtonElement.h
+GCColor.h
+GCController.h
+GCControllerAxisInput.h
+GCControllerButtonInput.h
+GCControllerDirectionPad.h
+GCControllerElement.h
+GCControllerInput.h
+GCControllerTouchpad.h
+GCDevice.h
+GCDeviceBattery.h
+GCDeviceCursor.h
+GCDeviceHaptics.h
+GCDeviceLight.h
+GCDevicePhysicalInput.h
+GCDevicePhysicalInputState.h
+GCDevicePhysicalInputStateDiff.h
+GCDirectionalGamepad.h
+GCDirectionPadElement.h
+GCDualSenseAdaptiveTrigger.h
+GCDualSenseGamepad.h
+GCDualShockGamepad.h
+GCEventInteraction.h
+GCEventViewController.h
+GCExtendedGamepad.h
+GCExtendedGamepadSnapshot.h
+GCExtern.h
+GCGameControllerActivationContext.h
+GCGameControllerSceneDelegate.h
+GCGamepad.h
+GCGamepadSnapshot.h
+GCGearShifterElement.h
+GCInputNames.h
+GCKeyboard.h
+GCKeyboardInput.h
+GCKeyCodes.h
+GCKeyNames.h
+GCLinearInput.h
+GCMicroGamepad.h
+GCMicroGamepadSnapshot.h
+GCMotion.h
+GCMouse.h
+GCMouseInput.h
+GCPhysicalInputElement.h
+GCPhysicalInputExtents.h
+GCPhysicalInputProfile.h
+GCPhysicalInputSource.h
+GCPressedStateInput.h
+GCProductCategories.h
+GCRacingWheel.h
+GCRacingWheelInput.h
+GCRelativeInput.h
+GCSteeringWheelElement.h
+GCStylus.h
+GCSwitchElement.h
+GCSwitchPositionInput.h
+GCSyntheticDeviceKeys.h
+GCTouchedStateInput.h
+GCTypes.h
+GCVirtualController.h
+GCXboxGamepad.h
