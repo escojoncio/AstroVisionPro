@@ -1,5 +1,10 @@
 # AstroQuest for Apple Vision Pro
 
+> [!WARNING]
+> **Work in progress - not functional yet.** The Apple Vision Pro app builds and opens, but the
+> game does not run on the headset yet: the emulator is still being brought up on visionOS and
+> tested. Please do not expect to play it for now.
+
 **This is an Apple Vision Pro (visionOS) port of [AstroQuest](https://github.com/bigmak94/AstroQuest)
 by [bigmak94](https://github.com/bigmak94).** Everything that makes ASTRO BOT Rescue Mission
 playable in VR - the PlayStation VR emulation on top of shadPS4, the fixes for the game's timing
