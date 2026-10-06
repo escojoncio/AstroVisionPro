@@ -1,0 +1,334 @@
+# visionos-app - 171b012e11f3fffafb3d249f2db5774349285211 - 2026-10-06T00:20:53Z
+
+## fexcore.log:      346 lines
+### errors
+### end
+[48/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_f128UIToCommonNaN.c.o
+[49/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_commonNaNToF128UI.c.o
+[50/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_roundToI64.c.o
+[51/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_commonNaNToF64UI.c.o
+[52/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_commonNaNToF32UI.c.o
+[53/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_roundPackToF32.c.o
+[54/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_roundPackToF64.c.o
+[55/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_propagateNaNExtF80UI.c.o
+[56/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_roundPackToExtF80.c.o
+[57/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_addMagsExtF80.c.o
+[58/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_extF80UIToCommonNaN.c.o
+[59/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_normSubnormalExtF80Sig.c.o
+[60/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_subMagsExtF80.c.o
+[61/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_approxRecip_1Ks.c.o
+[62/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_normRoundPackToExtF80.c.o
+[63/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/softfloat_raiseFlags.c.o
+[64/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_shiftRightJam128Extra.c.o
+[65/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_shiftRightJam128.c.o
+[66/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_approxRecipSqrt32_1.c.o
+[67/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/f64_to_extF80.c.o
+[68/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_approxRecipSqrt_1Ks.c.o
+[69/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_f64UIToCommonNaN.c.o
+[70/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/extF80_eq.c.o
+[71/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/extF80_roundToInt.c.o
+[72/178] Generating ../../include/FEXCore/Config/ConfigValues.inl, ../../include/FEXCore/Config/ConfigOptions.inl, ../../generated/FEX.1
+[73/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_normSubnormalF32Sig.c.o
+[74/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/extF80_lt.c.o
+[75/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_commonNaNToExtF80UI.c.o
+[76/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/f32_to_extF80.c.o
+[77/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_normSubnormalF64Sig.c.o
+[78/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_f32UIToCommonNaN.c.o
+[79/178] Building C object External/cephes/CMakeFiles/cephes_128bit.dir/src/128bit/constll.c.o
+[80/178] Building C object External/cephes/CMakeFiles/cephes_128bit.dir/src/128bit/atanll.c.o
+[81/178] Linking C static library External/SoftFloat-3e/libsoftfloat_3e.a
+[82/178] Building CXX object External/cephes/CMakeFiles/cephes_128bit.dir/src/128bit/Impl.cpp.o
+[83/178] Building C object External/cephes/CMakeFiles/cephes_128bit.dir/src/128bit/log2ll.c.o
+[84/178] Building C object External/cephes/CMakeFiles/cephes_128bit.dir/src/128bit/floorll.c.o
+[85/178] Building C object External/cephes/CMakeFiles/cephes_128bit.dir/src/128bit/exp2ll.c.o
+[86/178] Building C object External/cephes/CMakeFiles/cephes_128bit.dir/src/128bit/sinll.c.o
+[87/178] Building C object External/cephes/CMakeFiles/cephes_128bit.dir/src/128bit/mtherr.c.o
+[88/178] Generating ../../IR.md
+[89/178] Building C object External/cephes/CMakeFiles/cephes_128bit.dir/src/128bit/tanll.c.o
+[90/178] Generating ../../generated/FEX.1.gz
+[91/178] Generating ../../include/FEXCore/IR/IRDefines.inc, ../../include/FEXCore/IR/IRDefines_Dispatch.inc
+[92/178] Building C object External/cephes/CMakeFiles/cephes_128bit.dir/src/128bit/polevll.c.o
+[93/178] Linking CXX static library External/cephes/libcephes_128bit.a
+[94/178] Building C object External/tiny-json/CMakeFiles/tiny-json.dir/tiny-json.c.o
+[95/178] Building CXX object FEXCore/Source/CMakeFiles/JemallocLibs.dir/Utils/AllocatorHooks.cpp.o
+[96/178] Building C object External/xxhash/cmake_unofficial/CMakeFiles/xxhash.dir/__/xxhash.c.o
+[97/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_Base.dir/Utils/ForcedAssert.cpp.o
+[98/178] Linking C static library External/xxhash/cmake_unofficial/libxxhash.a
+[99/178] Building CXX object External/fmt/CMakeFiles/fmt.dir/src/os.cc.o
+[100/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_Base.dir/Utils/WildcardMatcher.cpp.o
+[101/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_Base.dir/Utils/Allocator.cpp.o
+[102/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_Base.dir/Utils/FileLoading.cpp.o
+[103/178] Linking C static library External/tiny-json/libtiny-json.a
+[104/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_Base.dir/Utils/LogManager.cpp.o
+[105/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_Base.dir/Utils/SpinWaitLock.cpp.o
+[106/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Common/JitSymbols.cpp.o
+[107/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_Base.dir/Interface/Config/Config.cpp.o
+[108/178] Building CXX object External/fmt/CMakeFiles/fmt.dir/src/format.cc.o
+[109/178] Linking CXX static library External/fmt/libfmt.a
+[110/178] Linking CXX static library FEXCore/Source/libFEXCore_Base.a
+[111/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/LookupCache.cpp.o
+[112/178] Building CXX object Source/Common/cpp-optparse/CMakeFiles/cpp-optparse.dir/OptionParser.cpp.o
+[113/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Context/Context.cpp.o
+[114/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/Addressing.cpp.o
+[115/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/CPUBackend.cpp.o
+[116/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/CPUID.cpp.o
+[117/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/Frontend.cpp.o
+[118/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/CodeCache.cpp.o
+[119/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/Core.cpp.o
+[120/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/OpcodeDispatcher/AVX_128.cpp.o
+[121/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/OpcodeDispatcher/Crypto.cpp.o
+[122/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/OpcodeDispatcher/Flags.cpp.o
+[123/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/OpcodeDispatcher/X87.cpp.o
+[124/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/OpcodeDispatcher/X87F64.cpp.o
+[125/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/Interpreter/Fallbacks/InterpreterFallbacks.cpp.o
+[126/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/ArchHelpers/Arm64Emitter.cpp.o
+[127/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/OpcodeDispatcher/Vector.cpp.o
+[128/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/Interpreter/Fallbacks/StringCompareFallbacks.cpp.o
+[129/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/Dispatcher/Dispatcher.cpp.o
+[130/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/OpcodeDispatcher.cpp.o
+[131/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/JIT/ALUOps.cpp.o
+[132/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/JIT/AtomicOps.cpp.o
+[133/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/JIT/JIT.cpp.o
+/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fex-src/FEXCore/Source/Interface/Core/JIT/JIT.cpp:597:50: warning: taking address of packed member 'HostCode' of class or structure 'FEXCore::Context::ExitFunctionLinkData' may result in an unaligned pointer value [-Waddress-of-packed-member]
+  597 |     std::atomic_ref<uint64_t>(*FEX_JIT_WRITABLE(&Record->HostCode)).store(HostCode, std::memory_order::seq_cst);
+      |                                                  ^~~~~~~~~~~~~~~~
+/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fex-src/FEXCore/include/FEXCore/Utils/DarwinCompat.h:82:63: note: expanded from macro 'FEX_JIT_WRITABLE'
+   82 | #define FEX_JIT_WRITABLE(Address) ::FEXCore::Darwin::Writable(Address)
+      |                                                               ^~~~~~~
+1 warning generated.
+[134/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/JIT/ConversionOps.cpp.o
+[135/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/JIT/BranchOps.cpp.o
+[136/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/JIT/EncryptionOps.cpp.o
+[137/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/JIT/MoveOps.cpp.o
+[138/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/JIT/MiscOps.cpp.o
+[139/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/JIT/MemoryOps.cpp.o
+[140/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/JIT/Arm64Relocations.cpp.o
+[141/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/X86Tables/BaseTables.cpp.o
+[142/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/X86Tables/DDDTables.cpp.o
+[143/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/JIT/VectorOps.cpp.o
+[144/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/X86Tables/H0F38Tables.cpp.o
+[145/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/X86Tables/H0F3ATables.cpp.o
+[146/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/X86Tables/PrimaryGroupTables.cpp.o
+[147/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/X86Tables/SecondaryGroupTables.cpp.o
+[148/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/X86Tables/SecondaryModRMTables.cpp.o
+[149/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/X86Tables/SecondaryTables.cpp.o
+[150/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/GDBJIT/GDBJIT.cpp.o
+[151/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/X86Tables/VEXTables.cpp.o
+[152/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/X86Tables/X87Tables.cpp.o
+[153/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/IR/IREmitter.cpp.o
+[154/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/IR/PassManager.cpp.o
+[155/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Utils/LongJump.cpp.o
+[156/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/IR/IRDumper.cpp.o
+[157/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Utils/Threads.cpp.o
+[158/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/IR/Passes/IRDumperPass.cpp.o
+[159/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/IR/Passes/IRValidation.cpp.o
+[160/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Utils/Telemetry.cpp.o
+[161/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/IR/Passes/RedundantFlagCalculationElimination.cpp.o
+[162/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Utils/Profiler.cpp.o
+[163/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/IR/Passes/RegisterAllocationPass.cpp.o
+[164/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/IR/Passes/x87StackOptimizationPass.cpp.o
+[165/178] Building CXX object Source/Common/CMakeFiles/Common.dir/CPUInfo.cpp.o
+[166/178] Building CXX object Source/Common/CMakeFiles/Common.dir/ArgumentLoader.cpp.o
+[167/178] Linking CXX static library Source/Common/cpp-optparse/libcpp-optparse.a
+[168/178] Building CXX object Source/Common/CMakeFiles/Common.dir/JSONPool.cpp.o
+[169/178] Linking CXX static library FEXCore/Source/libJemallocLibs.a
+[170/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Utils/ArchHelpers/Arm64.cpp.o
+[171/178] Linking CXX static library FEXCore/Source/libFEXCore.a
+[172/178] Building CXX object Source/Common/CMakeFiles/Common.dir/SHMStats.cpp.o
+[173/178] Building CXX object Source/Common/CMakeFiles/Common.dir/HostFeatures.cpp.o
+[174/178] Building CXX object Source/Tools/CommonTools/CMakeFiles/CommonTools.dir/DummyHandlers.cpp.o
+[175/178] Building CXX object Source/Common/CMakeFiles/Common.dir/Config.cpp.o
+[176/178] Linking CXX static library Source/Tools/CommonTools/libCommonTools.a
+[177/178] Building CXX object Source/Common/CMakeFiles/Common.dir/VolatileMetadata.cpp.o
+[178/178] Linking CXX static library Source/Common/libCommon.a
+FEXCore for visionOS:
+/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fexcore/Source/Tools/CommonTools/libCommonTools.a
+/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fexcore/Source/Common/cpp-optparse/libcpp-optparse.a
+/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fexcore/Source/Common/libCommon.a
+/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fexcore/External/fmt/libfmt.a
+/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fexcore/External/tiny-json/libtiny-json.a
+/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fexcore/External/cephes/libcephes_128bit.a
+/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fexcore/External/xxhash/cmake_unofficial/libxxhash.a
+/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fexcore/External/SoftFloat-3e/libsoftfloat_3e.a
+/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fexcore/FEXCore/Source/libFEXCore_Base.a
+/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fexcore/FEXCore/Source/libFEXCore.a
+/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fexcore/FEXCore/Source/libJemallocLibs.a
+
+## moltenvk.log:        2 lines
+### errors
+### end
+MoltenVK v1.4.2 for visionOS: from the release package (/var/folders/36/tjdph2t965j8snz9_vkdnw0r0000gn/T/tmp.163C9KoQoe/MoltenVK/MoltenVK/static/MoltenVK.xcframework/xros-arm64/libMoltenVK.a)
+Non-fat file: /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/moltenvk/libMoltenVK.a is architecture: arm64
+
+## core.log:     1128 lines
+### errors
+806-suppress it.
+807-
+808:CMake Error at externals/sirit/CMakeLists.txt:90 (add_subdirectory):
+809-  The source directory
+810-
+811-    /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/shadps4-arm64-main/externals/sirit/externals/SPIRV-Headers
+812-
+813-  does not contain a CMakeLists.txt file.
+814-
+--
+940--- Looking for sigisemptyset - not found
+941--- Performing Test ALLOWS_ONESHOT_TIMERS_WITH_TIMEOUT_ZERO
+942:CMake Error: try_run() invoked in cross-compiling mode, please set the following cache variables appropriately:
+943-   ALLOWS_ONESHOT_TIMERS_WITH_TIMEOUT_ZERO_EXITCODE (advanced)
+944-For details see /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/core/TryRunResults.cmake
+945--- Performing Test ALLOWS_ONESHOT_TIMERS_WITH_TIMEOUT_ZERO - Failed
+946--- Performing Test COMPILER_HAS_HIDDEN_VISIBILITY
+947--- Performing Test COMPILER_HAS_HIDDEN_VISIBILITY - Success
+948--- Performing Test COMPILER_HAS_HIDDEN_INLINE_VISIBILITY
+### end
+-- Performing Test HAVE_LIBATOMIC
+-- Performing Test HAVE_LIBATOMIC - Success
+-- Performing Test HAVE_WTRAMPOLINES
+-- Performing Test HAVE_WTRAMPOLINES - Failed
+-- Performing Test HAVE_WCONVERSION
+-- Performing Test HAVE_WCONVERSION - Success
+-- Performing Test HAVE_WBIDI_CHARS_ANY
+-- Performing Test HAVE_WBIDI_CHARS_ANY - Failed
+-- Performing Test HAVE_WNO_INTERFERENCE_SIZE
+-- Performing Test HAVE_WNO_INTERFERENCE_SIZE - Failed
+-- Performing Test HAVE_FTRIVIAL_AUTO_VAR_INIT
+-- Performing Test HAVE_FTRIVIAL_AUTO_VAR_INIT - Success
+-- Performing Test HAVE_FNO_MATH_ERRNO
+-- Performing Test HAVE_FNO_MATH_ERRNO - Success
+-- Performing Test HAVE_WL_Z_NOEXECSTACK
+-- Performing Test HAVE_WL_Z_NOEXECSTACK - Failed
+-- Performing Test HAVE_WL_Z_RELRO
+-- Performing Test HAVE_WL_Z_RELRO - Failed
+-- Performing Test HAVE_WL_Z_NOW
+-- Performing Test HAVE_WL_Z_NOW - Failed
+-- Performing Test HAVE_WL_AS_NEEDED
+-- Performing Test HAVE_WL_AS_NEEDED - Failed
+-- Performing Test HAVE_MSSE2_SWITCH
+-- Performing Test HAVE_MSSE2_SWITCH - Failed
+-- Looking for xmmintrin.h
+-- Looking for xmmintrin.h - not found
+-- Looking for emmintrin.h
+-- Looking for emmintrin.h - not found
+-- Looking for pmmintrin.h
+-- Looking for pmmintrin.h - not found
+-- Looking for smmintrin.h
+-- Looking for smmintrin.h - not found
+-- Looking for arm_neon.h
+-- Looking for arm_neon.h - found
+-- Performing Test HAVE_NEON_INTRINSICS
+-- Performing Test HAVE_NEON_INTRINSICS - Success
+-- Looking for cpuid.h
+-- Looking for cpuid.h - not found
+-- Looking for intrin.h
+-- Looking for intrin.h - not found
+-- Looking for guiddef.h
+-- Looking for guiddef.h - not found
+-- Looking for clock_gettime in rt
+-- Looking for clock_gettime in rt - found
+-- Looking for dlfcn.h
+-- Looking for dlfcn.h - found
+-- Looking for dlopen in dl
+-- Looking for dlopen in dl - found
+-- Looking for proc_pidpath
+-- Looking for proc_pidpath - not found
+-- Looking for pthread_setschedparam
+-- Looking for pthread_setschedparam - found
+-- Checking for module 'dbus-1'
+--   Package 'dbus-1' not found
+-- Could NOT find DBus1 (missing: DBus1_INCLUDE_DIRS DBus1_LIBRARIES)
+-- Checking for module 'libpipewire-0.3>=0.3.23'
+--   Package 'libpipewire-0.3' not found
+-- Could NOT find PulseAudio (missing: PULSEAUDIO_LIBRARY PULSEAUDIO_INCLUDE_DIR) 
+-- Could NOT find ALSA (missing: ALSA_LIBRARY ALSA_INCLUDE_DIR) 
+-- Could NOT find OSS (missing: OSS_INCLUDE_DIR) 
+-- Could NOT find AudioIO (missing: AUDIOIO_INCLUDE_DIR) 
+-- Could NOT find JACK (missing: JACK_LIBRARY JACK_INCLUDE_DIR) 
+-- Could NOT find OpenSL (missing: OPENSL_LIBRARY OPENSL_INCLUDE_DIR OPENSL_ANDROID_INCLUDE_DIR) 
+-- Could NOT find PortAudio (missing: PORTAUDIO_LIBRARY PORTAUDIO_INCLUDE_DIR) 
+-- Found Git: /opt/homebrew/bin/git (found version "2.55.0")
+-- 
+-- STL hardening level: Performance
+-- 
+-- Building OpenAL with support for the following backends:
+--     CoreAudio, WaveFile, Null
+-- 
+-- Building with support for CPU extensions:
+--     Default, Neon
+-- 
+-- Embedding HRTF datasets
+-- 
+-- NOT installing library and headers
+-- Installing sample configuration
+-- Installing HRTF data files
+-- Installing AmbDec presets
+-- 
+-- Looking for asprintf
+-- Looking for asprintf - found
+-- Looking for ftruncate
+-- Looking for ftruncate - found
+-- Looking for getdelim
+-- Looking for getdelim - found
+-- Looking for getline
+-- Looking for getline - found
+-- Looking for getopt
+-- Looking for getopt - found
+-- Looking for reallocarray
+-- Looking for reallocarray - not found
+-- Looking for strcasecmp
+-- Looking for strcasecmp - found
+-- Looking for strlcat
+-- Looking for strlcat - found
+-- Looking for strlcpy
+-- Looking for strlcpy - found
+-- Looking for strndup
+-- Looking for strndup - found
+-- Looking for strnlen
+-- Looking for strnlen - found
+-- Looking for strsep
+-- Looking for strsep - found
+-- Looking for strtonum
+-- Looking for strtonum - found
+-- Looking for arc4random_buf
+-- Looking for arc4random_buf - found
+-- Looking for arc4random_uniform
+-- Looking for arc4random_uniform - found
+-- Looking for explicit_bzero
+-- Looking for explicit_bzero - not found
+-- Looking for getentropy
+-- Looking for getentropy - found
+-- Looking for getprogname
+-- Looking for getprogname - found
+-- Looking for syslog_r
+-- Looking for syslog_r - not found
+-- Looking for timespecsub
+-- Looking for timespecsub - not found
+-- Looking for timingsafe_bcmp
+-- Looking for timingsafe_bcmp - found
+-- Looking for timingsafe_memcmp
+-- Looking for timingsafe_memcmp - not found
+-- Looking for memmem
+-- Looking for memmem - found
+-- Looking for include file endian.h
+-- Looking for include file endian.h - found
+-- Looking for include file machine/endian.h
+-- Looking for include file machine/endian.h - found
+-- Looking for include file err.h
+-- Looking for include file err.h - found
+-- Looking for 3 include files sys/types.h, ..., netinet/ip.h
+-- Looking for 3 include files sys/types.h, ..., netinet/ip.h - found
+-- Looking for include file resolv.h
+-- Looking for include file resolv.h - found
+-- Looking for include file arpa/nameser.h
+-- Looking for include file arpa/nameser.h - found
+-- Check size of time_t
+-- Check size of time_t - done
+-- cpp-httplib: zlib support enabled (gzip response decompression)
+-- cpp-httplib: SSL support enabled (TLS connections)
+-- Embedding font NotoSansArabic-Regular.ttf
+-- Embedding font NotoSansCJK-Regular.ttc
+-- Embedding font NotoSans-Regular.ttf
+-- Embedding font NotoSansSymbols2-Regular.ttf
+-- Embedding font NotoSansThai-Regular.ttf
+-- Embedding font ProggyVector-Regular.ttf
+-- Configuring incomplete, errors occurred!
