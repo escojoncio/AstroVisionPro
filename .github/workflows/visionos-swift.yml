@@ -42,15 +42,12 @@ jobs:
         run: |
           SDK=$(xcrun --sdk xros --show-sdk-path)
           {
-            echo "## Swift interfaces"
-            find "$SDK/System/Library/Frameworks/ARKit.framework" "$SDK/System/Library/Frameworks/GameController.framework" -name '*.swiftinterface' | head
-            find "$SDK" -name '*.swiftinterface' 2>/dev/null | grep -i -E "arkit|realitykit" | head
-            F=$(grep -rl "AccessoryTrackingProvider" $(find "$SDK" -name '*.swiftinterface' 2>/dev/null) 2>/dev/null | head -n 1)
-            echo "## ARKit accessory declarations ($F)"
-            grep -n -E "Accessory|Chirality|isHeld|heldChirality" "$F" | head -150
-            echo "## GameController spatial controller"
-            sed -n 20,35p "$SDK/System/Library/Frameworks/GameController.framework/Headers/GCProductCategories.h"
-            grep -rn -E "SpatialController|GCDevice\b|@protocol GCDevice" "$SDK/System/Library/Frameworks/GameController.framework/Headers" | head -20
+            echo "## ARKit module files"
+            ls -R "$SDK/System/Library/Frameworks/ARKit.framework/Modules" 2>&1 | head -30
+            echo "## GCInputNames.h"
+            cat "$SDK/System/Library/Frameworks/GameController.framework/Headers/GCInputNames.h" | grep -v "^ \*\|^/\*\*\|^$" | head -150
+            echo "## Spatial headers"
+            ls "$SDK/System/Library/Frameworks/GameController.framework/Headers" | head -120
           } >> swift.log 2>&1 || true
       - name: Publish the log
         if: always()
