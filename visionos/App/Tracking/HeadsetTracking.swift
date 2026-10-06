@@ -2,6 +2,14 @@
 //
 // The head and the hands, through ARKit: what OpenXR's view space and hand trackers give the PC
 // build (core/vr/openxr_host.cpp, UpdateHead and UpdatePad).
+//
+// The game expects the PlayStation Camera to see its controller; the Quest build uses the
+// Quest's cameras instead. visionOS lets no app see the cameras, so the controller is placed
+// with what the headset tracks for the app:
+//   - a DualSense or DualShock 4 between the two hands holding it (and, while one hand is out
+//     of sight, by the other one, where it was relative to the controller);
+//   - PlayStation VR2 Sense controllers by the headset's own tracking of one of them
+//     (SenseTracking.swift).
 
 import ARKit
 import Foundation
@@ -13,6 +21,8 @@ final class HeadsetTracking: @unchecked Sendable {
     let world = WorldTrackingProvider()
     let hands = HandTrackingProvider()
     private(set) var handsRunning = false
+    let sense = SenseTracking()
+    private var senseRequested: Set<ObjectIdentifier> = []
 
     /// Starts world tracking, and hand tracking when it is allowed and wanted.
     func start(trackHands: Bool) async {
@@ -35,6 +45,8 @@ final class HeadsetTracking: @unchecked Sendable {
 
     func stop() {
         session.stop()
+        sense.stop()
+        senseRequested = []
     }
 
     /// Where the device is at `time` (seconds on CACurrentMediaTime's clock).
@@ -49,6 +61,13 @@ final class HeadsetTracking: @unchecked Sendable {
     private var padPosition = SIMD3<Float>(0, 0, 0)
     private var padVelocity = SIMD3<Float>(0, 0, 0)
     private var padTime: TimeInterval = 0
+    /// Where the controller was relative to each palm the last time both were seen, for while
+    /// only one of them is.
+    private var offsetFromLeft: SIMD3<Float>?
+    private var offsetFromRight: SIMD3<Float>?
+    private var bothSeenTime: TimeInterval = 0
+    /// How long one hand alone keeps placing the controller.
+    private static let oneHandSeconds: TimeInterval = 1.5
 
     /// Where the palm of a hand is: the middle of its middle finger's metacarpal (where OpenXR
     /// puts XR_HAND_JOINT_PALM_EXT), between that bone's base and the knuckle.
@@ -70,6 +89,28 @@ final class HeadsetTracking: @unchecked Sendable {
     /// A gamepad cannot be tracked, the hands that hold it can: both palms a controller's width
     /// apart give away where it is and which way it points. The same as the PC build's.
     func updatePad(at time: TimeInterval) {
+        let controllers = PlayStationController.shared
+        if controllers.kind == .sense {
+            let senses = controllers.senseControllers
+            let wanted = Set(senses.map(ObjectIdentifier.init))
+            if wanted != senseRequested {
+                senseRequested = wanted
+                let sense = self.sense
+                Task.detached {
+                    await sense.track(senses)
+                }
+            }
+            sense.updatePad(at: time)
+            return
+        }
+        if !senseRequested.isEmpty {
+            senseRequested = []
+            sense.stop()
+        }
+        updatePadFromHands(at: time)
+    }
+
+    private func updatePadFromHands(at time: TimeInterval) {
         guard handsRunning, hands.state == .running else {
             if padSeen {
                 astro_core_pad_lost()
@@ -79,7 +120,10 @@ final class HeadsetTracking: @unchecked Sendable {
         }
         let latest = hands.latestAnchors
         var seen = false
-        if let left = Self.palm(latest.leftHand), let right = Self.palm(latest.rightHand) {
+        let leftPalm = Self.palm(latest.leftHand)
+        let rightPalm = Self.palm(latest.rightHand)
+        var placed: SIMD3<Float>?
+        if let left = leftPalm, let right = rightPalm {
             let across = right - left
             let distance = simd_length(across)
             // Hands further apart, or closer together, are not holding a controller.
@@ -97,7 +141,21 @@ final class HeadsetTracking: @unchecked Sendable {
                     centre.z += -cos(yaw) * 0.035
                 }
                 centre.y += 0.015
-
+                offsetFromLeft = centre - left
+                offsetFromRight = centre - right
+                bothSeenTime = time
+                placed = centre
+            }
+        } else if time - bothSeenTime < Self.oneHandSeconds {
+            // One hand out of sight: the other one still holds the controller where it was.
+            if let left = leftPalm, let offset = offsetFromLeft {
+                placed = left + offset
+            } else if let right = rightPalm, let offset = offsetFromRight {
+                placed = right + offset
+            }
+        }
+        if let centre = placed {
+            do {
                 if padSeen && time > padTime {
                     let elapsed = Float(time - padTime)
                     if elapsed < 0.1 {

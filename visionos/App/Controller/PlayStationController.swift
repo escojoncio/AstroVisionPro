@@ -10,6 +10,11 @@
 //
 // A controller of Sony's make goes first whenever one is connected (as on the Quest, app 0.7):
 // other gamepads are only used while there is none.
+//
+// PlayStation VR2 Sense controllers (GameController's spatial controllers, one per hand) are a
+// controller too: the two together give the PlayStation 4 controller's buttons, sticks and
+// triggers, and the headset tracks them (SenseTracking.swift), so the game's controller follows
+// one of them in space.
 
 import CoreHaptics
 import Foundation
@@ -21,13 +26,31 @@ final class PlayStationController: @unchecked Sendable {
     /// For the launcher: what is connected.
     struct Status: Equatable {
         var name: String
+        var kind: Kind
         var isPlayStation: Bool
         var hasMotion: Bool
         var hasTouchpad: Bool
     }
 
+    /// What kind of controller the game is played with: it decides how the controller is placed
+    /// in space (HeadsetTracking.swift).
+    enum Kind: Equatable {
+        /// A DualSense or DualShock 4: placed between the two hands holding it.
+        case playStation
+        /// PlayStation VR2 Sense controllers: placed where the headset tracks one of them.
+        case sense
+        /// Any other gamepad: placed between the hands as well.
+        case other
+    }
+
     private let lock = NSLock()
     private var controller: GCController?
+    /// PlayStation VR2 Sense controllers, by hand, while they are what the game is played with.
+    private(set) var senseLeft: GCController?
+    private(set) var senseRight: GCController?
+    private var senseMotors: [ObjectIdentifier: RumbleMotor] = [:]
+    /// The hand each Sense controller is for, when the headset's tracking says so.
+    private var senseHands: [ObjectIdentifier: Bool] = [:]
     private var lowFrequency: RumbleMotor?
     private var highFrequency: RumbleMotor?
     private var appliedFeedback = AstroPadFeedback()
@@ -53,7 +76,57 @@ final class PlayStationController: @unchecked Sendable {
     var status: Status? {
         lock.lock()
         defer { lock.unlock() }
-        return controller.map(Self.describe)
+        if let controller {
+            return Self.describe(controller)
+        }
+        if senseLeft != nil || senseRight != nil {
+            return senseStatus
+        }
+        return nil
+    }
+
+    /// Which kind of controller is in use, for the tracking (nil: none).
+    var kind: Kind? {
+        status?.kind
+    }
+
+    /// The Sense controllers in use, for the headset's tracking.
+    var senseControllers: [GCController] {
+        lock.lock()
+        defer { lock.unlock() }
+        return [senseLeft, senseRight].compactMap { $0 }
+    }
+
+    private var senseStatus: Status {
+        let count = (senseLeft != nil ? 1 : 0) + (senseRight != nil ? 1 : 0)
+        return Status(name: "PlayStation VR2 Sense (\(count) de 2)", kind: .sense,
+                      isPlayStation: true, hasMotion: true, hasTouchpad: false)
+    }
+
+    static func isSense(_ controller: GCController) -> Bool {
+        controller.productCategory == GCProductCategorySpatialController
+    }
+
+    /// Whether a Sense controller is the left one: as the headset's tracking says, else by its name.
+    private func isLeftSense(_ controller: GCController) -> Bool {
+        if let left = senseHands[ObjectIdentifier(controller)] {
+            return left
+        }
+        let name = (controller.vendorName ?? "").lowercased()
+        return name.contains("left") || name.contains("(l)") || name.hasSuffix(" l")
+    }
+
+    /// Called by the tracking when it knows which hand a Sense controller is for.
+    func noteSenseHand(_ controller: GCController, isLeft: Bool) {
+        lock.lock()
+        let known = senseHands[ObjectIdentifier(controller)]
+        senseHands[ObjectIdentifier(controller)] = isLeft
+        lock.unlock()
+        if known != isLeft {
+            DispatchQueue.main.async { [weak self] in
+                self?.choose()
+            }
+        }
     }
 
     private static func isPlayStation(_ controller: GCController) -> Bool {
@@ -64,6 +137,7 @@ final class PlayStationController: @unchecked Sendable {
         let gamepad = controller.extendedGamepad
         return Status(
             name: controller.vendorName ?? controller.productCategory,
+            kind: isPlayStation(controller) ? .playStation : .other,
             isPlayStation: isPlayStation(controller),
             hasMotion: controller.motion != nil,
             hasTouchpad: gamepad is GCDualSenseGamepad || gamepad is GCDualShockGamepad
@@ -72,8 +146,18 @@ final class PlayStationController: @unchecked Sendable {
 
     /// Picks the controller: a PlayStation one if there is one.
     private func choose() {
-        let candidates = GCController.controllers().filter { $0.extendedGamepad != nil }
-        let chosen = candidates.first(where: Self.isPlayStation) ?? candidates.first
+        let all = GCController.controllers()
+        let senses = all.filter(Self.isSense)
+        let candidates = all.filter { $0.extendedGamepad != nil && !Self.isSense($0) }
+        // A DualSense or DualShock 4 first, then PlayStation VR2 Sense controllers, then the rest.
+        var chosen = candidates.first(where: Self.isPlayStation)
+        var useSense = false
+        if chosen == nil && !senses.isEmpty {
+            useSense = true
+        } else if chosen == nil {
+            chosen = candidates.first
+        }
+        updateSense(useSense ? senses : [])
         lock.lock()
         let changed = chosen !== controller
         if changed {
@@ -85,6 +169,12 @@ final class PlayStationController: @unchecked Sendable {
             controller = chosen
         }
         lock.unlock()
+        if useSense {
+            // Sense controllers come and go one at a time: tell every change.
+            astro_core_pad_connected(true, "PlayStation VR2 Sense")
+            onStatusChange?(senseStatus)
+            return
+        }
         guard changed else { return }
 
         if let chosen {
@@ -95,6 +185,39 @@ final class PlayStationController: @unchecked Sendable {
         } else {
             astro_core_pad_connected(false, nil)
             onStatusChange?(nil)
+        }
+    }
+
+    /// Takes the Sense controllers into use (or none), one for each hand.
+    private func updateSense(_ senses: [GCController]) {
+        var left: GCController?
+        var right: GCController?
+        lock.lock()
+        for sense in senses {
+            if isLeftSense(sense) {
+                if left == nil { left = sense } else if right == nil { right = sense }
+            } else {
+                if right == nil { right = sense } else if left == nil { left = sense }
+            }
+        }
+        let previous = Set([senseLeft, senseRight].compactMap { $0.map(ObjectIdentifier.init) })
+        senseLeft = left
+        senseRight = right
+        let current = Set([left, right].compactMap { $0.map(ObjectIdentifier.init) })
+        for gone in previous.subtracting(current) {
+            senseMotors[gone]?.stop()
+            senseMotors[gone] = nil
+        }
+        lock.unlock()
+        for sense in [left, right].compactMap({ $0 }) where !previous.contains(ObjectIdentifier(sense)) {
+            for (_, button) in sense.physicalInputProfile.buttons where button.isBoundToSystemGesture {
+                button.preferredSystemGestureState = .disabled
+            }
+            if let haptics = sense.haptics, let motor = RumbleMotor(haptics: haptics, locality: .default) {
+                lock.lock()
+                senseMotors[ObjectIdentifier(sense)] = motor
+                lock.unlock()
+            }
         }
     }
 
@@ -154,7 +277,13 @@ final class PlayStationController: @unchecked Sendable {
     func poll() {
         lock.lock()
         let controller = self.controller
+        let senseLeft = self.senseLeft
+        let senseRight = self.senseRight
         lock.unlock()
+        if controller == nil, senseLeft != nil || senseRight != nil {
+            pollSense(left: senseLeft, right: senseRight)
+            return
+        }
         guard let controller, let gamepad = controller.extendedGamepad else {
             return
         }
@@ -223,6 +352,89 @@ final class PlayStationController: @unchecked Sendable {
         astro_core_pad_state(&state)
 
         applyFeedback(controller)
+    }
+
+    /// The two Sense controllers as one PlayStation 4 controller: the left one has L1 (its grip
+    /// button), L2 (its trigger), L3 and the left stick, □ and △, and Create; the right one R1,
+    /// R2, R3, the right stick, ✕ and ○, OPTIONS and the PS button. They have no directional
+    /// buttons or touchpad: Create presses the touchpad.
+    private func pollSense(left: GCController?, right: GCController?) {
+        var state = AstroPadState()
+        var buttons: UInt32 = 0
+        func set(_ bit: UInt32, _ pressed: Bool) {
+            if pressed {
+                buttons |= bit
+            }
+        }
+        func pressed(_ controller: GCController?, _ names: [String]) -> Bool {
+            guard let profile = controller?.physicalInputProfile else { return false }
+            return names.contains { profile.buttons[$0]?.isPressed ?? false }
+        }
+        func value(_ controller: GCController?, _ names: [String]) -> Float {
+            guard let profile = controller?.physicalInputProfile else { return 0 }
+            return names.compactMap { profile.buttons[$0]?.value }.max() ?? 0
+        }
+        func stick(_ controller: GCController?, _ names: [String]) -> (Float, Float) {
+            guard let profile = controller?.physicalInputProfile else { return (0, 0) }
+            for name in names {
+                if let pad = profile.dpads[name] {
+                    return (pad.xAxis.value, pad.yAxis.value)
+                }
+            }
+            return (0, 0)
+        }
+        let a = GCInputButtonA, b = GCInputButtonB, x = GCInputButtonX, y = GCInputButtonY
+        // Left: its two face buttons are □ (lower) and △ (upper), whatever names they are given.
+        set(AstroPadSquare.rawValue, pressed(left, [x, a]))
+        set(AstroPadTriangle.rawValue, pressed(left, [y, b]))
+        // Right: ✕ (lower) and ○ (upper).
+        set(AstroPadCross.rawValue, pressed(right, [a, x]))
+        set(AstroPadCircle.rawValue, pressed(right, [b, y]))
+        set(AstroPadL1.rawValue, pressed(left, [GCInputGripButton, GCInputLeftShoulder]))
+        set(AstroPadR1.rawValue, pressed(right, [GCInputGripButton, GCInputRightShoulder]))
+        let l2 = value(left, [GCInputTrigger, GCInputLeftTrigger])
+        let r2 = value(right, [GCInputTrigger, GCInputRightTrigger])
+        set(AstroPadL2.rawValue, l2 > 0.5)
+        set(AstroPadR2.rawValue, r2 > 0.5)
+        set(AstroPadL3.rawValue, pressed(left, [GCInputThumbstickButton, GCInputLeftThumbstickButton]))
+        set(AstroPadR3.rawValue, pressed(right, [GCInputThumbstickButton, GCInputRightThumbstickButton]))
+        set(AstroPadOptions.rawValue, pressed(right, [GCInputButtonOptions, GCInputButtonMenu]))
+        set(AstroPadTouchPad.rawValue, pressed(left, [GCInputButtonShare, GCInputButtonMenu, GCInputButtonOptions]))
+        state.buttons = buttons
+
+        func axis(_ value: Float, flipped: Bool = false) -> UInt8 {
+            let v = flipped ? -value : value
+            return UInt8(clamping: Int(((v + 1.0) * 127.5).rounded()))
+        }
+        let (lx, ly) = stick(left, [GCInputThumbstick, GCInputLeftThumbstick])
+        let (rx, ry) = stick(right, [GCInputThumbstick, GCInputRightThumbstick])
+        state.left_x = axis(lx)
+        state.left_y = axis(ly, flipped: true)
+        state.right_x = axis(rx)
+        state.right_y = axis(ry, flipped: true)
+        state.left_trigger = UInt8(clamping: Int((l2 * 255).rounded()))
+        state.right_trigger = UInt8(clamping: Int((r2 * 255).rounded()))
+        state.touch_down = false
+        state.touch_x = 0.5
+        state.touch_y = 0.5
+        state.home = pressed(right, [GCInputButtonHome]) || pressed(left, [GCInputButtonHome])
+        astro_core_pad_state(&state)
+
+        // Rumble: the game's large motor in the left controller, the small one in the right.
+        var wanted = AstroPadFeedback()
+        guard astro_core_pad_feedback(&wanted) else { return }
+        lock.lock()
+        let previous = appliedFeedback
+        appliedFeedback = wanted
+        let leftMotor = left.flatMap { senseMotors[ObjectIdentifier($0)] }
+        let rightMotor = right.flatMap { senseMotors[ObjectIdentifier($0)] }
+        lock.unlock()
+        if wanted.large_motor != previous.large_motor {
+            leftMotor?.setIntensity(Float(wanted.large_motor) / 255.0)
+        }
+        if wanted.small_motor != previous.small_motor {
+            rightMotor?.setIntensity(Float(wanted.small_motor) / 255.0)
+        }
     }
 
     private func applyFeedback(_ controller: GCController) {
