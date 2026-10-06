@@ -26,7 +26,11 @@ final class JITGate {
         case failed(String)
     }
 
-    private(set) var state: State = .idle
+    private(set) var state: State = .idle {
+        didSet {
+            LogFiles.log("JIT: \(state)")
+        }
+    }
     private var polling: Task<Void, Never>?
 
     /// A self-test that never came back means the memory was not executable after all: the

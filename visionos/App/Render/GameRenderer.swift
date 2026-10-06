@@ -79,10 +79,14 @@ final class GameRenderer: @unchecked Sendable {
     static func start(layerRenderer: LayerRenderer, settings: AstroSettings,
                       onEnd: @escaping @Sendable () -> Void) {
         guard let renderer = GameRenderer(layerRenderer: layerRenderer, settings: settings) else {
+            LogFiles.log("The headset renderer could not be set up (Metal pipeline)")
             onEnd()
             return
         }
         renderer.onEnd = onEnd
+        let configuration = layerRenderer.configuration
+        LogFiles.log("Immersive space: layout \(configuration.layout == .layered ? "layered" : "dedicated"), "
+                     + "foveation \(configuration.isFoveationEnabled)")
         let thread = Thread {
             renderer.run()
         }

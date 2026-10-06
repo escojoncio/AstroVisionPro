@@ -76,6 +76,8 @@ int astro_core_start(const char* game_path, const char* const* environment, int 
     setenv("SDL_JOYSTICK_MFI", "0", 1);
     setenv("SDL_JOYSTICK_HIDAPI", "0", 1);
     setenv("SDL_CAMERA_DRIVER", "dummy", 1);
+    // The emulator's crash reporter: on a crash, the signal and registers into the console log.
+    setenv("BACHATA_CRASH_REGISTERS", "1", 1);
     // (The app is SwiftUI's; SDL's own main is not used. This is the main thread.)
     SDL_SetMainReady();
 

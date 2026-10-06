@@ -10,6 +10,13 @@ import SwiftUI
 @MainActor
 @Observable
 final class AppModel {
+    /// First of all: this session's console log (LogFiles.swift), so that everything after is in it.
+    private let logsStarted: Bool = {
+        LogFiles.begin()
+        return true
+    }()
+    /// The previous game ended with the app (a crash, or the emulator ending the process).
+    let previousSessionCrashed = LogFiles.previousSessionEndedUnexpectedly != nil
     static let immersiveSpaceID = "game"
 
     var settings = AstroSettings.load()
@@ -41,6 +48,7 @@ final class AppModel {
     /// Documents (put there with the Files app), its "games" folder, or one level below either.
     /// The game's immersive space has closed (Digital Crown, or the system): back to the launcher.
     func immersiveEnded() {
+        LogFiles.log("Immersive space closed")
         immersiveOpen = false
         openLauncher?(id: Self.launcherID)
     }
@@ -110,6 +118,9 @@ final class AppModel {
             return false
         }
         coreState = astro_core_state()
+        LogFiles.gameStarted()
+        LogFiles.log("Game started: \(gamePath.path)")
+        LogFiles.log("Settings: \(environment.joined(separator: " "))")
         watchCore()
         return true
     }
@@ -119,6 +130,8 @@ final class AppModel {
             while let self {
                 self.coreState = astro_core_state()
                 if self.coreState == AstroCoreStateStopped {
+                    LogFiles.gameStopped()
+                    LogFiles.log("The emulator ended with code \(astro_core_exit_code())")
                     self.message = "El emulador terminó (código \(astro_core_exit_code())). Su registro: \(String(cString: astro_core_log_path()))"
                     return
                 }
