@@ -7,6 +7,11 @@
 > game does not run on the headset yet: the emulator is still being brought up on visionOS and
 > tested. Please do not expect to play it for now.
 
+> [!CAUTION]
+> **No support is given for piracy.** You are expected to use your own copy of the game, dumped
+> from the original that you bought. Pirated copies are not supported in any way. If you enjoy
+> ASTRO BOT Rescue Mission, please support PlayStation and Team ASOBI by buying their games.
+
 **This is an Apple Vision Pro (visionOS) port of [AstroQuest](https://github.com/bigmak94/AstroQuest)
 by [bigmak94](https://github.com/bigmak94).** Everything that makes ASTRO BOT Rescue Mission
 playable in VR - the PlayStation VR emulation on top of shadPS4, the fixes for the game's timing
