@@ -12,6 +12,9 @@ ASTRO BOT Rescue Mission (PS4 / PlayStation VR, **CUSA12392 versión 1.00**) en 
 | JIT | nativo | **StikDebug para visionOS** |
 | Mando | DualSense/DualShock 4 | DualSense/DualShock 4 vía GameController (`GCDualSenseGamepad` / `GCDualShockGamepad`) |
 
+> [!CAUTION]
+> **No se da ningún soporte a la piratería.** Se espera que uses tu propia copia del juego, sacada del original que has comprado. Las copias piratas no tienen soporte de ningún tipo. Si te gusta ASTRO BOT Rescue Mission, apoya a PlayStation y a Team ASOBI comprando sus juegos.
+
 ## Requisitos
 
 - Apple Vision Pro con **visionOS 26.5 o posterior, incluido visionOS 27**. La app se compila con el SDK de visionOS 26.5 (Xcode 26.6) y se instala y abre también en visionOS 27. El mínimo es 26.5 porque MoltenVK (la capa Vulkan sobre Metal) viene compilado para esa versión.
