@@ -77,7 +77,10 @@ struct LauncherView: View {
                     if let controller = model.controller {
                         Label(controller.name, systemImage: "gamecontroller.fill")
                             .foregroundStyle(controller.isPlayStation ? .green : .orange)
-                        if !controller.isPlayStation {
+                        if controller.kind == .sense {
+                            Text("Mandos PlayStation VR2 Sense: el mando del juego sigue la posición del mando derecho (o del izquierdo si el derecho no se ve). Sin cruceta ni panel táctil: el botón Create del mando izquierdo hace de panel táctil.")
+                                .font(.callout)
+                        } else if !controller.isPlayStation {
                             Text("No es un mando de PlayStation: faltarán el panel táctil y los sensores de movimiento con los que el juego coloca el mando.")
                                 .font(.callout)
                         } else if !controller.hasMotion {
