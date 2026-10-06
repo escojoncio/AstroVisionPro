@@ -41,6 +41,16 @@ uint64_t astro_diag_available_memory(void) {
     return (uint64_t)os_proc_available_memory();
 }
 
+uint64_t astro_diag_footprint(void) {
+    // The memory the system counts against this process's limit right now (phys_footprint).
+    task_vm_info_data_t info;
+    mach_msg_type_number_t count = TASK_VM_INFO_COUNT;
+    if (task_info(mach_task_self(), TASK_VM_INFO, (task_info_t)&info, &count) != KERN_SUCCESS) {
+        return 0;
+    }
+    return info.phys_footprint;
+}
+
 uint32_t astro_diag_address_space_gb(void) {
     // The range of addresses the system gives this process (min_address to max_address).
     task_vm_info_data_t info;
