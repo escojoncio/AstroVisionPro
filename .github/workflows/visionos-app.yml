@@ -108,3 +108,15 @@ jobs:
           name: AstroQuest-visionOS
           path: visionos/build/AstroQuest.ipa
           retention-days: 30
+
+      # A fixed download link: the Releases page, release "visionos-latest", always the newest app.
+      - name: Publish the app as a release
+        if: success() && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete visionos-latest --yes --cleanup-tag || true
+          gh release create visionos-latest visionos/build/AstroQuest.ipa \
+            --target "$GITHUB_SHA" --prerelease \
+            --title "AstroQuest para Apple Vision Pro (última compilación)" \
+            --notes "App sin firmar, compilada de ${GITHUB_SHA::7}. Fírmala con tu cuenta de desarrollador e instálala; los pasos están en README-VISIONOS.md."
