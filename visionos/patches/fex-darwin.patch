@@ -183,7 +183,7 @@ index 7a18d99..dfdf75c 100644
  #endif
  
 diff --git a/FEXCore/Source/Interface/Core/CodeCache.cpp b/FEXCore/Source/Interface/Core/CodeCache.cpp
-index 3866fa5..ad5820a 100644
+index 3866fa5..e63f568 100644
 --- a/FEXCore/Source/Interface/Core/CodeCache.cpp
 +++ b/FEXCore/Source/Interface/Core/CodeCache.cpp
 @@ -1,4 +1,5 @@
@@ -192,15 +192,37 @@ index 3866fa5..ad5820a 100644
  #include "FEXCore/Utils/LogManager.h"
  #include "FEXCore/Utils/MathUtils.h"
  #include "FEXCore/Utils/TypeDefines.h"
-@@ -890,7 +891,7 @@ void CodeCache::FinalizeCodePages(MappedCodeCacheFile& Code, std::span<std::byte
+@@ -844,7 +845,7 @@ void CodeCache::FinalizeCodePages(MappedCodeCacheFile& Code, std::span<std::byte
+ 
+   FEXCORE_PROFILE_SCOPED("FinalizeCodePages");
+ 
+-#ifndef _WIN32
++#if !defined(_WIN32) && !defined(__APPLE__)
+   // Atomicity is critical when making the finalized code data visible.
+   // We ensure this by remapping a temporary buffer onto the PROT_NONE
+   // placeholder page in CodeBuffer. Some constraints to keep in mind are:
+@@ -889,12 +890,18 @@ void CodeCache::FinalizeCodePages(MappedCodeCacheFile& Code, std::span<std::byte
+   Allocator::VirtualDontNeed(Code.CodeBufferInFile.data() + StartOffset, Size);
  #else
    // TODO: Implement lazy mapping on Windows
- #ifdef _M_ARM64EC
+-#ifdef _M_ARM64EC
 -  memcpy(Code.CodeBuffer.data() + StartOffset, Code.CodeBufferInFile.data() + StartOffset, Size);
++#if defined(_M_ARM64EC) || defined(__APPLE__)
 +  memcpy(FEX_JIT_WRITABLE(Code.CodeBuffer.data() + StartOffset), Code.CodeBufferInFile.data() + StartOffset, Size);
++#endif
++#ifdef __APPLE__
++  // (Relocations are written through the writable twin of the code memory.)
++  const auto WritableCode = std::span<std::byte> {FEX_JIT_WRITABLE(Code.CodeBuffer.data()), Code.CodeBuffer.size()};
++#else
++  const auto WritableCode = Code.CodeBuffer;
  #endif
    for (size_t i = StartPage; i < EndPage; ++i) {
      auto PageRelocations = SpanPageRelocations(Code, i);
+-    (void)ApplyCodeRelocations(Code.GuestBase, Code.CodeBuffer, PageRelocations, 0, false);
++    (void)ApplyCodeRelocations(Code.GuestBase, WritableCode, PageRelocations, 0, false);
+     Code.LoadedPages[i] = true;
+   }
+ #endif
 diff --git a/FEXCore/Source/Interface/Core/Interpreter/Fallbacks/F80Fallbacks.h b/FEXCore/Source/Interface/Core/Interpreter/Fallbacks/F80Fallbacks.h
 index 5c0e656..37a2095 100644
 --- a/FEXCore/Source/Interface/Core/Interpreter/Fallbacks/F80Fallbacks.h
@@ -817,6 +839,28 @@ index 6589cf2..483c5c7 100644
      }
    }
  private:
+diff --git a/FEXCore/include/FEXCore/Utils/SpinWaitLock.h b/FEXCore/include/FEXCore/Utils/SpinWaitLock.h
+index af59a6e..82db782 100644
+--- a/FEXCore/include/FEXCore/Utils/SpinWaitLock.h
++++ b/FEXCore/include/FEXCore/Utils/SpinWaitLock.h
+@@ -129,6 +129,17 @@ static inline uint64_t WFELoadAtomic(uint64_t* Futex) {
+   return Result;
+ }
+ 
++#ifdef __APPLE__
++// size_t is `unsigned long` here, a type of its own next to uint64_t (`unsigned long long`).
++static inline unsigned long LoadExclusive(unsigned long* Futex) {
++  return LoadExclusive(reinterpret_cast<uint64_t*>(Futex));
++}
++
++static inline unsigned long WFELoadAtomic(unsigned long* Futex) {
++  return WFELoadAtomic(reinterpret_cast<uint64_t*>(Futex));
++}
++#endif
++
+ template<typename Pred, typename T>
+ static inline void WaitPred(T* Futex, T ComparisonValue) {
+   auto AtomicFutex = std::atomic_ref<T>(*Futex);
 diff --git a/FEXCore/include/FEXCore/Utils/WritePriorityMutex.h b/FEXCore/include/FEXCore/Utils/WritePriorityMutex.h
 index 84742f8..210ceaf 100644
 --- a/FEXCore/include/FEXCore/Utils/WritePriorityMutex.h
