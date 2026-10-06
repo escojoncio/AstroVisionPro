@@ -17,21 +17,22 @@ struct LauncherView: View {
         TabView {
             HomeView()
                 .tabItem {
-                    Label("Jugar", systemImage: "gamecontroller.fill")
+                    Label(L("Jugar", "Play"), systemImage: "gamecontroller.fill")
                 }
             CheckView()
                 .tabItem {
-                    Label("Comprobación", systemImage: "checkmark.shield")
+                    Label(L("Comprobación", "Check"), systemImage: "checkmark.shield")
                 }
             SettingsView()
                 .tabItem {
-                    Label("Ajustes", systemImage: "slider.horizontal.3")
+                    Label(L("Ajustes", "Settings"), systemImage: "slider.horizontal.3")
                 }
             LogsView()
                 .tabItem {
-                    Label("Registros", systemImage: "doc.text.magnifyingglass")
+                    Label(L("Registros", "Logs"), systemImage: "doc.text.magnifyingglass")
                 }
         }
+        .environment(\.locale, Language.shared.locale)
         .onAppear {
             model.openLauncher = openWindow
         }

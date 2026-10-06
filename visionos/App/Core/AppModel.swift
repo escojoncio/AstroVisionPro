@@ -122,7 +122,7 @@ final class AppModel {
             }
         }
         if result != 0 {
-            message = "El emulador no pudo arrancar (error \(result))."
+            message = L("El emulador no pudo arrancar (error \(result)).", "The emulator could not start (error \(result)).")
             return false
         }
         coreState = astro_core_state()
@@ -140,7 +140,7 @@ final class AppModel {
                 if self.coreState == AstroCoreStateStopped {
                     LogFiles.gameStopped()
                     LogFiles.log("The emulator ended with code \(astro_core_exit_code())")
-                    self.message = "El emulador terminó (código \(astro_core_exit_code())). Su registro: \(String(cString: astro_core_log_path()))"
+                    self.message = L("El emulador terminó (código \(astro_core_exit_code())). Su registro: \(String(cString: astro_core_log_path()))", "The emulator ended (code \(astro_core_exit_code())). Its log: \(String(cString: astro_core_log_path()))")
                     return
                 }
                 try? await Task.sleep(for: .seconds(1))
