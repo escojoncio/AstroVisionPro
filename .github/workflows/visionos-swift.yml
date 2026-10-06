@@ -42,12 +42,11 @@ jobs:
         run: |
           SDK=$(xcrun --sdk xros --show-sdk-path)
           {
-            echo "## ARKit module files"
-            ls -R "$SDK/System/Library/Frameworks/ARKit.framework/Modules" 2>&1 | head -30
-            echo "## GCInputNames.h"
-            cat "$SDK/System/Library/Frameworks/GameController.framework/Headers/GCInputNames.h" | grep -v "^ \*\|^/\*\*\|^$" | head -150
-            echo "## Spatial headers"
-            ls "$SDK/System/Library/Frameworks/GameController.framework/Headers" | head -120
+            echo "## ARKit authorization"
+            grep -n -i -E "authorization_type_|accessory|UsageDescription" "$SDK/System/Library/Frameworks/ARKit.framework/Headers/authorization.h" | head -40
+            grep -n -B3 -A12 "required_authorization" "$SDK/System/Library/Frameworks/ARKit.framework/Headers/accessory_tracking.h" | head -60
+            echo "## Info.plist keys mentioned in the SDK headers"
+            grep -rhoE "NS[A-Za-z]*UsageDescription|GC[A-Za-z]*(Supported|Supports)[A-Za-z]*|SpatialGamepad|ExtendedGamepad" "$SDK/System/Library/Frameworks/ARKit.framework/Headers" "$SDK/System/Library/Frameworks/GameController.framework/Headers" | sort | uniq -c | head -40
           } >> swift.log 2>&1 || true
       - name: Publish the log
         if: always()
