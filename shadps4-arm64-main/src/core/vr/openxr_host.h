@@ -85,6 +85,12 @@ public:
     std::string AudioInputName() const;
 
 private:
+#ifdef SHADPS4_VISIONOS
+    // On an Apple Vision Pro the headset is driven by the app around the emulator, which reaches
+    // in here through platform/visionos/astro_core.h (core/vr/openxr_host_visionos.mm).
+    friend struct VisionOsBridge;
+#endif
+
     OpenXrHost();
     ~OpenXrHost();
 
