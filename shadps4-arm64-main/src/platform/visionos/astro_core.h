@@ -55,9 +55,12 @@ int astro_diag_entitlements(void* buffer, uint32_t capacity);
 /// that com.apple.developer.kernel.increased-memory-limit raises).
 uint64_t astro_diag_available_memory(void);
 
-/// The largest single stretch of address space this process can reserve, in GB, trying from
-/// `up_to_gb` down (com.apple.developer.kernel.extended-virtual-addressing raises it).
-uint32_t astro_diag_largest_reservation_gb(uint32_t up_to_gb);
+/// How much address space the system gives this process, in GB
+/// (com.apple.developer.kernel.extended-virtual-addressing raises it).
+uint32_t astro_diag_address_space_gb(void);
+
+/// Whether `gb` GB of address space can be reserved in one piece (and gives it back at once).
+bool astro_diag_can_reserve_gb(uint32_t gb);
 
 // --- the emulator ----------------------------------------------------------------------------
 
