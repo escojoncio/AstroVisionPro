@@ -15,7 +15,7 @@ ASTRO BOT Rescue Mission (PS4 / PlayStation VR, **CUSA12392 versión 1.00**) en 
 ## Requisitos
 
 - Apple Vision Pro con **visionOS 26.5 o posterior, incluido visionOS 27**. La app se compila con el SDK de visionOS 26.5 (Xcode 26.6) y se instala y abre también en visionOS 27. El mínimo es 26.5 porque MoltenVK (la capa Vulkan sobre Metal) viene compilado para esa versión.
-- **Instalarla con la extensión de memoria (Increased Memory Limit).** Sin ella visionOS le da a la app muy poca memoria para el emulador (la PS4 tiene 8 GB). Fírmala con una herramienta que active la capacidad *Increased Memory Limit* en el App ID de la app, como [GetMoreRam](https://github.com/hugeBlack/GetMoreRam) o la versión para Vision Pro de iloaderVP (`visionos-windows` branch), y que conserve `get-task-allow` (para StikDebug). La pestaña *Comprobación* de la app dice si la tiene. El espacio de direcciones ampliado (`extended-virtual-addressing`) también ayuda si la herramienta lo activa.
+- **Instalarla con la extensión de memoria (Increased Memory Limit).** Sin ella visionOS le da a la app muy poca memoria para el emulador (la PS4 tiene 8 GB). Fírmala con una herramienta que active la capacidad *Increased Memory Limit* en el App ID de la app, como [GetMoreRam](https://github.com/hugeBlack/GetMoreRam) o iLoader-VisionPro (rama `visionos-windows`), y que conserve `get-task-allow` (para StikDebug). La pestaña *Comprobación* de la app dice si la tiene. El espacio de direcciones ampliado (`extended-virtual-addressing`) también ayuda si la herramienta lo activa.
 - **StikDebug para visionOS** (https://github.com/rebelancap/StikDebug-visionos) para activar el JIT.
 - Un **mando de PlayStation**: DualSense (recomendado) o DualShock 4. El juego usa su panel táctil y sus sensores de movimiento.
 - Tu propia copia del juego (carpeta `CUSA12392` con `eboot.bin`, `sce_sys` y `sce_module`), versión 1.00.
@@ -34,7 +34,7 @@ En Xcode elige tu equipo de desarrollo en *Signing & Capabilities* y ejecuta en 
 
 ## 2. Instalarla firmada con tu cuenta
 
-Con el `.ipa` sin firmar, fírmalo e instálalo **con la extensión de memoria (Increased Memory Limit)**: con una herramienta que active esa capacidad en el App ID al firmar (GetMoreRam, la versión para Vision Pro de iloaderVP) o con Xcode y la capacidad añadida. Comprueba que la firma conserve `get-task-allow` (sin él StikDebug no puede conectarse). Después, en la app, la pestaña *Comprobación* debe mostrar la memoria extra en verde.
+Con el `.ipa` sin firmar, fírmalo e instálalo **con la extensión de memoria (Increased Memory Limit)**: con una herramienta que active esa capacidad en el App ID al firmar (GetMoreRam, iLoader-VisionPro) o con Xcode y la capacidad añadida. Comprueba que la firma conserve `get-task-allow` (sin él StikDebug no puede conectarse). Después, en la app, la pestaña *Comprobación* debe mostrar la memoria extra en verde.
 
 ## Comprobación al abrir la app
 
