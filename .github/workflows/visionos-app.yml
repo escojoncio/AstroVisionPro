@@ -1,6 +1,12 @@
-# The Apple Vision Pro app: FEXCore, MoltenVK and the emulator for visionOS, then the app around
-# them (unsigned: it is signed when installed, with the installer's own Apple account). Its logs
-# go to the ci-logs branch (visionos-app.txt), the app to the run's artifacts (AstroQuest.ipa).
+# The Apple Vision Pro app: FEXCore, MoltenVK, FFmpeg and the emulator for visionOS, then the app
+# around them (unsigned: it is signed when installed). Its logs go to the ci-logs branch
+# (visionos-app.txt), the app to the release "visionos-latest" (AstroQuest.ipa).
+#
+# macOS runners cost ten times their minutes on a private repository, so this only runs when
+# asked for: by hand (Actions > visionos-app > Run workflow), or for a push whose commit message
+# has [build] in it. The emulator itself (libastroquest_core.a) is kept between runs and only
+# rebuilt when its sources, the submodules it is built from or its build scripts change: a change
+# to the app alone builds just the app.
 name: visionos-app
 on:
   push:
@@ -17,15 +23,29 @@ concurrency:
   cancel-in-progress: true
 jobs:
   app:
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[build]')
     runs-on: macos-26
-    timeout-minutes: 240
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 1
           submodules: false
 
+      # What the emulator is built from: its sources, the submodule commits, the patches and
+      # the build scripts. The same as last time: the emulator built then is used again.
+      - name: What the emulator is built from
+        run: |
+          git ls-tree -r HEAD shadps4-arm64-main/externals | awk '$2 == "commit"' > core-inputs.txt
+          echo "FEX $(cat shadps4-arm64-main/runtime/locks/components.lock.json | shasum)" >> core-inputs.txt
+      - uses: actions/cache@v4
+        id: core
+        with:
+          path: visionos/build/core
+          key: visionos-core-${{ hashFiles('core-inputs.txt', 'shadps4-arm64-main/src/**', 'shadps4-arm64-main/CMakeLists.txt', 'shadps4-arm64-main/externals/CMakeLists.txt', 'shadps4-arm64-main/cmake/**', 'visionos/patches/**', 'visionos/scripts/build-*.sh') }}
+
       - name: Submodules the visionOS build uses
+        if: steps.core.outputs.cache-hit != 'true'
         run: |
           SKIP="mesa-kosmickrisp vulkan-loader libadrenotools bachata-xserver discord-rpc hwinfo ext-wepoll libdeflate"
           PATHS=()
@@ -43,49 +63,40 @@ jobs:
 
       - name: Tools
         run: |
-          brew install ccache ninja xcodegen || true
-          xcodebuild -version
-          xcodebuild -showsdks | grep -i xr || true
+          brew install xcodegen || true
+          if [[ "${{ steps.core.outputs.cache-hit }}" != "true" ]]; then brew install ccache ninja || true; fi
 
       - uses: actions/cache@v4
+        if: steps.core.outputs.cache-hit != 'true'
         with:
           path: ~/Library/Caches/ccache
           key: ccache-visionos-app-${{ github.sha }}
           restore-keys: ccache-visionos-app-
       - uses: actions/cache@v4
+        if: steps.core.outputs.cache-hit != 'true'
         with:
           path: build/visionos/moltenvk
           key: moltenvk-visionos-v1.4.2
-
-      - name: FEXCore for visionOS
-        run: |
-          set -o pipefail
-          bash visionos/scripts/build-fexcore.sh 2>&1 | tee fexcore.log
-
-      - name: MoltenVK for visionOS
-        run: |
-          set -o pipefail
-          bash visionos/scripts/build-moltenvk.sh 2>&1 | tee moltenvk.log
-
       - uses: actions/cache@v4
+        if: steps.core.outputs.cache-hit != 'true'
         with:
           path: build/visionos/ffmpeg
           key: ffmpeg-visionos-n7.1.1-${{ hashFiles('visionos/scripts/build-ffmpeg.sh') }}
 
-      - name: FFmpeg for visionOS
+      - name: The emulator for visionOS (FEXCore, MoltenVK, FFmpeg, shadPS4)
+        if: steps.core.outputs.cache-hit != 'true'
         run: |
           set -o pipefail
+          bash visionos/scripts/build-fexcore.sh 2>&1 | tee fexcore.log
+          bash visionos/scripts/build-moltenvk.sh 2>&1 | tee moltenvk.log
           bash visionos/scripts/build-ffmpeg.sh 2>&1 | tee ffmpeg.log
-
-      - name: The emulator for visionOS
-        run: |
-          set -o pipefail
           bash visionos/scripts/build-core.sh 2>&1 | tee core.log
 
       - name: The app
         run: |
           set -o pipefail
           cd visionos
+          ls -la build/core
           xcodegen generate
           xcodebuild -project AstroQuest.xcodeproj -scheme AstroQuest \
             -sdk xros -configuration Release -destination 'generic/platform=visionOS' \
@@ -97,24 +108,10 @@ jobs:
           cp -R "$APP" build/ipa/Payload/
           (cd build/ipa && zip -qry ../AstroQuest.ipa Payload)
           ls -la build/AstroQuest.ipa
-          # What the executable takes up when it is loaded (segments, and its largest variables).
-          BIN="$APP/AstroQuest"
-          {
-            echo "## Segments"; size -m "$BIN" | grep -E "Segment|Section __(bss|common|data)|total" | head -40
-            echo "## Largest data symbols"
-            nm -m --size-sort -S "$BIN" 2>/dev/null | grep -E "__DATA|__bss|__common" | tail -25 || true
-          } 2>&1 | tee ../binary.log
 
       - name: Publish the logs
         if: always()
-        run: bash visionos/scripts/ci-publish-log.sh visionos-app fexcore.log moltenvk.log ffmpeg.log core.log app.log binary.log
-
-      - uses: actions/upload-artifact@v4
-        if: success()
-        with:
-          name: AstroQuest-visionOS
-          path: visionos/build/AstroQuest.ipa
-          retention-days: 30
+        run: bash visionos/scripts/ci-publish-log.sh visionos-app fexcore.log moltenvk.log ffmpeg.log core.log app.log
 
       # A fixed download link: the Releases page, release "visionos-latest", always the newest app.
       - name: Publish the app as a release
