@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- A debugger may attach: that is how StikDebug enables JIT. (Development signing adds it
+	     anyway; sideloading tools keep it.) -->
+	<key>get-task-allow</key>
+	<true/>
+	<!-- The emulator holds the PlayStation 4's memory and the larger pictures of the PC VR
+	     settings: it needs the raised memory limit, and address space for the console's. -->
+	<key>com.apple.developer.kernel.increased-memory-limit</key>
+	<true/>
+	<key>com.apple.developer.kernel.extended-virtual-addressing</key>
+	<true/>
+</dict>
+</plist>

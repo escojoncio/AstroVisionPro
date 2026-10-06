@@ -22,6 +22,10 @@
 #include <fcntl.h>
 #include <sys/mman.h>
 #endif
+#ifdef SHADPS4_VISIONOS
+#include <mach/mach.h>
+#include <mach/vm_map.h>
+#endif
 
 #if defined(__APPLE__) && defined(ARCH_X86_64)
 // Reserve space for the system address space using a zerofill section.
@@ -32,6 +36,18 @@ asm(".zerofill USER_AREA,USER_AREA,__USER_AREA,0x5F9000000000");
 
 namespace Core {
 
+#if defined(SHADPS4_VISIONOS)
+// visionOS gives an app 64 GB of address space at most (with the extended virtual addressing
+// entitlement), of which the first 4 GB and the system's shared region are taken. The console's
+// layout is kept, made smaller, and placed wherever the system has room (the FEX path maps it
+// relocated anyway, see below): 4 GB system managed, 4 GB system reserved, 16 GB for the user.
+constexpr VAddr SYSTEM_MANAGED_MIN = 0x400000ULL;
+constexpr VAddr SYSTEM_MANAGED_MAX = SYSTEM_MANAGED_MIN + 0x100000000ULL - 1;
+constexpr VAddr SYSTEM_RESERVED_MIN = SYSTEM_MANAGED_MAX + 1;
+constexpr VAddr SYSTEM_RESERVED_MAX = SYSTEM_RESERVED_MIN + 0x100000000ULL - 1;
+constexpr VAddr USER_MIN = SYSTEM_RESERVED_MAX + 1;
+constexpr VAddr USER_MAX = USER_MIN + 0x400000000ULL - 1;
+#else
 // Constants used for mapping address space.
 constexpr VAddr SYSTEM_MANAGED_MIN = 0x400000ULL;
 constexpr VAddr SYSTEM_MANAGED_MAX = 0x7FFFFBFFFULL;
@@ -58,6 +74,7 @@ constexpr VAddr USER_MAX = 0xFFFFFFFFFFFULL;
 #else
 constexpr VAddr USER_MAX = 0x5FFFFFFFFFFFULL;
 #endif
+#endif // SHADPS4_VISIONOS
 
 // Constants for the sizes of the ranges in address space.
 static constexpr u64 SystemManagedSize = SYSTEM_MANAGED_MAX - SYSTEM_MANAGED_MIN + 1;
@@ -753,6 +770,30 @@ struct AddressSpace::Impl {
         }
 #endif
 
+#if defined(SHADPS4_VISIONOS)
+        // The console's memory: one memory object, mapped wherever the game has it (as
+        // Dolphin's memory arena does on Apple systems). No file, no shared memory name.
+        memory_object_size_t entry_size = BackingSize;
+        if (mach_make_memory_entry_64(mach_task_self(), &entry_size, 0,
+                                      MAP_MEM_NAMED_CREATE | VM_PROT_READ | VM_PROT_WRITE,
+                                      &backing_entry, MACH_PORT_NULL) != KERN_SUCCESS ||
+            entry_size < BackingSize) {
+            LOG_CRITICAL(Kernel_Vmm, "mach_make_memory_entry_64 of {} bytes failed", BackingSize);
+            throw std::bad_alloc{};
+        }
+        backing_fd = -1;
+        vm_address_t backing_address = 0;
+        if (vm_map(mach_task_self(), &backing_address, BackingSize, 0, VM_FLAGS_ANYWHERE,
+                   backing_entry, 0, FALSE, VM_PROT_READ | VM_PROT_WRITE,
+                   VM_PROT_READ | VM_PROT_WRITE, VM_INHERIT_NONE) != KERN_SUCCESS) {
+            LOG_CRITICAL(Kernel_Vmm, "vm_map of the console's memory failed");
+            throw std::bad_alloc{};
+        }
+        backing_base = reinterpret_cast<u8*>(backing_address);
+        LOG_INFO(Kernel_Vmm, "The console's memory: {} MB at {}", BackingSize >> 20,
+                 fmt::ptr(backing_base));
+    }
+#else
 #ifdef __APPLE__
         const auto shm_path = fmt::format("/BackingDmem{}", getpid());
         backing_fd = shm_open(shm_path.c_str(), O_RDWR | O_CREAT | O_EXCL, 0600);
@@ -792,10 +833,37 @@ struct AddressSpace::Impl {
             throw std::bad_alloc{};
         }
     }
+#endif // SHADPS4_VISIONOS
 
     void* Map(VAddr virtual_addr, PAddr phys_addr, u64 size, PosixPageProtection prot,
               int fd = -1) {
         m_free_regions.subtract({virtual_addr, virtual_addr + size});
+#if defined(SHADPS4_VISIONOS)
+        // Nothing the app maps can be executed (the game's code is translated by FEX, which
+        // only reads it), and the console's memory is the memory object.
+        const int host_prot = static_cast<int>(prot) & (PROT_READ | PROT_WRITE);
+        if (phys_addr != -1 && fd == -1) {
+            vm_address_t address = virtual_addr;
+            const vm_prot_t vm_prot = (host_prot & PROT_READ ? VM_PROT_READ : VM_PROT_NONE) |
+                                      (host_prot & PROT_WRITE ? VM_PROT_WRITE : VM_PROT_NONE);
+            const kern_return_t mapped =
+                vm_map(mach_task_self(), &address, size, 0, VM_FLAGS_FIXED | VM_FLAGS_OVERWRITE,
+                       backing_entry, phys_addr, FALSE, vm_prot, VM_PROT_READ | VM_PROT_WRITE,
+                       VM_INHERIT_NONE);
+            ASSERT_MSG(mapped == KERN_SUCCESS, "vm_map of the console's memory failed: {}",
+                       mapped);
+            return reinterpret_cast<void*>(address);
+        }
+        {
+            const int handle = phys_addr != -1 ? fd : -1;
+            const off_t host_offset = phys_addr != -1 ? phys_addr : 0;
+            const int flag = phys_addr != -1 ? MAP_SHARED : (MAP_ANONYMOUS | MAP_PRIVATE);
+            void* ret = mmap(reinterpret_cast<void*>(virtual_addr), size, host_prot,
+                             MAP_FIXED | flag, handle, host_offset);
+            ASSERT_MSG(ret != MAP_FAILED, "mmap failed: {}", strerror(errno));
+            return ret;
+        }
+#endif
 #ifdef __APPLE__
         if ((prot & PROT_EXEC) != 0) {
             ASSERT_MSG(fd == -1, "Requested execute permissions for file mapping");
@@ -850,6 +918,9 @@ struct AddressSpace::Impl {
     }
 
     int backing_fd;
+#ifdef SHADPS4_VISIONOS
+    mach_port_t backing_entry{MACH_PORT_NULL};
+#endif
     u8* backing_base{};
     u8* system_managed_base{};
     u64 system_managed_size{};
