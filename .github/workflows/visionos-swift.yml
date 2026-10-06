@@ -44,7 +44,8 @@ jobs:
           {
             echo "## Swift interfaces"
             find "$SDK/System/Library/Frameworks/ARKit.framework" "$SDK/System/Library/Frameworks/GameController.framework" -name '*.swiftinterface' | head
-            F=$(find "$SDK/System/Library/Frameworks/ARKit.framework" -name '*xros.swiftinterface' | head -n 1)
+            find "$SDK" -name '*.swiftinterface' 2>/dev/null | grep -i -E "arkit|realitykit" | head
+            F=$(grep -rl "AccessoryTrackingProvider" $(find "$SDK" -name '*.swiftinterface' 2>/dev/null) 2>/dev/null | head -n 1)
             echo "## ARKit accessory declarations ($F)"
             grep -n -E "Accessory|Chirality|isHeld|heldChirality" "$F" | head -150
             echo "## GameController spatial controller"

@@ -34,6 +34,10 @@ struct Diagnostics {
     let entitlements: [String: Any]
     let entitlementsReadable: Bool
     let availableMemoryGB: Double
+    /// What the app uses now, its whole limit (used + still available) and the headset's RAM, in bytes.
+    let usedBytes: UInt64
+    let limitBytes: UInt64
+    let physicalBytes: UInt64
     let addressSpaceGB: UInt32
     /// Only filled in when asked for (a reservation test while the app is drawing can take memory
     /// its text needs): nil until then.
@@ -62,6 +66,9 @@ struct Diagnostics {
             entitlements: entitlements,
             entitlementsReadable: !entitlements.isEmpty,
             availableMemoryGB: Double(astro_diag_available_memory()) / 1_073_741_824,
+            usedBytes: astro_diag_footprint(),
+            limitBytes: astro_diag_footprint() + astro_diag_available_memory(),
+            physicalBytes: ProcessInfo.processInfo.physicalMemory,
             addressSpaceGB: astro_diag_address_space_gb(),
             canReserveNeeded: nil,
             debuggerAttached: astro_jit_process_is_debugged())
@@ -73,11 +80,17 @@ struct Diagnostics {
 
     func items(jit: JITGate.State) -> [Item] {
         var items: [Item] = []
-        let gb = String(format: "%.1f GB", availableMemoryGB)
+        func gb(_ bytes: UInt64) -> String {
+            String(format: "%.2f GB", Double(bytes) / 1_073_741_824)
+        }
+        func mb(_ bytes: UInt64) -> String {
+            "\(bytes / 1_048_576) MB"
+        }
+        let percent = physicalBytes > 0 ? Double(limitBytes) / Double(physicalBytes) * 100 : 0
 
         // Extra memory.
         let increased = has("com.apple.developer.kernel.increased-memory-limit")
-        let memoryVerdict: Verdict = availableMemoryGB >= Self.neededMemoryGB ? .ok
+        let memoryVerdict: Verdict = Double(limitBytes) / 1_073_741_824 >= Self.neededMemoryGB ? .ok
             : (increased ? .warning : .missing)
         items.append(Item(
             id: "memory", title: "Memoria extra (increased-memory-limit)",
@@ -85,7 +98,10 @@ struct Diagnostics {
             detail: (entitlementsReadable
                      ? (increased ? "Firmada con el permiso. " : "La firma NO incluye el permiso. ")
                      : "")
-                + "Memoria que la app puede usar ahora: \(gb) (hacen falta unos \(Int(Self.neededMemoryGB)) GB)."))
+                + "Límite de memoria de la app: \(gb(limitBytes)) (\(mb(limitBytes))) de \(gb(physicalBytes)) de RAM del visor"
+                + String(format: " (%.1f %%). ", percent)
+                + "En uso ahora: \(mb(usedBytes)); libre para la app: \(mb(limitBytes - min(usedBytes, limitBytes))). "
+                + "Hacen falta unos \(Int(Self.neededMemoryGB)) GB."))
 
         // Address space.
         let extended = has("com.apple.developer.kernel.extended-virtual-addressing")

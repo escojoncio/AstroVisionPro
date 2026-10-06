@@ -55,6 +55,10 @@ int astro_diag_entitlements(void* buffer, uint32_t capacity);
 /// that com.apple.developer.kernel.increased-memory-limit raises).
 uint64_t astro_diag_available_memory(void);
 
+/// How much memory the system counts against this process right now (its footprint). With
+/// astro_diag_available_memory, the process's whole limit.
+uint64_t astro_diag_footprint(void);
+
 /// How much address space the system gives this process, in GB
 /// (com.apple.developer.kernel.extended-virtual-addressing raises it).
 uint32_t astro_diag_address_space_gb(void);
