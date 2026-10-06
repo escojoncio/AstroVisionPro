@@ -1,13 +1,14 @@
-# visionos-swift - 9b2a63542c2ed109b80299bdb15eb5c505ec5308 - 2026-10-06T13:28:59Z
+# visionos-swift - c602c5d2a4523de884ab21566fa2bc35b07b6f2c - 2026-10-06T13:31:06Z
 
-## swift.log:       42 lines
+## swift.log:       43 lines
 ### errors
 ### end
 Swift and Metal: OK
 ## Swift interfaces
 /Applications/Xcode_26.6.app/Contents/Developer/Platforms/XROS.platform/Developer/SDKs/XROS26.5.sdk/System/Library/Frameworks/GameController.framework/Modules/GameController.swiftmodule/arm64e-apple-xros.swiftinterface
-## ARKit accessory declarations ()
-grep: : No such file or directory
+## ARKit accessory declarations (./.github/workflows/visionos-swift.yml)
+48:            F=$(grep -rl "AccessoryTrackingProvider" $(find "$SDK" -name '*.swiftinterface' 2>/dev/null) 2>/dev/null | head -n 1)
+50:            grep -n -E "Accessory|Chirality|isHeld|heldChirality" "$F" | head -150
 ## GameController spatial controller
 
 GAMECONTROLLER_EXPORT NSString *const GCProductCategoryDualSense API_AVAILABLE(macos(12.0), ios(15.0), tvos(15.0));
