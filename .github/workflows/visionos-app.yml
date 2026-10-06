@@ -97,10 +97,17 @@ jobs:
           cp -R "$APP" build/ipa/Payload/
           (cd build/ipa && zip -qry ../AstroQuest.ipa Payload)
           ls -la build/AstroQuest.ipa
+          # What the executable takes up when it is loaded (segments, and its largest variables).
+          BIN="$APP/AstroQuest"
+          {
+            echo "## Segments"; size -m "$BIN" | grep -E "Segment|Section __(bss|common|data)|total" | head -40
+            echo "## Largest data symbols"
+            nm -m --size-sort -S "$BIN" 2>/dev/null | grep -E "__DATA|__bss|__common" | tail -25 || true
+          } 2>&1 | tee ../binary.log
 
       - name: Publish the logs
         if: always()
-        run: bash visionos/scripts/ci-publish-log.sh visionos-app fexcore.log moltenvk.log ffmpeg.log core.log app.log
+        run: bash visionos/scripts/ci-publish-log.sh visionos-app fexcore.log moltenvk.log ffmpeg.log core.log app.log binary.log
 
       - uses: actions/upload-artifact@v4
         if: success()
