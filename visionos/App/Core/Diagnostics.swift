@@ -34,7 +34,8 @@ struct Diagnostics {
     let entitlements: [String: Any]
     let entitlementsReadable: Bool
     let availableMemoryGB: Double
-    let largestReservationGB: UInt32
+    let addressSpaceGB: UInt32
+    let canReserveNeeded: Bool
     let debuggerAttached: Bool
 
     static func run() -> Diagnostics {
@@ -59,7 +60,8 @@ struct Diagnostics {
             entitlements: entitlements,
             entitlementsReadable: !entitlements.isEmpty,
             availableMemoryGB: Double(astro_diag_available_memory()) / 1_073_741_824,
-            largestReservationGB: astro_diag_largest_reservation_gb(64),
+            addressSpaceGB: astro_diag_address_space_gb(),
+            canReserveNeeded: astro_diag_can_reserve_gb(neededAddressSpaceGB),
             debuggerAttached: astro_jit_process_is_debugged())
     }
 
@@ -85,14 +87,16 @@ struct Diagnostics {
 
         // Address space.
         let extended = has("com.apple.developer.kernel.extended-virtual-addressing")
-        let spaceVerdict: Verdict = largestReservationGB >= Self.neededAddressSpaceGB ? .ok : .missing
+        let spaceVerdict: Verdict = canReserveNeeded ? .ok : .missing
         items.append(Item(
             id: "address", title: "Espacio de direcciones (extended-virtual-addressing)",
             verdict: spaceVerdict,
             detail: (entitlementsReadable
                      ? (extended ? "Firmada con el permiso. " : "La firma NO incluye el permiso. ")
                      : "")
-                + "La app puede reservar \(largestReservationGB) GB seguidos (el emulador necesita \(Self.neededAddressSpaceGB) GB)."))
+                + "Espacio de direcciones de la app: \(addressSpaceGB) GB. "
+                + (canReserveNeeded ? "Se pueden reservar los \(Self.neededAddressSpaceGB) GB que necesita el emulador."
+                   : "No se pueden reservar los \(Self.neededAddressSpaceGB) GB que necesita el emulador.")))
 
         // JIT.
         let taskAllow = has("get-task-allow")
