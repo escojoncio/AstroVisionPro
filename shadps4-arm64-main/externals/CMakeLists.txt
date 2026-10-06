@@ -36,7 +36,24 @@ if (NOT TARGET fmt::fmt)
 endif()
 
 # FFmpeg
-if (NOT TARGET FFmpeg::ffmpeg)
+if (NOT TARGET FFmpeg::ffmpeg AND SHADPS4_VISIONOS)
+    # shadPS4's prebuilt FFmpeg has no visionOS build: visionos/scripts/build-ffmpeg.sh makes the
+    # same version with the same codecs.
+    set(FFMPEG_VISIONOS_DIR "${CMAKE_SOURCE_DIR}/../build/visionos/ffmpeg" CACHE PATH "FFmpeg built for visionOS")
+    if (NOT EXISTS "${FFMPEG_VISIONOS_DIR}/lib/libavcodec.a")
+        message(FATAL_ERROR "FFmpeg for visionOS is missing: run visionos/scripts/build-ffmpeg.sh")
+    endif()
+    add_library(ffmpeg INTERFACE)
+    target_include_directories(ffmpeg INTERFACE "${FFMPEG_VISIONOS_DIR}/include")
+    target_link_libraries(ffmpeg INTERFACE
+        "${FFMPEG_VISIONOS_DIR}/lib/libavformat.a"
+        "${FFMPEG_VISIONOS_DIR}/lib/libavcodec.a"
+        "${FFMPEG_VISIONOS_DIR}/lib/libswscale.a"
+        "${FFMPEG_VISIONOS_DIR}/lib/libavutil.a"
+        "${FFMPEG_VISIONOS_DIR}/lib/libavfilter.a"
+        "${FFMPEG_VISIONOS_DIR}/lib/libswresample.a")
+    add_library(FFmpeg::ffmpeg ALIAS ffmpeg)
+elseif (NOT TARGET FFmpeg::ffmpeg)
     add_subdirectory(ffmpeg-core)
     add_library(FFmpeg::ffmpeg ALIAS ffmpeg)
 endif()
