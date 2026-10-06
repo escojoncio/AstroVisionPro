@@ -80,6 +80,32 @@ struct AstroSettings {
         return settings
     }
 
+    /// Sets one setting in settings.txt (the line that has it, or the commented-out line for it,
+    /// or a new line at the end), leaving the rest of the file as it is.
+    static func write(_ key: String, _ value: String) {
+        _ = load()
+        guard let text = try? String(contentsOf: fileURL, encoding: .utf8) else { return }
+        var lines = text.components(separatedBy: "\n")
+        func matches(_ line: String, commented: Bool) -> Bool {
+            var trimmed = line.trimmingCharacters(in: .whitespaces)
+            if commented {
+                guard trimmed.hasPrefix("#") else { return false }
+                trimmed = String(trimmed.dropFirst()).trimmingCharacters(in: .whitespaces)
+            }
+            guard let equals = trimmed.firstIndex(of: "=") else { return false }
+            return trimmed[..<equals].trimmingCharacters(in: .whitespaces).lowercased() == key
+        }
+        let line = "\(key)=\(value)"
+        if let index = lines.firstIndex(where: { matches($0, commented: false) }) {
+            lines[index] = line
+        } else if let index = lines.firstIndex(where: { matches($0, commented: true) }) {
+            lines[index] = line
+        } else {
+            lines.append(line)
+        }
+        try? lines.joined(separator: "\n").write(to: fileURL, atomically: true, encoding: .utf8)
+    }
+
     private mutating func apply(key: String, value: String) {
         let flag = value != "0"
         switch key {
