@@ -14,7 +14,7 @@ ASTRO BOT Rescue Mission (PS4 / PlayStation VR, **CUSA12392 versión 1.00**) en 
 
 ## Requisitos
 
-- Apple Vision Pro con **visionOS 26 o 27**. La app se compila con el SDK de visionOS 26 (objetivo mínimo 26.0) y por tanto se instala y abre también en visionOS 27.
+- Apple Vision Pro con **visionOS 26.5 o posterior, incluido visionOS 27**. La app se compila con el SDK de visionOS 26.5 (Xcode 26.6) y se instala y abre también en visionOS 27. El mínimo es 26.5 porque MoltenVK (la capa Vulkan sobre Metal) viene compilado para esa versión.
 - **Una cuenta de desarrollador de Apple de pago** para firmarla: la app pide `increased-memory-limit` y `extended-virtual-addressing` (la PS4 tiene 8 GB y el emulador necesita ese espacio). Con una cuenta gratuita esos permisos no se conceden y el juego no tendrá memoria suficiente.
 - **StikDebug para visionOS** (https://github.com/rebelancap/StikDebug-visionos) para activar el JIT.
 - Un **mando de PlayStation**: DualSense (recomendado) o DualShock 4. El juego usa su panel táctil y sus sensores de movimiento.
@@ -90,4 +90,4 @@ Está en la carpeta de la app (app Archivos). Se crea con los valores de la vers
 
 ## Estado
 
-Compila en CI para visionOS. No se ha podido probar en un Apple Vision Pro, así que es posible que haya problemas al ejecutarlo (memoria, MoltenVK, señales de FEX en Darwin). El registro del emulador se guarda en la carpeta de la app (lo indica la app si el emulador termina).
+La app completa (FEXCore, MoltenVK, FFmpeg 7.1, el emulador y la app en Swift) **compila y enlaza en GitHub Actions** para visionOS y genera `AstroQuest.ipa` (sin firmar). **No se ha probado en un Apple Vision Pro**, así que puede haber problemas al ejecutarla: memoria, partes de Vulkan que MoltenVK no cubra o señales de FEX en Darwin. El registro del emulador se guarda en la carpeta de la app, y si el emulador termina la app indica dónde está.
