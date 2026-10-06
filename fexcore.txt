@@ -1,62 +1,65 @@
-# fexcore - 79724e5c2b8754078633d8c47b8a5ec94642596b - 2026-10-06T00:05:08Z
+# fexcore - 9f13d855dd02cd8ffc04046d1dce884cdb4cfd06 - 2026-10-06T00:08:37Z
 
-## fexcore.log:      383 lines
+## fexcore.log:      346 lines
 ### errors
-265-[116/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/CPUID.cpp.o
-266-[117/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/CodeCache.cpp.o
-267:FAILED: [code=1] FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/CodeCache.cpp.o 
-268-/opt/homebrew/bin/ccache sloppiness=time_macros /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang++ -DARCHITECTURE_arm64=1 -DFEXCORE_HAS_PRESERVE_ALL_ATTR=1 -DFEXCORE_PRESERVE_ALL_ATTR="__attribute__((preserve_all))" -DFEX_DISABLE_TELEMETRY=1 -DFEX_HAS_PRESERVE_ALL_ATTR=1 -DFEX_PRESERVE_ALL_ATTR="__attribute__((preserve_all))" -DGLOBAL_DATA_DIRECTORY=\"/usr/local/share/fex-emu/\" -DHAS_PROGRAM_INVOCATION_NAME="" -DINLINE="static inline" -DINLINE_LEVEL=4 -DJIT_ARM64 -DSOFTFLOAT_BUILTIN_CLZ=1 -DSOFTFLOAT_FAST_DIV32TO16=1 -DSOFTFLOAT_FAST_DIV64TO32=1 -DSOFTFLOAT_FAST_INT64=1 -D_LARGEFILE64_SOURCE -I/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fexcore/FEXCore/Source -I/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fex-src/FEXCore/Source -I/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fex-src/Source -I/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fexcore/Source -I/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fexcore/generated -I/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fex-src/FEXCore/Source/IncludePrivate -I/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fex-src/FEXCore/include -I/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fexcore/include -I/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fex-src/External/fmt/include -I/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fex-src/External/xxhash/cmake_unofficial/.. -I/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fex-src/FEXHeaderUtils/. -I/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fex-src/CodeEmitter/. -I/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fex-src/External/cephes/include -I/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fex-src/External/SoftFloat-3e/include -I/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fex-src/External/SoftFloat-3e/include/SoftFloat-3e -I/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fex-src/External/unordered_dense/include -O3 -DNDEBUG -fomit-frame-pointer -std=gnu++20 -arch arm64 -isysroot /Applications/Xcode_26.6.app/Contents/Developer/Platforms/XROS.platform/Developer/SDKs/XROS26.5.sdk --target=arm64-apple-xros26.0 -fPIC -fvisibility=hidden -fvisibility-inlines-hidden -Wno-trigraphs -fdiagnostics-color=always -fcolor-diagnostics -Wno-deprecated-enum-enum-conversion -Wall -fno-strict-aliasing -fno-exceptions -Werror=cast-qual -Werror=ignored-qualifiers -Werror=implicit-fallthrough -ffunction-sections -fwrapv -MD -MT FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/CodeCache.cpp.o -MF FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/CodeCache.cpp.o.d -o FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/CodeCache.cpp.o -c /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fex-src/FEXCore/Source/Interface/Core/CodeCache.cpp
-269:/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fex-src/FEXCore/Source/Interface/Core/CodeCache.cpp:883:25: error: no member named 'mremap' in the global namespace
-270-  883 |   void* RemapResult = ::mremap(Staging, Size, Size, MREMAP_FIXED | MREMAP_MAYMOVE | MREMAP_DONTUNMAP, CodeRange.data());
-271-      |                         ^~~~~~
-272:/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fex-src/FEXCore/Source/Interface/Core/CodeCache.cpp:883:53: error: use of undeclared identifier 'MREMAP_FIXED'
-273-  883 |   void* RemapResult = ::mremap(Staging, Size, Size, MREMAP_FIXED | MREMAP_MAYMOVE | MREMAP_DONTUNMAP, CodeRange.data());
-274-      |                                                     ^~~~~~~~~~~~
-275:/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fex-src/FEXCore/Source/Interface/Core/CodeCache.cpp:883:68: error: use of undeclared identifier 'MREMAP_MAYMOVE'
-276-  883 |   void* RemapResult = ::mremap(Staging, Size, Size, MREMAP_FIXED | MREMAP_MAYMOVE | MREMAP_DONTUNMAP, CodeRange.data());
-277-      |                                                                    ^~~~~~~~~~~~~~
-278:/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fex-src/FEXCore/Source/Interface/Core/CodeCache.cpp:883:85: error: use of undeclared identifier 'MREMAP_DONTUNMAP'
-279-  883 |   void* RemapResult = ::mremap(Staging, Size, Size, MREMAP_FIXED | MREMAP_MAYMOVE | MREMAP_DONTUNMAP, CodeRange.data());
-280-      |                                                                                     ^~~~~~~~~~~~~~~~
-281-In file included from /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fex-src/FEXCore/Source/Interface/Core/CodeCache.cpp:8:
-282:/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fex-src/FEXCore/include/FEXCore/Utils/SpinWaitLock.h:138:14: error: no matching function for call to 'LoadExclusive'
-283-  138 |     Result = LoadExclusive(Futex);
-284-      |              ^~~~~~~~~~~~~
-285-/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fex-src/FEXCore/Source/Interface/Core/CodeCache.cpp:259:28: note: in instantiation of function template specialization 'FEXCore::Utils::SpinWaitLock::WaitPred<std::less_equal<void>, unsigned long>' requested here
-286-  259 |       Utils::SpinWaitLock::WaitPred<std::less_equal<>, size_t>(reinterpret_cast<size_t*>(&BufferOffset), Buffer.size());
-287-      |                            ^
-288-/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fex-src/FEXCore/include/FEXCore/Utils/SpinWaitLock.h:76:23: note: candidate function not viable: no known conversion from 'unsigned long *' to 'uint8_t *' (aka 'unsigned char *') for 1st argument
---
-298-   97 | static inline uint64_t LoadExclusive(uint64_t* Futex) {
-299-      |                        ^             ~~~~~~~~~~~~~~~
-300:/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fex-src/FEXCore/include/FEXCore/Utils/SpinWaitLock.h:143:14: error: no matching function for call to 'WFELoadAtomic'
-301-  143 |     Result = WFELoadAtomic(Futex);
-302-      |              ^~~~~~~~~~~~~
-303-/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fex-src/FEXCore/include/FEXCore/Utils/SpinWaitLock.h:104:23: note: candidate function not viable: no known conversion from 'unsigned long *' to 'uint8_t *' (aka 'unsigned char *') for 1st argument
-304-  104 | static inline uint8_t WFELoadAtomic(uint8_t* Futex) {
-305-      |                       ^             ~~~~~~~~~~~~~~
-306-/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fex-src/FEXCore/include/FEXCore/Utils/SpinWaitLock.h:111:24: note: candidate function not viable: no known conversion from 'unsigned long *' to 'uint16_t *' (aka 'unsigned short *') for 1st argument
 ### end
-[85/178] Building C object External/cephes/CMakeFiles/cephes_128bit.dir/src/128bit/floorll.c.o
-[86/178] Building C object External/cephes/CMakeFiles/cephes_128bit.dir/src/128bit/mtherr.c.o
-[87/178] Building C object External/cephes/CMakeFiles/cephes_128bit.dir/src/128bit/polevll.c.o
-[88/178] Building C object External/cephes/CMakeFiles/cephes_128bit.dir/src/128bit/sinll.c.o
+[48/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_commonNaNToF128UI.c.o
+[49/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_addMagsExtF80.c.o
+[50/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_commonNaNToF64UI.c.o
+[51/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_extF80UIToCommonNaN.c.o
+[52/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_commonNaNToF32UI.c.o
+[53/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_roundToI64.c.o
+[54/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_roundPackToF64.c.o
+[55/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_roundPackToExtF80.c.o
+[56/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_roundToI32.c.o
+[57/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_propagateNaNExtF80UI.c.o
+[58/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_roundPackToF32.c.o
+[59/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_subMagsExtF80.c.o
+[60/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_normSubnormalExtF80Sig.c.o
+[61/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_shiftRightJam128.c.o
+[62/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_shiftRightJam128Extra.c.o
+[63/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_normRoundPackToExtF80.c.o
+[64/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_approxRecipSqrt_1Ks.c.o
+[65/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_approxRecip_1Ks.c.o
+[66/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_approxRecipSqrt32_1.c.o
+[67/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/extF80_roundToInt.c.o
+[68/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/softfloat_raiseFlags.c.o
+[69/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_commonNaNToExtF80UI.c.o
+[70/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/f64_to_extF80.c.o
+[71/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_normSubnormalF64Sig.c.o
+[72/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_f64UIToCommonNaN.c.o
+[73/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/f32_to_extF80.c.o
+[74/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_normSubnormalF32Sig.c.o
+[75/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_f32UIToCommonNaN.c.o
+[76/178] Generating ../../include/FEXCore/Config/ConfigValues.inl, ../../include/FEXCore/Config/ConfigOptions.inl, ../../generated/FEX.1
+[77/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/extF80_eq.c.o
+[78/178] Building C object External/cephes/CMakeFiles/cephes_128bit.dir/src/128bit/atanll.c.o
+[79/178] Building CXX object External/cephes/CMakeFiles/cephes_128bit.dir/src/128bit/Impl.cpp.o
+[80/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/extF80_lt.c.o
+[81/178] Building C object External/cephes/CMakeFiles/cephes_128bit.dir/src/128bit/exp2ll.c.o
+[82/178] Building C object External/cephes/CMakeFiles/cephes_128bit.dir/src/128bit/floorll.c.o
+[83/178] Linking C static library External/SoftFloat-3e/libsoftfloat_3e.a
+[84/178] Building C object External/cephes/CMakeFiles/cephes_128bit.dir/src/128bit/constll.c.o
+[85/178] Building C object External/cephes/CMakeFiles/cephes_128bit.dir/src/128bit/mtherr.c.o
+[86/178] Building C object External/cephes/CMakeFiles/cephes_128bit.dir/src/128bit/polevll.c.o
+[87/178] Building C object External/cephes/CMakeFiles/cephes_128bit.dir/src/128bit/sinll.c.o
+[88/178] Generating ../../IR.md
 [89/178] Building C object External/cephes/CMakeFiles/cephes_128bit.dir/src/128bit/tanll.c.o
 [90/178] Generating ../../generated/FEX.1.gz
-[91/178] Generating ../../IR.md
-[92/178] Linking CXX static library External/cephes/libcephes_128bit.a
-[93/178] Generating ../../include/FEXCore/IR/IRDefines.inc, ../../include/FEXCore/IR/IRDefines_Dispatch.inc
+[91/178] Generating ../../include/FEXCore/IR/IRDefines.inc, ../../include/FEXCore/IR/IRDefines_Dispatch.inc
+[92/178] Building C object External/cephes/CMakeFiles/cephes_128bit.dir/src/128bit/log2ll.c.o
+[93/178] Linking CXX static library External/cephes/libcephes_128bit.a
 [94/178] Building C object External/tiny-json/CMakeFiles/tiny-json.dir/tiny-json.c.o
 [95/178] Building CXX object FEXCore/Source/CMakeFiles/JemallocLibs.dir/Utils/AllocatorHooks.cpp.o
-[96/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_Base.dir/Utils/ForcedAssert.cpp.o
-[97/178] Building C object External/xxhash/cmake_unofficial/CMakeFiles/xxhash.dir/__/xxhash.c.o
+[96/178] Building C object External/xxhash/cmake_unofficial/CMakeFiles/xxhash.dir/__/xxhash.c.o
+[97/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_Base.dir/Utils/ForcedAssert.cpp.o
 [98/178] Linking C static library External/xxhash/cmake_unofficial/libxxhash.a
 [99/178] Building CXX object External/fmt/CMakeFiles/fmt.dir/src/os.cc.o
 [100/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_Base.dir/Utils/WildcardMatcher.cpp.o
 [101/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_Base.dir/Utils/Allocator.cpp.o
-[102/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_Base.dir/Utils/FileLoading.cpp.o
-[103/178] Linking C static library External/tiny-json/libtiny-json.a
-[104/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_Base.dir/Utils/LogManager.cpp.o
+[102/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_Base.dir/Utils/LogManager.cpp.o
+[103/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_Base.dir/Utils/FileLoading.cpp.o
+[104/178] Linking C static library External/tiny-json/libtiny-json.a
 [105/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_Base.dir/Utils/SpinWaitLock.cpp.o
 [106/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Common/JitSymbols.cpp.o
 [107/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_Base.dir/Interface/Config/Config.cpp.o
@@ -66,60 +69,11 @@
 [111/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/LookupCache.cpp.o
 [112/178] Building CXX object Source/Common/cpp-optparse/CMakeFiles/cpp-optparse.dir/OptionParser.cpp.o
 [113/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Context/Context.cpp.o
-[114/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/Addressing.cpp.o
-[115/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/CPUBackend.cpp.o
+[114/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/CPUBackend.cpp.o
+[115/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/Addressing.cpp.o
 [116/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/CPUID.cpp.o
-[117/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/CodeCache.cpp.o
-FAILED: [code=1] FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/CodeCache.cpp.o 
-/opt/homebrew/bin/ccache sloppiness=time_macros /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang++ -DARCHITECTURE_arm64=1 -DFEXCORE_HAS_PRESERVE_ALL_ATTR=1 -DFEXCORE_PRESERVE_ALL_ATTR="__attribute__((preserve_all))" -DFEX_DISABLE_TELEMETRY=1 -DFEX_HAS_PRESERVE_ALL_ATTR=1 -DFEX_PRESERVE_ALL_ATTR="__attribute__((preserve_all))" -DGLOBAL_DATA_DIRECTORY=\"/usr/local/share/fex-emu/\" -DHAS_PROGRAM_INVOCATION_NAME="" -DINLINE="static inline" -DINLINE_LEVEL=4 -DJIT_ARM64 -DSOFTFLOAT_BUILTIN_CLZ=1 -DSOFTFLOAT_FAST_DIV32TO16=1 -DSOFTFLOAT_FAST_DIV64TO32=1 -DSOFTFLOAT_FAST_INT64=1 -D_LARGEFILE64_SOURCE -I/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fexcore/FEXCore/Source -I/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fex-src/FEXCore/Source -I/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fex-src/Source -I/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fexcore/Source -I/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fexcore/generated -I/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fex-src/FEXCore/Source/IncludePrivate -I/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fex-src/FEXCore/include -I/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fexcore/include -I/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fex-src/External/fmt/include -I/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fex-src/External/xxhash/cmake_unofficial/.. -I/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fex-src/FEXHeaderUtils/. -I/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fex-src/CodeEmitter/. -I/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fex-src/External/cephes/include -I/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fex-src/External/SoftFloat-3e/include -I/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fex-src/External/SoftFloat-3e/include/SoftFloat-3e -I/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fex-src/External/unordered_dense/include -O3 -DNDEBUG -fomit-frame-pointer -std=gnu++20 -arch arm64 -isysroot /Applications/Xcode_26.6.app/Contents/Developer/Platforms/XROS.platform/Developer/SDKs/XROS26.5.sdk --target=arm64-apple-xros26.0 -fPIC -fvisibility=hidden -fvisibility-inlines-hidden -Wno-trigraphs -fdiagnostics-color=always -fcolor-diagnostics -Wno-deprecated-enum-enum-conversion -Wall -fno-strict-aliasing -fno-exceptions -Werror=cast-qual -Werror=ignored-qualifiers -Werror=implicit-fallthrough -ffunction-sections -fwrapv -MD -MT FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/CodeCache.cpp.o -MF FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/CodeCache.cpp.o.d -o FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/CodeCache.cpp.o -c /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fex-src/FEXCore/Source/Interface/Core/CodeCache.cpp
-/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fex-src/FEXCore/Source/Interface/Core/CodeCache.cpp:883:25: error: no member named 'mremap' in the global namespace
-  883 |   void* RemapResult = ::mremap(Staging, Size, Size, MREMAP_FIXED | MREMAP_MAYMOVE | MREMAP_DONTUNMAP, CodeRange.data());
-      |                         ^~~~~~
-/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fex-src/FEXCore/Source/Interface/Core/CodeCache.cpp:883:53: error: use of undeclared identifier 'MREMAP_FIXED'
-  883 |   void* RemapResult = ::mremap(Staging, Size, Size, MREMAP_FIXED | MREMAP_MAYMOVE | MREMAP_DONTUNMAP, CodeRange.data());
-      |                                                     ^~~~~~~~~~~~
-/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fex-src/FEXCore/Source/Interface/Core/CodeCache.cpp:883:68: error: use of undeclared identifier 'MREMAP_MAYMOVE'
-  883 |   void* RemapResult = ::mremap(Staging, Size, Size, MREMAP_FIXED | MREMAP_MAYMOVE | MREMAP_DONTUNMAP, CodeRange.data());
-      |                                                                    ^~~~~~~~~~~~~~
-/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fex-src/FEXCore/Source/Interface/Core/CodeCache.cpp:883:85: error: use of undeclared identifier 'MREMAP_DONTUNMAP'
-  883 |   void* RemapResult = ::mremap(Staging, Size, Size, MREMAP_FIXED | MREMAP_MAYMOVE | MREMAP_DONTUNMAP, CodeRange.data());
-      |                                                                                     ^~~~~~~~~~~~~~~~
-In file included from /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fex-src/FEXCore/Source/Interface/Core/CodeCache.cpp:8:
-/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fex-src/FEXCore/include/FEXCore/Utils/SpinWaitLock.h:138:14: error: no matching function for call to 'LoadExclusive'
-  138 |     Result = LoadExclusive(Futex);
-      |              ^~~~~~~~~~~~~
-/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fex-src/FEXCore/Source/Interface/Core/CodeCache.cpp:259:28: note: in instantiation of function template specialization 'FEXCore::Utils::SpinWaitLock::WaitPred<std::less_equal<void>, unsigned long>' requested here
-  259 |       Utils::SpinWaitLock::WaitPred<std::less_equal<>, size_t>(reinterpret_cast<size_t*>(&BufferOffset), Buffer.size());
-      |                            ^
-/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fex-src/FEXCore/include/FEXCore/Utils/SpinWaitLock.h:76:23: note: candidate function not viable: no known conversion from 'unsigned long *' to 'uint8_t *' (aka 'unsigned char *') for 1st argument
-   76 | static inline uint8_t LoadExclusive(uint8_t* Futex) {
-      |                       ^             ~~~~~~~~~~~~~~
-/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fex-src/FEXCore/include/FEXCore/Utils/SpinWaitLock.h:83:24: note: candidate function not viable: no known conversion from 'unsigned long *' to 'uint16_t *' (aka 'unsigned short *') for 1st argument
-   83 | static inline uint16_t LoadExclusive(uint16_t* Futex) {
-      |                        ^             ~~~~~~~~~~~~~~~
-/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fex-src/FEXCore/include/FEXCore/Utils/SpinWaitLock.h:90:24: note: candidate function not viable: no known conversion from 'unsigned long *' to 'uint32_t *' (aka 'unsigned int *') for 1st argument
-   90 | static inline uint32_t LoadExclusive(uint32_t* Futex) {
-      |                        ^             ~~~~~~~~~~~~~~~
-/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fex-src/FEXCore/include/FEXCore/Utils/SpinWaitLock.h:97:24: note: candidate function not viable: no known conversion from 'unsigned long *' to 'uint64_t *' (aka 'unsigned long long *') for 1st argument
-   97 | static inline uint64_t LoadExclusive(uint64_t* Futex) {
-      |                        ^             ~~~~~~~~~~~~~~~
-/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fex-src/FEXCore/include/FEXCore/Utils/SpinWaitLock.h:143:14: error: no matching function for call to 'WFELoadAtomic'
-  143 |     Result = WFELoadAtomic(Futex);
-      |              ^~~~~~~~~~~~~
-/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fex-src/FEXCore/include/FEXCore/Utils/SpinWaitLock.h:104:23: note: candidate function not viable: no known conversion from 'unsigned long *' to 'uint8_t *' (aka 'unsigned char *') for 1st argument
-  104 | static inline uint8_t WFELoadAtomic(uint8_t* Futex) {
-      |                       ^             ~~~~~~~~~~~~~~
-/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fex-src/FEXCore/include/FEXCore/Utils/SpinWaitLock.h:111:24: note: candidate function not viable: no known conversion from 'unsigned long *' to 'uint16_t *' (aka 'unsigned short *') for 1st argument
-  111 | static inline uint16_t WFELoadAtomic(uint16_t* Futex) {
-      |                        ^             ~~~~~~~~~~~~~~~
-/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fex-src/FEXCore/include/FEXCore/Utils/SpinWaitLock.h:118:24: note: candidate function not viable: no known conversion from 'unsigned long *' to 'uint32_t *' (aka 'unsigned int *') for 1st argument
-  118 | static inline uint32_t WFELoadAtomic(uint32_t* Futex) {
-      |                        ^             ~~~~~~~~~~~~~~~
-/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fex-src/FEXCore/include/FEXCore/Utils/SpinWaitLock.h:125:24: note: candidate function not viable: no known conversion from 'unsigned long *' to 'uint64_t *' (aka 'unsigned long long *') for 1st argument
-  125 | static inline uint64_t WFELoadAtomic(uint64_t* Futex) {
-      |                        ^             ~~~~~~~~~~~~~~~
-6 errors generated.
-[118/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/Frontend.cpp.o
+[117/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/Frontend.cpp.o
+[118/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/CodeCache.cpp.o
 [119/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/Core.cpp.o
 [120/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/OpcodeDispatcher/AVX_128.cpp.o
 [121/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/OpcodeDispatcher/Crypto.cpp.o
@@ -127,13 +81,13 @@ In file included from /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro
 [123/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/OpcodeDispatcher/X87.cpp.o
 [124/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/OpcodeDispatcher/X87F64.cpp.o
 [125/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/Interpreter/Fallbacks/InterpreterFallbacks.cpp.o
-[126/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/Interpreter/Fallbacks/StringCompareFallbacks.cpp.o
-[127/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/ArchHelpers/Arm64Emitter.cpp.o
-[128/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/OpcodeDispatcher/Vector.cpp.o
+[126/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/ArchHelpers/Arm64Emitter.cpp.o
+[127/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/OpcodeDispatcher/Vector.cpp.o
+[128/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/Interpreter/Fallbacks/StringCompareFallbacks.cpp.o
 [129/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/Dispatcher/Dispatcher.cpp.o
 [130/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/OpcodeDispatcher.cpp.o
-[131/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/JIT/AtomicOps.cpp.o
-[132/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/JIT/ALUOps.cpp.o
+[131/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/JIT/ALUOps.cpp.o
+[132/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/JIT/AtomicOps.cpp.o
 [133/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/JIT/JIT.cpp.o
 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fex-src/FEXCore/Source/Interface/Core/JIT/JIT.cpp:597:50: warning: taking address of packed member 'HostCode' of class or structure 'FEXCore::Context::ExitFunctionLinkData' may result in an unaligned pointer value [-Waddress-of-packed-member]
   597 |     std::atomic_ref<uint64_t>(*FEX_JIT_WRITABLE(&Record->HostCode)).store(HostCode, std::memory_order::seq_cst);
@@ -142,8 +96,8 @@ In file included from /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro
    82 | #define FEX_JIT_WRITABLE(Address) ::FEXCore::Darwin::Writable(Address)
       |                                                               ^~~~~~~
 1 warning generated.
-[134/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/JIT/ConversionOps.cpp.o
-[135/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/JIT/BranchOps.cpp.o
+[134/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/JIT/BranchOps.cpp.o
+[135/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/JIT/ConversionOps.cpp.o
 [136/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/JIT/EncryptionOps.cpp.o
 [137/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/JIT/MoveOps.cpp.o
 [138/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/JIT/MiscOps.cpp.o
@@ -155,16 +109,16 @@ In file included from /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro
 [144/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/X86Tables/H0F38Tables.cpp.o
 [145/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/X86Tables/H0F3ATables.cpp.o
 [146/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/X86Tables/PrimaryGroupTables.cpp.o
-[147/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/X86Tables/SecondaryModRMTables.cpp.o
-[148/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/X86Tables/SecondaryGroupTables.cpp.o
+[147/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/X86Tables/SecondaryGroupTables.cpp.o
+[148/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/X86Tables/SecondaryModRMTables.cpp.o
 [149/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/GDBJIT/GDBJIT.cpp.o
 [150/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/X86Tables/SecondaryTables.cpp.o
 [151/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/X86Tables/VEXTables.cpp.o
 [152/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/X86Tables/X87Tables.cpp.o
 [153/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/IR/PassManager.cpp.o
 [154/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/IR/IREmitter.cpp.o
-[155/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/IR/IRDumper.cpp.o
-[156/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Utils/LongJump.cpp.o
+[155/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Utils/LongJump.cpp.o
+[156/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/IR/IRDumper.cpp.o
 [157/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Utils/Threads.cpp.o
 [158/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/IR/Passes/IRDumperPass.cpp.o
 [159/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/IR/Passes/IRValidation.cpp.o
@@ -179,11 +133,23 @@ In file included from /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro
 [168/178] Building CXX object Source/Common/CMakeFiles/Common.dir/ArgumentLoader.cpp.o
 [169/178] Linking CXX static library FEXCore/Source/libJemallocLibs.a
 [170/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Utils/ArchHelpers/Arm64.cpp.o
-[171/178] Building CXX object Source/Common/CMakeFiles/Common.dir/SHMStats.cpp.o
-[172/178] Building CXX object Source/Common/CMakeFiles/Common.dir/HostFeatures.cpp.o
-[173/178] Building CXX object Source/Common/CMakeFiles/Common.dir/Config.cpp.o
-[174/178] Building CXX object Source/Tools/CommonTools/CMakeFiles/CommonTools.dir/DummyHandlers.cpp.o
-[175/178] Linking CXX static library Source/Tools/CommonTools/libCommonTools.a
-[176/178] Building CXX object Source/Common/CMakeFiles/Common.dir/VolatileMetadata.cpp.o
-[177/178] Linking CXX static library Source/Common/libCommon.a
-ninja: build stopped: cannot make progress due to previous errors.
+[171/178] Linking CXX static library FEXCore/Source/libFEXCore.a
+[172/178] Building CXX object Source/Common/CMakeFiles/Common.dir/SHMStats.cpp.o
+[173/178] Building CXX object Source/Common/CMakeFiles/Common.dir/HostFeatures.cpp.o
+[174/178] Building CXX object Source/Common/CMakeFiles/Common.dir/Config.cpp.o
+[175/178] Building CXX object Source/Tools/CommonTools/CMakeFiles/CommonTools.dir/DummyHandlers.cpp.o
+[176/178] Linking CXX static library Source/Tools/CommonTools/libCommonTools.a
+[177/178] Building CXX object Source/Common/CMakeFiles/Common.dir/VolatileMetadata.cpp.o
+[178/178] Linking CXX static library Source/Common/libCommon.a
+FEXCore for visionOS:
+/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fexcore/Source/Tools/CommonTools/libCommonTools.a
+/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fexcore/Source/Common/cpp-optparse/libcpp-optparse.a
+/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fexcore/Source/Common/libCommon.a
+/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fexcore/External/fmt/libfmt.a
+/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fexcore/External/tiny-json/libtiny-json.a
+/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fexcore/External/cephes/libcephes_128bit.a
+/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fexcore/External/xxhash/cmake_unofficial/libxxhash.a
+/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fexcore/External/SoftFloat-3e/libsoftfloat_3e.a
+/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fexcore/FEXCore/Source/libFEXCore_Base.a
+/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fexcore/FEXCore/Source/libFEXCore.a
+/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fexcore/FEXCore/Source/libJemallocLibs.a
