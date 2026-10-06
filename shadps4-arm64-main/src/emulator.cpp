@@ -8,7 +8,10 @@
 #include <sstream>
 #include <fmt/core.h>
 #include <fmt/xchar.h>
+#include <thread>
+#ifndef SHADPS4_VISIONOS
 #include <hwinfo/hwinfo.h>
+#endif
 
 #include "common/debug.h"
 #include "common/logging/log.h"
@@ -349,6 +352,7 @@ void Emulator::Run(std::filesystem::path file, std::vector<std::string> args,
     LOG_INFO(Config, "Vulkan PipelineCacheArchived: {}",
              EmulatorSettings.IsPipelineCacheArchived());
 
+#ifndef SHADPS4_VISIONOS
     hwinfo::Memory ram;
     hwinfo::OS os;
     const auto cpus = hwinfo::getAllCPUs();
@@ -359,6 +363,11 @@ void Emulator::Run(std::filesystem::path file, std::vector<std::string> args,
     }
     LOG_INFO(Config, "Total RAM: {} GB", std::round(ram.total_Bytes() / pow(1024, 3)));
     LOG_INFO(Config, "Operating System: {}", os.name());
+#else
+    // hwinfo reads IOKit, which visionOS apps cannot use.
+    LOG_INFO(Config, "Logical Cores: {}", std::thread::hardware_concurrency());
+    LOG_INFO(Config, "Operating System: visionOS");
+#endif
 
     if (param_sfo_exists) {
         LOG_INFO(Loader, "Game id: {} Title: {}", id, title);

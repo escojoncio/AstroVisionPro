@@ -55,6 +55,13 @@ Arena& Instance() {
 
 } // namespace
 
+std::pair<std::uintptr_t, std::uintptr_t> Range() {
+    Arena& arena = Instance();
+    std::scoped_lock lock{arena.mutex};
+    arena.Initialize();
+    return {arena.rx, arena.rx + arena.size};
+}
+
 bool Available() {
     Arena& arena = Instance();
     std::scoped_lock lock{arena.mutex};

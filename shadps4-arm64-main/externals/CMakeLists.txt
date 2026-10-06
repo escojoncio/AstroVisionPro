@@ -234,6 +234,26 @@ if (NOT TARGET libusb::usb)
         # using anything else will crash instantly, also freebsd will NOT like it
         # no you cant vendor this libusb, its builtin on freebsd
         find_package(libusb)
+    elseif (SHADPS4_VISIONOS)
+        # visionOS apps cannot reach USB devices (no IOKit): libusb's null backend, which finds
+        # none. The configuration header is the one libusb's own CMake generates.
+        add_subdirectory(libusb)
+        set(LIBUSB_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/libusb/libusb")
+        get_target_property(LIBUSB_PRIVATE_INCLUDES usb-1.0 INCLUDE_DIRECTORIES)
+        add_library(usb-null STATIC
+            "${LIBUSB_SOURCE}/core.c"
+            "${LIBUSB_SOURCE}/descriptor.c"
+            "${LIBUSB_SOURCE}/hotplug.c"
+            "${LIBUSB_SOURCE}/io.c"
+            "${LIBUSB_SOURCE}/strerror.c"
+            "${LIBUSB_SOURCE}/sync.c"
+            "${LIBUSB_SOURCE}/os/events_posix.c"
+            "${LIBUSB_SOURCE}/os/threads_posix.c"
+            "${LIBUSB_SOURCE}/os/null_usb.c"
+        )
+        target_include_directories(usb-null PRIVATE ${LIBUSB_PRIVATE_INCLUDES})
+        target_include_directories(usb-null SYSTEM PUBLIC "${LIBUSB_SOURCE}")
+        add_library(libusb::usb ALIAS usb-null)
     else()
         add_subdirectory(libusb)
         add_library(libusb::usb ALIAS usb-1.0)
@@ -255,9 +275,11 @@ if (NOT TARGET stb::headers)
     add_library(stb::headers ALIAS stb)
 endif()
 
-# hwinfo
-set(HWINFO_STATIC ON)
-add_subdirectory(hwinfo)
+# hwinfo (reads IOKit on Apple systems, which visionOS apps cannot use)
+if (NOT SHADPS4_VISIONOS)
+    set(HWINFO_STATIC ON)
+    add_subdirectory(hwinfo)
+endif()
 
 if (APPLE OR ${CMAKE_SYSTEM_NAME} STREQUAL "FreeBSD")
     # date

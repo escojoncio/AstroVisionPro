@@ -1,0 +1,100 @@
+# The Apple Vision Pro app: FEXCore, MoltenVK and the emulator for visionOS, then the app around
+# them (unsigned: it is signed when installed, with the installer's own Apple account). Its logs
+# go to the ci-logs branch (visionos-app.txt), the app to the run's artifacts (AstroQuest.ipa).
+name: visionos-app
+on:
+  push:
+    branches: [main]
+    paths:
+      - visionos/**
+      - shadps4-arm64-main/**
+      - .github/workflows/visionos-app.yml
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: visionos-app
+  cancel-in-progress: true
+jobs:
+  app:
+    runs-on: macos-26
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          submodules: false
+
+      - name: Submodules the visionOS build uses
+        run: |
+          SKIP="mesa-kosmickrisp vulkan-loader libadrenotools bachata-xserver discord-rpc hwinfo ext-wepoll libdeflate"
+          PATHS=()
+          while read -r P; do
+            NAME=$(basename "$P")
+            [[ " $SKIP " == *" $NAME "* ]] && continue
+            PATHS+=("$P")
+          done < <(git config -f .gitmodules --get-regexp '\.path$' | awk '{print $2}')
+          for ATTEMPT in 1 2 3; do
+            git submodule update --init --depth 1 --jobs 8 -- "${PATHS[@]}" && break
+            sleep 10
+          done
+          # A pinned commit that is not a branch tip cannot always be fetched shallowly.
+          git submodule update --init --jobs 8 -- "${PATHS[@]}"
+
+      - name: Tools
+        run: |
+          brew install ccache ninja xcodegen || true
+          xcodebuild -version
+          xcodebuild -showsdks | grep -i xr || true
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/Library/Caches/ccache
+          key: ccache-visionos-app-${{ github.sha }}
+          restore-keys: ccache-visionos-app-
+      - uses: actions/cache@v4
+        with:
+          path: build/visionos/moltenvk
+          key: moltenvk-visionos-v1.4.2
+
+      - name: FEXCore for visionOS
+        run: |
+          set -o pipefail
+          bash visionos/scripts/build-fexcore.sh 2>&1 | tee fexcore.log
+
+      - name: MoltenVK for visionOS
+        run: |
+          set -o pipefail
+          bash visionos/scripts/build-moltenvk.sh 2>&1 | tee moltenvk.log
+
+      - name: The emulator for visionOS
+        run: |
+          set -o pipefail
+          bash visionos/scripts/build-core.sh 2>&1 | tee core.log
+
+      - name: The app
+        run: |
+          set -o pipefail
+          cd visionos
+          xcodegen generate
+          xcodebuild -project AstroQuest.xcodeproj -scheme AstroQuest \
+            -sdk xros -configuration Release -destination 'generic/platform=visionOS' \
+            -derivedDataPath build/dd \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            build 2>&1 | tee ../app.log
+          APP=$(find build/dd/Build/Products -name 'AstroQuest.app' -maxdepth 3 | head -n 1)
+          mkdir -p build/ipa/Payload
+          cp -R "$APP" build/ipa/Payload/
+          (cd build/ipa && zip -qry ../AstroQuest.ipa Payload)
+          ls -la build/AstroQuest.ipa
+
+      - name: Publish the logs
+        if: always()
+        run: bash visionos/scripts/ci-publish-log.sh visionos-app fexcore.log moltenvk.log core.log app.log
+
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: AstroQuest-visionOS
+          path: visionos/build/AstroQuest.ipa
+          retention-days: 30

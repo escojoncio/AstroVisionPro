@@ -34,6 +34,20 @@ if(UNIX AND NOT APPLE)
 endif()
 
 include(CMakeDependentOption)
+
+# Apple Vision Pro (visionOS): the emulator is a static library linked into the visionOS app
+# (visionos/), which shows its frames with Compositor Services. MoltenVK is linked in by the app
+# (no Vulkan loader, no KosmicKrisp), and the game's code runs through FEXCore.
+if (CMAKE_SYSTEM_NAME STREQUAL "visionOS")
+    set(SHADPS4_VISIONOS ON)
+    set(ENABLE_SYSTEM_VULKAN ON CACHE BOOL "" FORCE)
+    set(ENABLE_DISCORD_RPC OFF CACHE BOOL "" FORCE)
+    set(ENABLE_UPDATER OFF CACHE BOOL "" FORCE)
+    set(ENABLE_FEX_GUEST_CPU ON CACHE BOOL "" FORCE)
+else()
+    set(SHADPS4_VISIONOS OFF)
+endif()
+
 cmake_dependent_option(ENABLE_SYSTEM_VULKAN "Enable the system Vulkan driver" OFF APPLE OFF)
 
 option(ENABLE_DISCORD_RPC "Enable the Discord RPC integration" ON)
@@ -108,8 +122,11 @@ if (ENABLE_FEX_GUEST_CPU)
         "${FEXCORE_GUEST_CPU_BUILD_DIR}/External/xxhash/cmake_unofficial/libxxhash.a"
         "${FEXCORE_GUEST_CPU_BUILD_DIR}/External/cephes/libcephes_128bit.a"
         "${FEXCORE_GUEST_CPU_BUILD_DIR}/External/SoftFloat-3e/libsoftfloat_3e.a"
-        "${FEXCORE_GUEST_CPU_BUILD_DIR}/External/rpmalloc/librpmalloc.a"
     )
+    if (NOT SHADPS4_VISIONOS)
+        # visionOS builds FEXCore without its own allocator (visionos/patches/fex-darwin.patch).
+        list(APPEND FEXCORE_GUEST_CPU_LIBRARIES "${FEXCORE_GUEST_CPU_BUILD_DIR}/External/rpmalloc/librpmalloc.a")
+    endif()
     foreach(fex_library IN LISTS FEXCORE_GUEST_CPU_LIBRARIES)
         if (NOT EXISTS "${fex_library}")
             message(FATAL_ERROR "FEXCore guest CPU library is missing: ${fex_library}. Run runtime/scripts/build-fexcore-smoke-aarch64.sh first.")
@@ -786,6 +803,11 @@ if (ENABLE_OPENXR)
     list(APPEND VR_LIBS src/core/vr/openxr_host.cpp
                         src/core/vr/openxr_host.h
     )
+elseif (SHADPS4_VISIONOS)
+    # The same host, handing the frames to the visionOS app instead of an OpenXR runtime.
+    list(APPEND VR_LIBS src/core/vr/openxr_host_visionos.mm
+                        src/core/vr/openxr_host.h
+    )
 endif()
 
 set(MISC_LIBS  src/core/libraries/screenshot/screenshot.cpp
@@ -1309,7 +1331,7 @@ set(EMULATOR src/emulator.cpp
              src/sdl_window.cpp
 )
 
-if (APPLE)
+if (APPLE AND NOT SHADPS4_VISIONOS)
     list(APPEND EMULATOR src/sdl_window_apple.mm)
 endif()
 
@@ -1317,7 +1339,7 @@ include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/CMakeRC.cmake")
 
 if(NOT ENABLE_TESTS)
 
-add_executable(shadps4
+set(SHADPS4_SOURCES
     ${AUDIO_CORE}
     ${IMGUI}
     ${INPUT}
@@ -1332,6 +1354,13 @@ add_executable(shadps4
     src/sdl_window.h
     src/sdl_window.cpp
 )
+if (SHADPS4_VISIONOS)
+    # The app calls the emulator's main as shadps4_main (src/platform/visionos/astro_core.mm).
+    set_source_files_properties(src/main.cpp PROPERTIES COMPILE_DEFINITIONS "main=shadps4_main")
+    add_library(shadps4 STATIC ${SHADPS4_SOURCES})
+else()
+    add_executable(shadps4 ${SHADPS4_SOURCES})
+endif()
 
 if (ENABLE_BACHATA_RUNTIME)
     target_compile_definitions(shadps4 PRIVATE ENABLE_BACHATA_RUNTIME)
@@ -1349,6 +1378,23 @@ target_sources(shadps4 PRIVATE
     src/platform/bachata/runtime_client.h
 )
 
+if (SHADPS4_VISIONOS)
+    target_compile_definitions(shadps4 PRIVATE SHADPS4_VISIONOS=1 ENABLE_OPENXR_HOST VK_USE_PLATFORM_METAL_EXT)
+    target_sources(shadps4 PRIVATE
+        src/common/jit_arena.cpp
+        src/common/jit_arena.h
+        src/platform/visionos/astro_core.h
+        src/platform/visionos/astro_core.mm
+        src/platform/visionos/jit_arena.c
+    )
+    target_include_directories(shadps4 PRIVATE src/platform/visionos)
+    set_source_files_properties(
+        src/platform/visionos/astro_core.mm
+        src/core/vr/openxr_host_visionos.mm
+        PROPERTIES COMPILE_OPTIONS "-fobjc-arc"
+    )
+endif()
+
 create_target_directory_groups(shadps4)
 
 set_source_files_properties(
@@ -1359,7 +1405,10 @@ set_source_files_properties(
 target_link_libraries(shadps4 PRIVATE spdlog::spdlog)
 target_link_libraries(shadps4 PRIVATE magic_enum::magic_enum fmt::fmt toml11::toml11 tsl::robin_map xbyak::xbyak Tracy::TracyClient RenderDoc::API FFmpeg::ffmpeg Dear_ImGui ImGuiFileDialog gcn half::half ZLIB::ZLIB PNG::PNG minimp3)
 target_link_libraries(shadps4 PRIVATE Boost::headers GPUOpen::VulkanMemoryAllocator LibAtrac9 sirit Vulkan::Headers xxHash::xxhash Zydis::Zydis glslang::glslang SDL3::SDL3 pugixml::pugixml)
-target_link_libraries(shadps4 PRIVATE stb::headers lfreist-hwinfo::hwinfo nlohmann_json::nlohmann_json miniz::miniz fdk-aac CLI11::CLI11 OpenAL::OpenAL Cpp_Httplib miniupnpc::miniupnpc)
+if (NOT SHADPS4_VISIONOS)
+    target_link_libraries(shadps4 PRIVATE lfreist-hwinfo::hwinfo)
+endif()
+target_link_libraries(shadps4 PRIVATE stb::headers nlohmann_json::nlohmann_json miniz::miniz fdk-aac CLI11::CLI11 OpenAL::OpenAL Cpp_Httplib miniupnpc::miniupnpc)
 target_link_libraries(shadps4 PRIVATE Freetype::Freetype)
 
 if (ENABLE_FEX_GUEST_CPU)
@@ -1457,10 +1506,12 @@ if (APPLE)
     # Replacement for std::chrono::time_zone
     target_link_libraries(shadps4 PRIVATE date::date-tz epoll-shim)
 
-    # Create and embed Info.plist
-    set(INFO_PLIST_PATH ${CMAKE_CURRENT_BINARY_DIR}/src/dist/Info.plist)
-    configure_file(${CMAKE_CURRENT_SOURCE_DIR}/src/dist/MacOSBundleInfo.plist.in ${INFO_PLIST_PATH})
-    target_link_options(shadps4 PRIVATE LINKER:-sectcreate,__TEXT,__info_plist,${INFO_PLIST_PATH})
+    if (NOT SHADPS4_VISIONOS)
+        # Create and embed Info.plist
+        set(INFO_PLIST_PATH ${CMAKE_CURRENT_BINARY_DIR}/src/dist/Info.plist)
+        configure_file(${CMAKE_CURRENT_SOURCE_DIR}/src/dist/MacOSBundleInfo.plist.in ${INFO_PLIST_PATH})
+        target_link_options(shadps4 PRIVATE LINKER:-sectcreate,__TEXT,__info_plist,${INFO_PLIST_PATH})
+    endif()
 elseif (${CMAKE_SYSTEM_NAME} STREQUAL "FreeBSD")
     target_link_libraries(shadps4 PRIVATE date::date-tz epoll-shim)
 endif()
@@ -1557,7 +1608,7 @@ if (ENABLE_DISCORD_RPC)
 endif()
 
 # Install rules
-install(TARGETS shadps4 BUNDLE DESTINATION .)
+install(TARGETS shadps4 BUNDLE DESTINATION . ARCHIVE DESTINATION lib)
 
 else()
     enable_testing()

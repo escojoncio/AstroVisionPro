@@ -24,6 +24,8 @@ void ReportCrash(void*, int, void*) {}
 
 #ifdef ARCH_X86_64
 #include <sys/ucontext.h>
+#else
+#include "common/host_context.h"
 #endif
 
 namespace Common {
@@ -255,40 +257,40 @@ void ReportCrash(void* raw_context, int signum, void* siginfo_ptr) {
     int sig_code = siginfo_ptr ? reinterpret_cast<const siginfo_t*>(siginfo_ptr)->si_code : 0;
 
     safe_write_str(fd, "\n[Bachata.Crash] tid=");
-    safe_write_dec(fd, (int)gettid());
+    safe_write_dec(fd, Common::HostThreadId());
     safe_write_str(fd, " signal=");
     safe_write_dec(fd, signum);
     safe_write_str(fd, " code=");
     safe_write_dec(fd, sig_code);
 
     safe_write_str(fd, "\n[Bachata.Crash] pc=");
-    safe_write_hex(fd, (uint64_t)ctx->uc_mcontext.pc);
+    safe_write_hex(fd, (uint64_t)HOST_CONTEXT_PC(ctx));
     safe_write_str(fd, " sp=");
-    safe_write_hex(fd, (uint64_t)ctx->uc_mcontext.sp);
+    safe_write_hex(fd, (uint64_t)HOST_CONTEXT_SP(ctx));
     safe_write_str(fd, " fp=");
-    safe_write_hex(fd, ctx->uc_mcontext.regs[29]);
+    safe_write_hex(fd, HOST_CONTEXT_REGS(ctx)[29]);
     safe_write_str(fd, " lr=");
-    safe_write_hex(fd, ctx->uc_mcontext.regs[30]);
+    safe_write_hex(fd, HOST_CONTEXT_REGS(ctx)[30]);
 
     safe_write_str(fd, "\n[Bachata.Crash] x0=");
-    safe_write_hex(fd, ctx->uc_mcontext.regs[0]);
+    safe_write_hex(fd, HOST_CONTEXT_REGS(ctx)[0]);
     safe_write_str(fd, " x1=");
-    safe_write_hex(fd, ctx->uc_mcontext.regs[1]);
+    safe_write_hex(fd, HOST_CONTEXT_REGS(ctx)[1]);
     safe_write_str(fd, " x2=");
-    safe_write_hex(fd, ctx->uc_mcontext.regs[2]);
+    safe_write_hex(fd, HOST_CONTEXT_REGS(ctx)[2]);
     safe_write_str(fd, " x3=");
-    safe_write_hex(fd, ctx->uc_mcontext.regs[3]);
+    safe_write_hex(fd, HOST_CONTEXT_REGS(ctx)[3]);
 
     safe_write_str(fd, "\n[Bachata.Crash] x4=");
-    safe_write_hex(fd, ctx->uc_mcontext.regs[4]);
+    safe_write_hex(fd, HOST_CONTEXT_REGS(ctx)[4]);
     safe_write_str(fd, " x5=");
-    safe_write_hex(fd, ctx->uc_mcontext.regs[5]);
+    safe_write_hex(fd, HOST_CONTEXT_REGS(ctx)[5]);
     safe_write_str(fd, " x6=");
-    safe_write_hex(fd, ctx->uc_mcontext.regs[6]);
+    safe_write_hex(fd, HOST_CONTEXT_REGS(ctx)[6]);
     safe_write_str(fd, " x7=");
-    safe_write_hex(fd, ctx->uc_mcontext.regs[7]);
+    safe_write_hex(fd, HOST_CONTEXT_REGS(ctx)[7]);
     safe_write_str(fd, " x8=");
-    safe_write_hex(fd, ctx->uc_mcontext.regs[8]);
+    safe_write_hex(fd, HOST_CONTEXT_REGS(ctx)[8]);
 
     safe_write_str(fd, " fault=");
     safe_write_hex(fd, reinterpret_cast<uint64_t>(fault_addr));
@@ -296,12 +298,12 @@ void ReportCrash(void* raw_context, int signum, void* siginfo_ptr) {
 
     // Dump callee-saved regs that BindVertexBuffers uses for dispatch lookup
     safe_write_str(fd, "[Bachata.Crash] x19=");
-    safe_write_hex(fd, ctx->uc_mcontext.regs[19]);
+    safe_write_hex(fd, HOST_CONTEXT_REGS(ctx)[19]);
     safe_write_str(fd, " x26=");
-    safe_write_hex(fd, ctx->uc_mcontext.regs[26]);
+    safe_write_hex(fd, HOST_CONTEXT_REGS(ctx)[26]);
     safe_write_str(fd, "\n");
 
-    if (signum == SIGSEGV && (uint64_t)ctx->uc_mcontext.pc == 0) {
+    if (signum == SIGSEGV && (uint64_t)HOST_CONTEXT_PC(ctx) == 0) {
         dump_maps(fd);
     }
 #endif

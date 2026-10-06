@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <utility>
 
 namespace Common::JitArena {
 
@@ -30,6 +31,9 @@ bool Available();
 std::optional<Block> Allocate(std::size_t size);
 /// Gives back what Allocate handed out, by its executable address.
 void Free(const void* rx);
+
+/// The executable mapping: [begin, end).
+std::pair<std::uintptr_t, std::uintptr_t> Range();
 
 /// How far the writable mapping is from the executable one: writable = executable + offset.
 std::ptrdiff_t WriteOffset();

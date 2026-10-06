@@ -91,7 +91,14 @@ HleVeneerResult HleVeneerAllocator::Allocate(const HleCallAdapter& adapter) {
     std::memcpy(code + operation_offset, &operation, sizeof(operation));
     std::memcpy(code + operation_offset + sizeof(operation), suffix, sizeof(suffix));
     __builtin___clear_cache(reinterpret_cast<char*>(code), reinterpret_cast<char*>(code + veneer_size));
-    if (mprotect(page, size, PROT_READ | PROT_EXEC) != 0) {
+    // x86 code FEX translates; the host never runs it (and visionOS refuses executable pages
+    // outside the JIT arena).
+#if defined(SHADPS4_VISIONOS)
+    constexpr int veneer_protection = PROT_READ;
+#else
+    constexpr int veneer_protection = PROT_READ | PROT_EXEC;
+#endif
+    if (mprotect(page, size, veneer_protection) != 0) {
         const int error = errno;
         if (munmap(page, size) != 0) {
             std::abort();
