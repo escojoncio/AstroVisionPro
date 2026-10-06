@@ -17,6 +17,9 @@
 #include <string>
 
 #include <sys/syscall.h>
+#if defined(__APPLE__) && !defined(CLOCK_MONOTONIC_COARSE)
+#define CLOCK_MONOTONIC_COARSE CLOCK_MONOTONIC
+#endif
 #include <unistd.h>
 
 namespace {
