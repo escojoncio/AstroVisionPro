@@ -1,0 +1,7 @@
+/* The texts of the permissions visionOS asks for AstroQuest (in English). */
+"NSAccessoryTrackingUsageDescription" = "The headset tracks PlayStation VR2 Sense controllers to place the controller in the game.";
+"NSHandsTrackingUsageDescription" = "The hands holding the controller place it in the game, as the PlayStation VR camera did.";
+"NSWorldSensingUsageDescription" = "Head tracking places the player in the game.";
+"NSBluetoothAlwaysUsageDescription" = "PlayStation controllers connect over Bluetooth.";
+"NSCameraUsageDescription" = "AstroQuest does not use the camera: the PlayStation Camera is simulated with the headset's tracking.";
+"NSMicrophoneUsageDescription" = "The game listens to the microphone to blow on things, as with the PlayStation VR microphone.";

@@ -99,7 +99,7 @@ final class PlayStationController: @unchecked Sendable {
 
     private var senseStatus: Status {
         let count = (senseLeft != nil ? 1 : 0) + (senseRight != nil ? 1 : 0)
-        return Status(name: "PlayStation VR2 Sense (\(count) de 2)", kind: .sense,
+        return Status(name: L("PlayStation VR2 Sense (\(count) de 2)", "PlayStation VR2 Sense (\(count) of 2)"), kind: .sense,
                       isPlayStation: true, hasMotion: true, hasTouchpad: false)
     }
 
