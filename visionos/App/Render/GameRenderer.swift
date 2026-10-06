@@ -14,6 +14,7 @@ import CompositorServices
 import Metal
 import QuartzCore
 import simd
+import SwiftUI
 
 extension LayerRenderer.Clock.Instant.Duration {
     var timeInterval: TimeInterval {
