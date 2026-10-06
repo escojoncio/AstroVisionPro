@@ -5,6 +5,7 @@
 
 import Foundation
 import Observation
+import SwiftUI
 
 @MainActor
 @Observable
@@ -18,6 +19,9 @@ final class AppModel {
     var coreState: AstroCoreState = AstroCoreStateIdle
     var message: String?
     var immersiveOpen = false
+    /// Opens the launcher window again (it is closed while the game is shown, so that nothing
+    /// but the game is in view). Kept from the launcher's environment.
+    var openLauncher: OpenWindowAction?
     /// The launcher's check (Diagnostics.swift), redone when the app comes back to the front.
     var diagnostics = Diagnostics.run()
 
@@ -35,6 +39,14 @@ final class AppModel {
 
     /// Where the game is: the `game=` setting, else a folder with eboot.bin in the app's
     /// Documents (put there with the Files app), its "games" folder, or one level below either.
+    /// The game's immersive space has closed (Digital Crown, or the system): back to the launcher.
+    func immersiveEnded() {
+        immersiveOpen = false
+        openLauncher?(id: Self.launcherID)
+    }
+
+    static let launcherID = "launcher"
+
     func refreshDiagnostics() {
         let tested = diagnostics.canReserveNeeded
         diagnostics = Diagnostics.run()
