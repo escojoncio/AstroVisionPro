@@ -1,8 +1,17 @@
-# visionos-swift - fa4f0e030ce336b5da77992251fa0b20b3ec32d8 - 2026-10-06T16:54:04Z
+# visionos-swift - fd207d15a5737aaeaefb6c798ea85a41803e1894 - 2026-10-06T17:58:19Z
 
-## swift.log:      137 lines
+## swift.log:      146 lines
 ### errors
 ### end
+App/Views/StorageSection.swift:85:25: warning: reference to captured var 'found' in concurrently-executing code; this is an error in the Swift 6 language mode [#SendableClosureCaptures]
+ 83 |             }
+ 84 |             await MainActor.run {
+ 85 |                 sizes = found
+    |                         `- warning: reference to captured var 'found' in concurrently-executing code; this is an error in the Swift 6 language mode [#SendableClosureCaptures]
+ 86 |             }
+ 87 |         }
+
+[#SendableClosureCaptures]: <https://docs.swift.org/compiler/documentation/diagnostics/sendable-closure-captures>
 App/Tracking/SenseTracking.swift:36:14: warning: instance method 'lock' is unavailable from asynchronous contexts; Use async-safe scoped locking instead; this is an error in the Swift 6 language mode
  34 |     func track(_ controllers: [GCController]) async {
  35 |         let wanted = Set(controllers.map(ObjectIdentifier.init))
