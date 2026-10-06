@@ -1,0 +1,62 @@
+# The Apple Vision Pro app, as an XcodeGen project (https://github.com/yonaskolb/XcodeGen):
+# `xcodegen generate` in this folder writes AstroQuest.xcodeproj. The emulator itself is built
+# beforehand by scripts/build-core.sh into build/core (libastroquest_core.a and MoltenVK).
+name: AstroQuest
+options:
+  bundleIdPrefix: com.astroquest
+  deploymentTarget:
+    visionOS: "26.0"
+  createIntermediateGroups: true
+  xcodeVersion: "26.0"
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    DEVELOPMENT_TEAM: ""
+targets:
+  AstroQuest:
+    type: application
+    platform: visionOS
+    sources:
+      - path: App
+    settings:
+      base:
+        PRODUCT_NAME: AstroQuest
+        PRODUCT_BUNDLE_IDENTIFIER: com.astroquest.visionpro
+        INFOPLIST_FILE: App/Info.plist
+        CODE_SIGN_ENTITLEMENTS: App/AstroQuest.entitlements
+        CODE_SIGN_STYLE: Automatic
+        SWIFT_OBJC_BRIDGING_HEADER: App/Bridge/AstroQuest-Bridging-Header.h
+        HEADER_SEARCH_PATHS:
+          - $(SRCROOT)/../shadps4-arm64-main/src/platform/visionos
+          - $(SRCROOT)/App/Render
+        LIBRARY_SEARCH_PATHS:
+          - $(SRCROOT)/build/core
+        # Everything the emulator needs is in one archive (scripts/build-core.sh), MoltenVK in
+        # another; the C++ standard library and the system frameworks MoltenVK and SDL use.
+        OTHER_LDFLAGS:
+          - -lastroquest_core
+          - -lMoltenVK
+          - -lc++
+          - -framework Metal
+          - -framework IOSurface
+          - -framework QuartzCore
+          - -framework CoreFoundation
+          - -framework Foundation
+          - -framework UIKit
+          - -framework AVFoundation
+          - -framework AudioToolbox
+          - -framework CoreAudio
+          - -framework CoreHaptics
+          - -framework CoreMotion
+          - -framework GameController
+          - -framework CoreVideo
+          - -framework VideoToolbox
+          - -framework Security
+        ENABLE_BITCODE: NO
+        DEAD_CODE_STRIPPING: YES
+        # The emulator's main thread asks for a large stack, and its memory for the console's.
+        MTL_ENABLE_DEBUG_INFO: NO
+        SUPPORTED_PLATFORMS: "xros xrsimulator"
+        TARGETED_DEVICE_FAMILY: "7"
