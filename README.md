@@ -41,8 +41,9 @@ The unsigned app is in the [`visionos-latest` release](../../releases/tag/vision
 > `/Library/Developer/DeveloperDiskImages/xrOS_DDI` - in its `Restore` folder, the personalized
 > image and its trust cache named in `BuildManifest.plist`.
 
-**The Apple Vision Pro app and every change made for it were written by Claude (Anthropic's AI);
-the owner of this repository contributed ideas on how some things could be adapted.**
+**The Apple Vision Pro app and every change made for it were written by Claude (Anthropic's AI),
+building on the great work of the projects credited below; the owner of this repository
+contributed ideas on how some things could be adapted.**
 
 ### Thanks
 
