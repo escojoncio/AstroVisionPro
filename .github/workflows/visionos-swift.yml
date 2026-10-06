@@ -42,14 +42,14 @@ jobs:
         run: |
           SDK=$(xcrun --sdk xros --show-sdk-path)
           {
-            echo "## Accessory tracking and PlayStation VR2 Sense in $SDK"
-            for F in $(find "$SDK" -name '*.swiftinterface' -path '*arm64-apple-xros*' \( -path '*ARKit*' -o -path '*GameController*' -o -path '*RealityKit*' \) ); do
-              grep -n -E "Accessory|Sense|spatialAccessory|productCategory|GCProductCategory|handedness|Chirality|SpatialTracking" "$F" | sed "s|^|$(basename "$F"): |" | head -120
-            done
-            echo "## Objective-C headers"
-            grep -rn -E "DualSenseVR|Sense|ProductCategory|GCDeviceAccessory|GCControllerProductCategory" "$SDK/System/Library/Frameworks/GameController.framework/Headers" | head -80
-            grep -rln -E "AccessoryAnchor|ar_accessory" "$SDK/System/Library/Frameworks/ARKit.framework/Headers" | head
-            grep -rn -E "ar_accessory[a-z_]*\(" "$SDK/System/Library/Frameworks/ARKit.framework/Headers" | head -60
+            echo "## Swift interfaces"
+            find "$SDK/System/Library/Frameworks/ARKit.framework" "$SDK/System/Library/Frameworks/GameController.framework" -name '*.swiftinterface' | head
+            F=$(find "$SDK/System/Library/Frameworks/ARKit.framework" -name '*xros.swiftinterface' | head -n 1)
+            echo "## ARKit accessory declarations ($F)"
+            grep -n -E "Accessory|Chirality|isHeld|heldChirality" "$F" | head -150
+            echo "## GameController spatial controller"
+            sed -n 20,35p "$SDK/System/Library/Frameworks/GameController.framework/Headers/GCProductCategories.h"
+            grep -rn -E "SpatialController|GCDevice\b|@protocol GCDevice" "$SDK/System/Library/Frameworks/GameController.framework/Headers" | head -20
           } >> swift.log 2>&1 || true
       - name: Publish the log
         if: always()
