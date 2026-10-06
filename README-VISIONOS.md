@@ -1,0 +1,93 @@
+# AstroQuest para Apple Vision Pro
+
+ASTRO BOT Rescue Mission (PS4 / PlayStation VR, **CUSA12392 versión 1.00**) en Apple Vision Pro, como app nativa de visionOS. Es el port de AstroQuest de Quest 3 / PC: el mismo emulador (shadPS4 con FEXCore traduciendo el código x86-64 del juego a ARM64), con estos cambios para visionOS:
+
+| | Quest 3 | Apple Vision Pro |
+|---|---|---|
+| App | Android + núcleo en Linux (Bachata) | App de visionOS (SwiftUI + Compositor Services); el núcleo es una librería estática dentro de la app |
+| Gráficos | Vulkan (Turnip) | Vulkan sobre Metal (MoltenVK) |
+| Casco | OpenXR | Compositor Services + ARKit |
+| Resolución y ajustes | los de Quest | **los de PC VR** (2880 px por ojo, dinámica, nitidez 0.3, 60 fps, FOV del visor, predicción 20 ms) |
+| Renderizado foveado | — | **activado** (`isFoveationEnabled`, mapa de tasas de rasterizado de visionOS) |
+| JIT | nativo | **StikDebug para visionOS** |
+| Mando | DualSense/DualShock 4 | DualSense/DualShock 4 vía GameController (`GCDualSenseGamepad` / `GCDualShockGamepad`) |
+
+## Requisitos
+
+- Apple Vision Pro con **visionOS 26 o 27**. La app se compila con el SDK de visionOS 26 (objetivo mínimo 26.0) y por tanto se instala y abre también en visionOS 27.
+- **Una cuenta de desarrollador de Apple de pago** para firmarla: la app pide `increased-memory-limit` y `extended-virtual-addressing` (la PS4 tiene 8 GB y el emulador necesita ese espacio). Con una cuenta gratuita esos permisos no se conceden y el juego no tendrá memoria suficiente.
+- **StikDebug para visionOS** (https://github.com/rebelancap/StikDebug-visionos) para activar el JIT.
+- Un **mando de PlayStation**: DualSense (recomendado) o DualShock 4. El juego usa su panel táctil y sus sensores de movimiento.
+- Tu propia copia del juego (carpeta `CUSA12392` con `eboot.bin`, `sce_sys` y `sce_module`), versión 1.00.
+
+## 1. Conseguir la app
+
+Cada versión del repositorio la compila GitHub Actions (flujo `visionos-app`): el archivo `AstroQuest.ipa` está en los artefactos de la ejecución. También puedes compilarla en un Mac con Xcode 26:
+
+```sh
+git submodule update --init --depth 1
+bash visionos/scripts/build-core.sh        # FEXCore, MoltenVK y el emulador
+cd visionos && xcodegen generate && open AstroQuest.xcodeproj
+```
+
+En Xcode elige tu equipo de desarrollo en *Signing & Capabilities* y ejecuta en el Vision Pro.
+
+## 2. Instalarla firmada con tu cuenta
+
+Con el `.ipa` sin firmar, fírmalo e instálalo con tu cuenta de desarrollador (Xcode, o una herramienta de sideload que use tu cuenta de pago y conserve los entitlements del `.ipa`). Comprueba que la firma conserve `get-task-allow` (sin él StikDebug no puede conectarse).
+
+## 3. JIT con StikDebug para visionOS
+
+visionOS solo permite memoria ejecutable nueva a una app con un depurador conectado. AstroQuest lo resuelve con StikDebug para visionOS, que se conecta a la app y ejecuta el script `universal.js`:
+
+1. Instala StikDebug para visionOS (release v1.0.0) y sigue su guía: importa tu fichero de emparejamiento (*RPPairing*, el `rp_pairing_file.plist` que genera SideStore/JitterbugPair) y activa LocalDevVPN.
+2. Abre AstroQuest y pulsa **Activar JIT con StikDebug**. AstroQuest abre `stikjit://enable-jit?bundle-id=com.astroquest.visionpro&pid=…&script-name=universal.js`; StikDebug se conecta a AstroQuest (al proceso que ya está abierto) y ejecuta el script.
+3. Vuelve a AstroQuest: comprueba que el depurador está conectado (`CS_DEBUGGED`), reserva la zona de memoria ejecutable (por defecto 512 MB, `jit_arena_mb`) con el protocolo de `universal.js` (`brk #0xf00d`, `x16 = 1` para preparar la región y `x16 = 0` para soltar el depurador) y hace una prueba escribiendo y ejecutando una instrucción. Cuando aparece **JIT activo** se puede jugar.
+
+**visionOS 27:** StikDebug para visionOS declara compatibilidad con visionOS 26 y 27 y su código no tiene ninguna comprobación de versión que lo impida; usa el mismo mecanismo (depurador por la VPN local + TXM) que en 26. No lo he podido probar en un Vision Pro con 27: si en 27 falla, la app lo indica y se queda en «JIT no activo» sin arrancar el juego.
+
+## 4. Copiar el juego
+
+Con la app **Archivos** del Vision Pro, copia la carpeta `CUSA12392` a *En mi Apple Vision Pro › AstroQuest* (o a una subcarpeta `games`). Lo más cómodo es desde una carpeta compartida de tu PC/Mac (*Archivos › Conectarse a un servidor*). La app la encuentra sola; si tienes varias, la ruta se puede fijar con `game=` en `settings.txt`.
+
+## 5. El mando
+
+Empareja el DualSense en *Ajustes › Bluetooth* (mantén **Crear** + **PS** hasta que parpadee la barra de luz). Todo el control del juego pasa por el perfil de mando de PlayStation de GameController:
+
+- Botones: Cruz, Círculo, Cuadrado, Triángulo, L1/R1, L2/R2 (analógicos), L3/R3, Options, cruceta, panel táctil (toque y clic) y botón PS.
+- Sensores de movimiento: giroscopio y acelerómetro, con los mismos ejes que la versión de PC (SDL). Con ellos el juego coloca el mando en el espacio, como hace la cámara de PS4.
+- Vibración (CoreHaptics, motor izquierdo y derecho) y color de la barra de luz los pone el juego.
+- Los gestos del sistema del mando se desactivan dentro de la app para que el botón PS y Options lleguen al juego.
+
+Si no es un mando de PlayStation, la app lo avisa: faltan panel táctil y sensores, y el juego no puede seguir el mando.
+
+## 6. Ajustes (`settings.txt`)
+
+Está en la carpeta de la app (app Archivos). Se crea con los valores de la versión de PC VR:
+
+| Clave | Por defecto | Qué hace |
+|---|---|---|
+| `resolution` | `2880` | Anchura por ojo (la de PC VR). `game` deja que el juego elija entre los tamaños de la consola. |
+| `dynamic` | `1` | Resolución dinámica, como en PC. |
+| `fps` | `60` | Límite de imágenes por segundo. |
+| `fov`, `fov_of` | `headset` | Campo de visión respecto al del visor. |
+| `sharpen` | `0.3` | Nitidez (la de PC). |
+| `msaa`, `antialias` | consola | Antialiasing. |
+| `predict_ms` | `20` | Predicción de la posición de la cabeza. |
+| `foveation` | `1` | **Renderizado foveado** de visionOS. |
+| `render_quality` | `1.0` | Calidad de renderizado de Compositor Services (0.1–1.0). |
+| `jit_arena_mb` | `512` | Memoria ejecutable que se pide a StikDebug. |
+| `show_hands` | `0` | Mostrar tus manos sobre el juego. |
+| `env` | — | Variables extra para el emulador (`env=NOMBRE=valor`). |
+
+## Cómo está hecho
+
+- `visionos/App`: la app. `Render/GameRenderer.swift` pide a Compositor Services capas con foveado y la máxima calidad, recibe cada imagen del juego (una textura Metal exportada desde Vulkan con `VK_EXT_metal_objects`) con la pose y el FOV con que se dibujó, y la reproyecta por rotación a la pose actual de cada ojo (`Shaders.metal`). `Tracking/HeadsetTracking.swift` da la cabeza y las manos (ARKit). `Controller/PlayStationController.swift` es el mando. `JIT/JITGate.swift` es StikDebug.
+- `shadps4-arm64-main/src/platform/visionos`: la interfaz en C entre la app y el emulador (`astro_core.h`) y la memoria JIT (`jit_arena.c`).
+- `shadps4-arm64-main/src/core/vr/openxr_host_visionos.mm`: el «host» de VR del PC, que en vez de a OpenXR entrega las imágenes a la app.
+- `visionos/patches/fex-darwin.patch`: FEXCore en sistemas de Apple (esperas sin futex, características de CPU por `sysctl`, sin el registro x18, código escrito por una vista RW y ejecutado por otra RX).
+- `visionos/scripts`: compilación de FEXCore, MoltenVK y el emulador.
+
+## Estado
+
+Compila en CI para visionOS. No se ha podido probar en un Apple Vision Pro, así que es posible que haya problemas al ejecutarlo (memoria, MoltenVK, señales de FEX en Darwin). El registro del emulador se guarda en la carpeta de la app (lo indica la app si el emulador termina).

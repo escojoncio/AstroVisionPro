@@ -649,6 +649,12 @@ void Emulator::Restart(std::filesystem::path eboot_path,
 
     CloseHandle(pi.hProcess);
     CloseHandle(pi.hThread);
+#elif defined(SHADPS4_VISIONOS)
+    // An app cannot start another copy of itself on visionOS: the game stops, and the app's
+    // launcher starts it again.
+    static_cast<void>(executableName);
+    static_cast<void>(args);
+    std::cerr << "Restarting the game is done from the app on visionOS" << std::endl;
 #elif defined(__APPLE__) || defined(__linux__) || defined(__FreeBSD__)
     std::vector<char*> argv;
 
