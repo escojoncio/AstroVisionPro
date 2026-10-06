@@ -52,7 +52,13 @@
 			<key>ProfileName</key>
 			<string>ExtendedGamepad</string>
 		</dict>
+		<dict>
+			<key>ProfileName</key>
+			<string>SpatialGamepad</string>
+		</dict>
 	</array>
+	<key>NSAccessoryTrackingUsageDescription</key>
+	<string>El visor sigue los mandos PlayStation VR2 Sense para colocar el mando dentro del juego.</string>
 	<key>NSHandsTrackingUsageDescription</key>
 	<string>Las manos que sujetan el mando colocan el mando dentro del juego, como hacía la cámara de PlayStation VR.</string>
 	<key>NSWorldSensingUsageDescription</key>
