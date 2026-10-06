@@ -1,0 +1,7 @@
+/* Textos de los permisos que visionOS pide para AstroQuest (en español). */
+"NSAccessoryTrackingUsageDescription" = "El visor sigue los mandos PlayStation VR2 Sense para colocar el mando dentro del juego.";
+"NSHandsTrackingUsageDescription" = "Las manos que sujetan el mando colocan el mando dentro del juego, como hacía la cámara de PlayStation VR.";
+"NSWorldSensingUsageDescription" = "El seguimiento de la cabeza sitúa al jugador en el juego.";
+"NSBluetoothAlwaysUsageDescription" = "Los mandos de PlayStation se conectan por Bluetooth.";
+"NSCameraUsageDescription" = "AstroQuest no usa la cámara: la cámara de PlayStation se simula con el seguimiento del visor.";
+"NSMicrophoneUsageDescription" = "El juego escucha el micrófono para soplar a las cosas, como con el micrófono de PlayStation VR.";

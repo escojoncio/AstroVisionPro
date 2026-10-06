@@ -93,15 +93,15 @@ struct Diagnostics {
         let memoryVerdict: Verdict = Double(limitBytes) / 1_073_741_824 >= Self.neededMemoryGB ? .ok
             : (increased ? .warning : .missing)
         items.append(Item(
-            id: "memory", title: "Memoria extra (increased-memory-limit)",
+            id: "memory", title: L("Memoria extra (increased-memory-limit)", "Extra memory (increased-memory-limit)"),
             verdict: memoryVerdict,
             detail: (entitlementsReadable
-                     ? (increased ? "Firmada con el permiso. " : "La firma NO incluye el permiso. ")
+                     ? (increased ? L("Firmada con el permiso. ", "Signed with the entitlement. ") : L("La firma NO incluye el permiso. ", "The signature does NOT include the entitlement. "))
                      : "")
-                + "Límite de memoria de la app: \(gb(limitBytes)) (\(mb(limitBytes))) de \(gb(physicalBytes)) de RAM del visor"
+                + L("Límite de memoria de la app: \(gb(limitBytes)) (\(mb(limitBytes))) de \(gb(physicalBytes)) de RAM del visor", "The app's memory limit: \(gb(limitBytes)) (\(mb(limitBytes))) of the headset's \(gb(physicalBytes)) of RAM")
                 + String(format: " (%.1f %%). ", percent)
-                + "En uso ahora: \(mb(usedBytes)); libre para la app: \(mb(limitBytes - min(usedBytes, limitBytes))). "
-                + "Hacen falta unos \(Int(Self.neededMemoryGB)) GB."))
+                + L("En uso ahora: \(mb(usedBytes)); libre para la app: \(mb(limitBytes - min(usedBytes, limitBytes))). ", "In use now: \(mb(usedBytes)); free for the app: \(mb(limitBytes - min(usedBytes, limitBytes))). ")
+                + L("Hacen falta unos \(Int(Self.neededMemoryGB)) GB.", "About \(Int(Self.neededMemoryGB)) GB are needed.")))
 
         // Address space.
         let extended = has("com.apple.developer.kernel.extended-virtual-addressing")
@@ -112,41 +112,41 @@ struct Diagnostics {
             spaceVerdict = addressSpaceGB >= Self.neededAddressSpaceGB + 4 ? .ok : .missing
         }
         items.append(Item(
-            id: "address", title: "Espacio de direcciones (extended-virtual-addressing)",
+            id: "address", title: L("Espacio de direcciones (extended-virtual-addressing)", "Address space (extended-virtual-addressing)"),
             verdict: spaceVerdict,
             detail: (entitlementsReadable
-                     ? (extended ? "Firmada con el permiso. " : "La firma NO incluye el permiso. ")
+                     ? (extended ? L("Firmada con el permiso. ", "Signed with the entitlement. ") : L("La firma NO incluye el permiso. ", "The signature does NOT include the entitlement. "))
                      : "")
-                + "Espacio de direcciones de la app: \(addressSpaceGB) GB. "
-                + (canReserveNeeded.map { $0 ? "La reserva de prueba de \(Self.neededAddressSpaceGB) GB ha funcionado."
-                       : "La reserva de prueba de \(Self.neededAddressSpaceGB) GB ha fallado." }
-                   ?? "El emulador necesita \(Self.neededAddressSpaceGB) GB.")))
+                + L("Espacio de direcciones de la app: \(addressSpaceGB) GB. ", "The app's address space: \(addressSpaceGB) GB. ")
+                + (canReserveNeeded.map { $0 ? L("La reserva de prueba de \(Self.neededAddressSpaceGB) GB ha funcionado.", "The \(Self.neededAddressSpaceGB) GB test reservation worked.")
+                       : L("La reserva de prueba de \(Self.neededAddressSpaceGB) GB ha fallado.", "The \(Self.neededAddressSpaceGB) GB test reservation failed.") }
+                   ?? L("El emulador necesita \(Self.neededAddressSpaceGB) GB.", "The emulator needs \(Self.neededAddressSpaceGB) GB."))))
 
         // JIT.
         let taskAllow = has("get-task-allow")
         items.append(Item(
-            id: "debuggable", title: "Se puede depurar (get-task-allow)",
+            id: "debuggable", title: L("Se puede depurar (get-task-allow)", "Debuggable (get-task-allow)"),
             verdict: taskAllow || !entitlementsReadable ? (taskAllow ? .ok : .warning) : .missing,
-            detail: taskAllow ? "StikDebug podrá conectarse a la app."
-                : (entitlementsReadable ? "Sin este permiso StikDebug no puede conectarse: vuelve a instalarla con una herramienta que lo conserve."
-                   : "No se pudo leer la firma.")))
+            detail: taskAllow ? L("StikDebug podrá conectarse a la app.", "StikDebug will be able to attach to the app.")
+                : (entitlementsReadable ? L("Sin este permiso StikDebug no puede conectarse: vuelve a instalarla con una herramienta que lo conserve.", "Without this entitlement StikDebug cannot attach: reinstall the app with a tool that keeps it.")
+                   : L("No se pudo leer la firma.", "The signature could not be read."))))
         let jitVerdict: Verdict
         let jitDetail: String
         switch jit {
         case .ready(let megabytes):
             jitVerdict = .ok
-            jitDetail = "JIT activo: \(megabytes) MB de memoria ejecutable, y la prueba de ejecutar código ha funcionado."
+            jitDetail = L("JIT activo: \(megabytes) MB de memoria ejecutable, y la prueba de ejecutar código ha funcionado.", "JIT enabled: \(megabytes) MB of executable memory, and running code in it worked.")
         case .failed(let reason):
             jitVerdict = .missing
             jitDetail = reason
         case .waitingForDebugger, .preparing:
             jitVerdict = .warning
-            jitDetail = "En curso…"
+            jitDetail = L("En curso…", "In progress…")
         case .idle:
             jitVerdict = .warning
             jitDetail = debuggerAttached
-                ? "Hay un depurador conectado; pulsa «Activar JIT con StikDebug» para probarlo."
-                : "Aún sin probar: pulsa «Activar JIT con StikDebug»."
+                ? L("Hay un depurador conectado; pulsa «Activar JIT con StikDebug» para probarlo.", "A debugger is attached; press “Enable JIT with StikDebug” to try it.")
+                : L("Aún sin probar: pulsa «Activar JIT con StikDebug».", "Not tried yet: press “Enable JIT with StikDebug”.")
         }
         items.append(Item(id: "jit", title: "JIT (StikDebug)", verdict: jitVerdict, detail: jitDetail))
         return items
@@ -154,7 +154,7 @@ struct Diagnostics {
 
     /// The whole check as text, to copy and send.
     func report(jit: JITGate.State) -> String {
-        var lines = ["AstroQuest para Vision Pro: comprobación",
+        var lines = [L("AstroQuest para Vision Pro: comprobación", "AstroQuest for Vision Pro: check"),
                      "Bundle ID: \(bundleIdentifier)",
                      "Team ID: \(teamIdentifier.isEmpty ? "?" : teamIdentifier)",
                      "visionOS: \(ProcessInfo.processInfo.operatingSystemVersionString)"]
@@ -162,12 +162,12 @@ struct Diagnostics {
             let mark = switch item.verdict {
             case .ok: "OK"
             case .warning: "??"
-            case .missing: "FALTA"
+            case .missing: L("FALTA", "MISSING")
             }
             lines.append("[\(mark)] \(item.title): \(item.detail)")
         }
         let keys = entitlements.keys.sorted().joined(separator: ", ")
-        lines.append("Permisos de la firma: \(keys.isEmpty ? "(no se pudieron leer)" : keys)")
+        lines.append(L("Permisos de la firma: \(keys.isEmpty ? "(no se pudieron leer)" : keys)", "Signature entitlements: \(keys.isEmpty ? "(could not be read)" : keys)"))
         return lines.joined(separator: "\n")
     }
 }

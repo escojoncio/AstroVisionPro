@@ -16,7 +16,7 @@ struct StorageSection: View {
     var body: some View {
         Section {
             if items.isEmpty {
-                Text("No hay nada copiado en la carpeta de AstroQuest.")
+                Text(L("No hay nada copiado en la carpeta de AstroQuest.", "Nothing has been copied to AstroQuest's folder."))
                     .foregroundStyle(.secondary)
             }
             ForEach(items) { item in
@@ -35,7 +35,7 @@ struct StorageSection: View {
                     Button(role: .destructive) {
                         toDelete = item
                     } label: {
-                        Label("Borrar", systemImage: "trash")
+                        Label(L("Borrar", "Delete"), systemImage: "trash")
                             .labelStyle(.iconOnly)
                     }
                     .buttonStyle(.borderless)
@@ -45,7 +45,7 @@ struct StorageSection: View {
             Button {
                 unlockAll()
             } label: {
-                Label("Quitar «solo lectura» a todo", systemImage: "lock.open")
+                Label(L("Quitar «solo lectura» a todo", "Remove “read-only” from everything"), systemImage: "lock.open")
             }
             .disabled(working)
             if let status {
@@ -54,22 +54,22 @@ struct StorageSection: View {
                     .foregroundStyle(.secondary)
             }
         } header: {
-            Text("Datos copiados")
+            Text(L("Datos copiados", "Copied data"))
         } footer: {
-            Text("Lo que copias en «En mi Apple Vision Pro › AstroQuest». Si Archivos no te deja borrar algo (error -5000), bórralo desde aquí. Al abrirse, la app también quita el «solo lectura» a todo lo que hay en su carpeta.")
+            Text(L("Lo que copias en «En mi Apple Vision Pro › AstroQuest». Si Archivos no te deja borrar algo (error -5000), bórralo desde aquí. Al abrirse, la app también quita el «solo lectura» a todo lo que hay en su carpeta.", "What you copy to “On My Apple Vision Pro › AstroQuest”. If Files does not let you delete something (error -5000), delete it from here. When it opens, the app also removes “read-only” from everything in its folder."))
         }
         .onAppear(perform: reload)
-        .confirmationDialog(toDelete.map { "¿Borrar «\($0.name)»?" } ?? "",
+        .confirmationDialog(toDelete.map { L("¿Borrar «\($0.name)»?", "Delete “\($0.name)”?") } ?? "",
                             isPresented: Binding(get: { toDelete != nil }, set: { if !$0 { toDelete = nil } }),
                             titleVisibility: .visible) {
-            Button("Borrar", role: .destructive) {
+            Button(L("Borrar", "Delete"), role: .destructive) {
                 if let item = toDelete {
                     delete(item)
                 }
             }
-            Button("Cancelar", role: .cancel) {}
+            Button(L("Cancelar", "Cancel"), role: .cancel) {}
         } message: {
-            Text("Se borra del Vision Pro y no se puede deshacer.")
+            Text(L("Se borra del Vision Pro y no se puede deshacer.", "It is deleted from the Vision Pro and cannot be undone."))
         }
     }
 
@@ -89,15 +89,15 @@ struct StorageSection: View {
 
     private func delete(_ item: Storage.Item) {
         working = true
-        status = "Borrando «\(item.name)»…"
+        status = L("Borrando «\(item.name)»…", "Deleting “\(item.name)”…")
         Task.detached {
             let result: String
             do {
                 try Storage.delete(item)
-                result = "«\(item.name)» borrado."
+                result = L("«\(item.name)» borrado.", "“\(item.name)” deleted.")
                 LogFiles.log("Deleted from the app's folder: \(item.name)")
             } catch {
-                result = "No se pudo borrar «\(item.name)»: \(error.localizedDescription)"
+                result = L("No se pudo borrar «\(item.name)»: \(error.localizedDescription)", "“\(item.name)” could not be deleted: \(error.localizedDescription)")
                 LogFiles.log("Could not delete \(item.name): \(error)")
             }
             await MainActor.run {
@@ -111,11 +111,11 @@ struct StorageSection: View {
 
     private func unlockAll() {
         working = true
-        status = "Revisando la carpeta…"
+        status = L("Revisando la carpeta…", "Checking the folder…")
         Task.detached {
             let changed = Storage.unlock()
             await MainActor.run {
-                status = changed == 0 ? "Todo se podía borrar ya." : "Desbloqueados \(changed) archivos y carpetas."
+                status = changed == 0 ? L("Todo se podía borrar ya.", "Everything could already be deleted.") : L("Desbloqueados \(changed) archivos y carpetas.", "Unlocked \(changed) files and folders.")
                 working = false
             }
         }

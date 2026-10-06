@@ -49,7 +49,7 @@ final class JITGate {
     init() {
         if FileManager.default.fileExists(atPath: Self.crashMarker.path) {
             try? FileManager.default.removeItem(at: Self.crashMarker)
-            state = .failed("La última prueba de JIT cerró la app: la memoria no se pudo ejecutar. Comprueba que StikDebug usa el script universal.js y que su VPN y su emparejamiento funcionan.")
+            state = .failed(L("La última prueba de JIT cerró la app: la memoria no se pudo ejecutar. Comprueba que StikDebug usa el script universal.js y que su VPN y su emparejamiento funcionan.", "The last JIT test closed the app: the memory could not be executed. Check that StikDebug uses the universal.js script and that its VPN and pairing work."))
         }
     }
 
@@ -71,7 +71,7 @@ final class JITGate {
             return
         }
         guard let url = Self.stikDebugURL() else {
-            state = .failed("No se pudo formar el enlace para StikDebug.")
+            state = .failed(L("No se pudo formar el enlace para StikDebug.", "The link for StikDebug could not be made."))
             return
         }
         state = .waitingForDebugger
@@ -79,7 +79,7 @@ final class JITGate {
             Task { @MainActor in
                 guard let self else { return }
                 if !opened {
-                    self.state = .failed("No se pudo abrir StikDebug. Instálalo (StikDebug para visionOS) y vuelve a intentarlo.")
+                    self.state = .failed(L("No se pudo abrir StikDebug. Instálalo (StikDebug para visionOS) y vuelve a intentarlo.", "StikDebug could not be opened. Install it (StikDebug for visionOS) and try again."))
                     return
                 }
                 self.waitForDebugger(arenaMegabytes: arenaMegabytes)
@@ -115,7 +115,7 @@ final class JITGate {
                 try? await Task.sleep(for: .milliseconds(200))
             }
             if let self, case .waitingForDebugger = self.state {
-                self.state = .failed("StikDebug no se conectó en dos minutos. Abre StikDebug, comprueba que el túnel está conectado (Ajustes → Tunnel Diagnostics) y vuelve a intentarlo.")
+                self.state = .failed(L("StikDebug no se conectó en dos minutos. Abre StikDebug, comprueba que el túnel está conectado (Ajustes → Tunnel Diagnostics) y vuelve a intentarlo.", "StikDebug did not attach within two minutes. Open StikDebug, check that the tunnel is connected (Settings → Tunnel Diagnostics) and try again."))
             }
         }
     }
@@ -129,7 +129,7 @@ final class JITGate {
             let prepared = astro_jit_prepare_arena(bytes)
             var result: State
             if prepared != 0 {
-                result = .failed("StikDebug no preparó la memoria ejecutable (error \(prepared)).")
+                result = .failed(L("StikDebug no preparó la memoria ejecutable (error \(prepared)).", "StikDebug did not prepare the executable memory (error \(prepared))."))
             } else {
                 // If the memory cannot run code after all, the system ends the app right here:
                 // the marker tells the next start.
@@ -138,7 +138,7 @@ final class JITGate {
                 try? FileManager.default.removeItem(atPath: marker)
                 result = tested == 0
                     ? .ready(megabytes: arenaMegabytes)
-                    : .failed("La memoria ejecutable no respondió a la prueba (error \(tested)).")
+                    : .failed(L("La memoria ejecutable no respondió a la prueba (error \(tested)).", "The executable memory failed the test (error \(tested))."))
             }
             Task { @MainActor in
                 self?.state = result
