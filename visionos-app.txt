@@ -1,4 +1,4 @@
-# visionos-app - c602c5d2a4523de884ab21566fa2bc35b07b6f2c - 2026-10-06T13:33:48Z
+# visionos-app - 83c75f57cc0ac346a27821ca24f0546b5a1b402f - 2026-10-06T13:40:56Z
 
 ## fexcore.log:      346 lines
 ### errors
@@ -19,72 +19,72 @@
 [61/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_shiftRightJam128.c.o
 [62/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_shiftRightJam128Extra.c.o
 [63/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_normRoundPackToExtF80.c.o
-[64/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_approxRecipSqrt32_1.c.o
-[65/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_approxRecip_1Ks.c.o
+[64/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_approxRecip_1Ks.c.o
+[65/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_approxRecipSqrt32_1.c.o
 [66/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_approxRecipSqrt_1Ks.c.o
 [67/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/softfloat_raiseFlags.c.o
 [68/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/f64_to_extF80.c.o
 [69/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_commonNaNToExtF80UI.c.o
 [70/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_normSubnormalF64Sig.c.o
 [71/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_f64UIToCommonNaN.c.o
-[72/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/extF80_eq.c.o
-[73/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/extF80_roundToInt.c.o
-[74/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/extF80_lt.c.o
-[75/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/f32_to_extF80.c.o
+[72/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/extF80_roundToInt.c.o
+[73/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/extF80_eq.c.o
+[74/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/f32_to_extF80.c.o
+[75/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/extF80_lt.c.o
 [76/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_normSubnormalF32Sig.c.o
 [77/178] Building C object External/SoftFloat-3e/CMakeFiles/softfloat_3e.dir/src/s_f32UIToCommonNaN.c.o
-[78/178] Building CXX object External/cephes/CMakeFiles/cephes_128bit.dir/src/128bit/Impl.cpp.o
-[79/178] Building C object External/cephes/CMakeFiles/cephes_128bit.dir/src/128bit/atanll.c.o
-[80/178] Generating ../../include/FEXCore/Config/ConfigValues.inl, ../../include/FEXCore/Config/ConfigOptions.inl, ../../generated/FEX.1
+[78/178] Building C object External/cephes/CMakeFiles/cephes_128bit.dir/src/128bit/atanll.c.o
+[79/178] Building CXX object External/cephes/CMakeFiles/cephes_128bit.dir/src/128bit/Impl.cpp.o
+[80/178] Building C object External/cephes/CMakeFiles/cephes_128bit.dir/src/128bit/constll.c.o
 [81/178] Building C object External/cephes/CMakeFiles/cephes_128bit.dir/src/128bit/exp2ll.c.o
-[82/178] Building C object External/cephes/CMakeFiles/cephes_128bit.dir/src/128bit/constll.c.o
+[82/178] Generating ../../include/FEXCore/Config/ConfigValues.inl, ../../include/FEXCore/Config/ConfigOptions.inl, ../../generated/FEX.1
 [83/178] Building C object External/xxhash/cmake_unofficial/CMakeFiles/xxhash.dir/__/xxhash.c.o
 [84/178] Building C object External/cephes/CMakeFiles/cephes_128bit.dir/src/128bit/floorll.c.o
 [85/178] Building C object External/cephes/CMakeFiles/cephes_128bit.dir/src/128bit/log2ll.c.o
-[86/178] Building C object External/cephes/CMakeFiles/cephes_128bit.dir/src/128bit/polevll.c.o
+[86/178] Linking C static library External/SoftFloat-3e/libsoftfloat_3e.a
 [87/178] Building C object External/cephes/CMakeFiles/cephes_128bit.dir/src/128bit/mtherr.c.o
-[88/178] Building C object External/cephes/CMakeFiles/cephes_128bit.dir/src/128bit/sinll.c.o
-[89/178] Linking C static library External/SoftFloat-3e/libsoftfloat_3e.a
+[88/178] Building C object External/cephes/CMakeFiles/cephes_128bit.dir/src/128bit/polevll.c.o
+[89/178] Building C object External/cephes/CMakeFiles/cephes_128bit.dir/src/128bit/sinll.c.o
 [90/178] Building C object External/cephes/CMakeFiles/cephes_128bit.dir/src/128bit/tanll.c.o
 [91/178] Generating ../../generated/FEX.1.gz
-[92/178] Generating ../../IR.md
-[93/178] Building C object External/tiny-json/CMakeFiles/tiny-json.dir/tiny-json.c.o
+[92/178] Building C object External/tiny-json/CMakeFiles/tiny-json.dir/tiny-json.c.o
+[93/178] Generating ../../IR.md
 [94/178] Linking C static library External/xxhash/cmake_unofficial/libxxhash.a
 [95/178] Linking CXX static library External/cephes/libcephes_128bit.a
-[96/178] Generating ../../include/FEXCore/IR/IRDefines.inc, ../../include/FEXCore/IR/IRDefines_Dispatch.inc
-[97/178] Linking C static library External/tiny-json/libtiny-json.a
+[96/178] Linking C static library External/tiny-json/libtiny-json.a
+[97/178] Generating ../../include/FEXCore/IR/IRDefines.inc, ../../include/FEXCore/IR/IRDefines_Dispatch.inc
 [98/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_Base.dir/Utils/ForcedAssert.cpp.o
 [99/178] Building CXX object FEXCore/Source/CMakeFiles/JemallocLibs.dir/Utils/AllocatorHooks.cpp.o
 [100/178] Building CXX object External/fmt/CMakeFiles/fmt.dir/src/os.cc.o
 [101/178] Building CXX object External/fmt/CMakeFiles/fmt.dir/src/format.cc.o
 [102/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_Base.dir/Interface/Config/Config.cpp.o
 [103/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_Base.dir/Utils/Allocator.cpp.o
-[104/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_Base.dir/Utils/WildcardMatcher.cpp.o
-[105/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_Base.dir/Utils/FileLoading.cpp.o
-[106/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_Base.dir/Utils/LogManager.cpp.o
+[104/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_Base.dir/Utils/FileLoading.cpp.o
+[105/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_Base.dir/Utils/LogManager.cpp.o
+[106/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_Base.dir/Utils/WildcardMatcher.cpp.o
 [107/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_Base.dir/Utils/SpinWaitLock.cpp.o
-[108/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Common/JitSymbols.cpp.o
-[109/178] Building CXX object Source/Common/cpp-optparse/CMakeFiles/cpp-optparse.dir/OptionParser.cpp.o
-[110/178] Linking CXX static library External/fmt/libfmt.a
+[108/178] Linking CXX static library External/fmt/libfmt.a
+[109/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Common/JitSymbols.cpp.o
+[110/178] Building CXX object Source/Common/cpp-optparse/CMakeFiles/cpp-optparse.dir/OptionParser.cpp.o
 [111/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/LookupCache.cpp.o
 [112/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Context/Context.cpp.o
 [113/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/CodeCache.cpp.o
 [114/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/Core.cpp.o
-[115/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/CPUBackend.cpp.o
-[116/178] Linking CXX static library FEXCore/Source/libFEXCore_Base.a
+[115/178] Linking CXX static library FEXCore/Source/libFEXCore_Base.a
+[116/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/CPUBackend.cpp.o
 [117/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/Addressing.cpp.o
-[118/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/CPUID.cpp.o
-[119/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/Frontend.cpp.o
-[120/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/OpcodeDispatcher/Flags.cpp.o
-[121/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/OpcodeDispatcher/Crypto.cpp.o
-[122/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/OpcodeDispatcher/AVX_128.cpp.o
-[123/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/OpcodeDispatcher/X87.cpp.o
-[124/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/OpcodeDispatcher/Vector.cpp.o
-[125/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/OpcodeDispatcher.cpp.o
-[126/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/OpcodeDispatcher/X87F64.cpp.o
+[118/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/Frontend.cpp.o
+[119/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/CPUID.cpp.o
+[120/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/OpcodeDispatcher/Crypto.cpp.o
+[121/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/OpcodeDispatcher/AVX_128.cpp.o
+[122/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/OpcodeDispatcher/Flags.cpp.o
+[123/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/OpcodeDispatcher/Vector.cpp.o
+[124/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/OpcodeDispatcher/X87F64.cpp.o
+[125/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/OpcodeDispatcher/X87.cpp.o
+[126/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/OpcodeDispatcher.cpp.o
 [127/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/ArchHelpers/Arm64Emitter.cpp.o
-[128/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/Interpreter/Fallbacks/InterpreterFallbacks.cpp.o
-[129/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/Dispatcher/Dispatcher.cpp.o
+[128/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/Dispatcher/Dispatcher.cpp.o
+[129/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/Interpreter/Fallbacks/InterpreterFallbacks.cpp.o
 [130/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/Interpreter/Fallbacks/StringCompareFallbacks.cpp.o
 [131/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/JIT/JIT.cpp.o
 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fex-src/FEXCore/Source/Interface/Core/JIT/JIT.cpp:597:50: warning: taking address of packed member 'HostCode' of class or structure 'FEXCore::Context::ExitFunctionLinkData' may result in an unaligned pointer value [-Waddress-of-packed-member]
@@ -94,53 +94,53 @@
    82 | #define FEX_JIT_WRITABLE(Address) ::FEXCore::Darwin::Writable(Address)
       |                                                               ^~~~~~~
 1 warning generated.
-[132/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/JIT/ALUOps.cpp.o
-[133/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/JIT/AtomicOps.cpp.o
+[132/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/JIT/AtomicOps.cpp.o
+[133/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/JIT/ALUOps.cpp.o
 [134/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/JIT/BranchOps.cpp.o
-[135/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/JIT/ConversionOps.cpp.o
-[136/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/JIT/EncryptionOps.cpp.o
-[137/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/JIT/MiscOps.cpp.o
-[138/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/JIT/MemoryOps.cpp.o
-[139/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/JIT/VectorOps.cpp.o
-[140/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/JIT/MoveOps.cpp.o
+[135/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/JIT/EncryptionOps.cpp.o
+[136/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/JIT/ConversionOps.cpp.o
+[137/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/JIT/MemoryOps.cpp.o
+[138/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/JIT/MoveOps.cpp.o
+[139/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/JIT/MiscOps.cpp.o
+[140/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/X86Tables/BaseTables.cpp.o
 [141/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/JIT/Arm64Relocations.cpp.o
-[142/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/X86Tables/BaseTables.cpp.o
+[142/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/JIT/VectorOps.cpp.o
 [143/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/X86Tables/DDDTables.cpp.o
-[144/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/X86Tables/H0F3ATables.cpp.o
-[145/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/X86Tables/PrimaryGroupTables.cpp.o
-[146/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/X86Tables/SecondaryGroupTables.cpp.o
-[147/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/X86Tables/H0F38Tables.cpp.o
-[148/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/X86Tables/SecondaryModRMTables.cpp.o
-[149/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/X86Tables/SecondaryTables.cpp.o
-[150/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/GDBJIT/GDBJIT.cpp.o
-[151/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/X86Tables/VEXTables.cpp.o
-[152/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/X86Tables/X87Tables.cpp.o
+[144/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/X86Tables/H0F38Tables.cpp.o
+[145/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/X86Tables/H0F3ATables.cpp.o
+[146/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/X86Tables/PrimaryGroupTables.cpp.o
+[147/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/X86Tables/SecondaryModRMTables.cpp.o
+[148/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/X86Tables/SecondaryGroupTables.cpp.o
+[149/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/X86Tables/X87Tables.cpp.o
+[150/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/X86Tables/VEXTables.cpp.o
+[151/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/Core/X86Tables/SecondaryTables.cpp.o
+[152/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/GDBJIT/GDBJIT.cpp.o
 [153/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/IR/IREmitter.cpp.o
 [154/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/IR/IRDumper.cpp.o
-[155/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/IR/Passes/IRDumperPass.cpp.o
-[156/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/IR/PassManager.cpp.o
-[157/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Utils/LongJump.cpp.o
-[158/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/IR/Passes/RedundantFlagCalculationElimination.cpp.o
-[159/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/IR/Passes/IRValidation.cpp.o
+[155/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/IR/PassManager.cpp.o
+[156/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/IR/Passes/RedundantFlagCalculationElimination.cpp.o
+[157/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/IR/Passes/IRDumperPass.cpp.o
+[158/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/IR/Passes/IRValidation.cpp.o
+[159/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Utils/LongJump.cpp.o
 [160/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/IR/Passes/RegisterAllocationPass.cpp.o
-[161/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/IR/Passes/x87StackOptimizationPass.cpp.o
+[161/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Utils/Telemetry.cpp.o
 [162/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Utils/Threads.cpp.o
-[163/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Utils/Telemetry.cpp.o
+[163/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Interface/IR/Passes/x87StackOptimizationPass.cpp.o
 [164/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Utils/Profiler.cpp.o
 [165/178] Building CXX object FEXCore/Source/CMakeFiles/FEXCore_object.dir/Utils/ArchHelpers/Arm64.cpp.o
 [166/178] Building CXX object Source/Common/CMakeFiles/Common.dir/Config.cpp.o
 [167/178] Building CXX object Source/Common/CMakeFiles/Common.dir/CPUInfo.cpp.o
 [168/178] Building CXX object Source/Common/CMakeFiles/Common.dir/ArgumentLoader.cpp.o
-[169/178] Building CXX object Source/Common/CMakeFiles/Common.dir/SHMStats.cpp.o
-[170/178] Building CXX object Source/Common/CMakeFiles/Common.dir/JSONPool.cpp.o
-[171/178] Building CXX object Source/Common/CMakeFiles/Common.dir/VolatileMetadata.cpp.o
-[172/178] Building CXX object Source/Common/CMakeFiles/Common.dir/HostFeatures.cpp.o
+[169/178] Building CXX object Source/Common/CMakeFiles/Common.dir/JSONPool.cpp.o
+[170/178] Building CXX object Source/Common/CMakeFiles/Common.dir/HostFeatures.cpp.o
+[171/178] Building CXX object Source/Common/CMakeFiles/Common.dir/SHMStats.cpp.o
+[172/178] Building CXX object Source/Common/CMakeFiles/Common.dir/VolatileMetadata.cpp.o
 [173/178] Building CXX object Source/Tools/CommonTools/CMakeFiles/CommonTools.dir/DummyHandlers.cpp.o
 [174/178] Linking CXX static library Source/Common/cpp-optparse/libcpp-optparse.a
-[175/178] Linking CXX static library FEXCore/Source/libFEXCore.a
-[176/178] Linking CXX static library FEXCore/Source/libJemallocLibs.a
-[177/178] Linking CXX static library Source/Tools/CommonTools/libCommonTools.a
-[178/178] Linking CXX static library Source/Common/libCommon.a
+[175/178] Linking CXX static library FEXCore/Source/libJemallocLibs.a
+[176/178] Linking CXX static library FEXCore/Source/libFEXCore.a
+[177/178] Linking CXX static library Source/Common/libCommon.a
+[178/178] Linking CXX static library Source/Tools/CommonTools/libCommonTools.a
 FEXCore for visionOS:
 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fexcore/Source/Tools/CommonTools/libCommonTools.a
 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/fexcore/Source/Common/cpp-optparse/libcpp-optparse.a
@@ -164,28 +164,33 @@ MoltenVK v1.4.2 for visionOS is already built
 ### end
 FFmpeg n7.1.1 for visionOS is already built
 
-## core.log:     2871 lines
+## core.log:     2860 lines
 ### errors
 ### end
-[1572/1666] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/frontend/translate/scalar_flow.cpp.o
+[1567/1666] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/backend/spirv/emit_spirv_warp.cpp.o
+[1568/1666] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/backend/spirv/spirv_emit_context.cpp.o
+[1569/1666] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/frontend/translate/data_share.cpp.o
+[1570/1666] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/frontend/translate/export.cpp.o
+[1571/1666] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/frontend/translate/scalar_flow.cpp.o
+[1572/1666] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/frontend/translate/scalar_alu.cpp.o
 [1573/1666] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/frontend/translate/scalar_memory.cpp.o
 [1574/1666] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/frontend/translate/translate.cpp.o
 [1575/1666] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/frontend/translate/vector_alu.cpp.o
-[1576/1666] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/frontend/translate/vector_memory.cpp.o
-[1577/1666] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/frontend/translate/vector_interpolation.cpp.o
+[1576/1666] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/frontend/translate/vector_interpolation.cpp.o
+[1577/1666] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/frontend/translate/vector_memory.cpp.o
 [1578/1666] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/frontend/control_flow_graph.cpp.o
-[1579/1666] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/frontend/decode.cpp.o
-[1580/1666] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/frontend/copy_shader.cpp.o
+[1579/1666] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/frontend/copy_shader.cpp.o
+[1580/1666] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/frontend/decode.cpp.o
 [1581/1666] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/frontend/fetch_shader.cpp.o
 [1582/1666] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/frontend/format.cpp.o
-[1583/1666] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/frontend/instruction.cpp.o
-[1584/1666] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/frontend/structured_control_flow.cpp.o
+[1583/1666] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/frontend/structured_control_flow.cpp.o
+[1584/1666] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/frontend/instruction.cpp.o
 [1585/1666] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/constant_propagation_pass.cpp.o
 [1586/1666] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/dead_code_elimination_pass.cpp.o
 [1587/1666] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp.o
 [1588/1666] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/hull_shader_transform.cpp.o
-[1589/1666] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/identity_removal_pass.cpp.o
-[1590/1666] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/inject_clip_distance_attributes.cpp.o
+[1589/1666] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/inject_clip_distance_attributes.cpp.o
+[1590/1666] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/identity_removal_pass.cpp.o
 [1591/1666] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/lower_buffer_format_to_raw.cpp.o
 [1592/1666] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/lower_fp64_to_fp32.cpp.o
 [1593/1666] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/readlane_elimination_pass.cpp.o
@@ -201,66 +206,66 @@ FFmpeg n7.1.1 for visionOS is already built
 [1603/1666] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/basic_block.cpp.o
 [1604/1666] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/ir_emitter.cpp.o
 [1605/1666] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/microinstruction.cpp.o
-[1606/1666] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/patch.cpp.o
-[1607/1666] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/opcodes.cpp.o
+[1606/1666] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/opcodes.cpp.o
+[1607/1666] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/patch.cpp.o
 [1608/1666] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/type.cpp.o
 [1609/1666] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/post_order.cpp.o
 [1610/1666] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/program.cpp.o
-[1611/1666] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/value.cpp.o
-[1612/1666] Building CXX object CMakeFiles/shadps4.dir/src/video_core/amdgpu/liverpool.cpp.o
-[1613/1666] Building CXX object externals/glslang/glslang/CMakeFiles/glslang.dir/__/SPIRV/GlslangToSpv.cpp.o
-[1614/1666] Building CXX object CMakeFiles/shadps4.dir/src/video_core/amdgpu/pixel_format.cpp.o
-[1615/1666] Building CXX object CMakeFiles/shadps4.dir/src/video_core/buffer_cache/vk_dispatch_reload.cpp.o
-[1616/1666] Building CXX object CMakeFiles/shadps4.dir/src/video_core/amdgpu/tiling.cpp.o
-[1617/1666] Building CXX object CMakeFiles/shadps4.dir/src/video_core/amdgpu/regs.cpp.o
-[1618/1666] Building CXX object CMakeFiles/shadps4.dir/src/video_core/buffer_cache/buffer.cpp.o
+[1611/1666] Building CXX object CMakeFiles/shadps4.dir/src/video_core/amdgpu/liverpool.cpp.o
+[1612/1666] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/value.cpp.o
+[1613/1666] Building CXX object CMakeFiles/shadps4.dir/src/video_core/amdgpu/pixel_format.cpp.o
+[1614/1666] Building CXX object CMakeFiles/shadps4.dir/src/video_core/amdgpu/regs.cpp.o
+[1615/1666] Building CXX object CMakeFiles/shadps4.dir/src/video_core/amdgpu/tiling.cpp.o
+[1616/1666] Building CXX object CMakeFiles/shadps4.dir/src/video_core/buffer_cache/vk_dispatch_reload.cpp.o
+[1617/1666] Building CXX object CMakeFiles/shadps4.dir/src/video_core/buffer_cache/buffer.cpp.o
+[1618/1666] Building CXX object CMakeFiles/shadps4.dir/src/video_core/buffer_cache/fault_manager.cpp.o
 [1619/1666] Building CXX object CMakeFiles/shadps4.dir/src/video_core/buffer_cache/buffer_cache.cpp.o
-[1620/1666] Building CXX object CMakeFiles/shadps4.dir/src/video_core/buffer_cache/fault_manager.cpp.o
-[1621/1666] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/liverpool_to_vk.cpp.o
-[1622/1666] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_common.cpp.o
-[1623/1666] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_compute_pipeline.cpp.o
-[1624/1666] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_graphics_pipeline.cpp.o
-[1625/1666] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_instance.cpp.o
-[1626/1666] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_master_semaphore.cpp.o
-[1627/1666] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_pipeline_cache.cpp.o
-[1628/1666] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_pipeline_common.cpp.o
-[1629/1666] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp.o
-[1630/1666] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_platform.cpp.o
-[1631/1666] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_vr_exporter.cpp.o
-[1632/1666] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_rasterizer.cpp.o
-[1633/1666] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_resource_pool.cpp.o
-[1634/1666] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_presenter.cpp.o
+[1620/1666] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/liverpool_to_vk.cpp.o
+[1621/1666] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_common.cpp.o
+[1622/1666] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_compute_pipeline.cpp.o
+[1623/1666] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_instance.cpp.o
+[1624/1666] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_master_semaphore.cpp.o
+[1625/1666] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_graphics_pipeline.cpp.o
+[1626/1666] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_pipeline_cache.cpp.o
+[1627/1666] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_pipeline_common.cpp.o
+[1628/1666] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp.o
+[1629/1666] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_platform.cpp.o
+[1630/1666] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_vr_exporter.cpp.o
+[1631/1666] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_presenter.cpp.o
 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/shadps4-arm64-main/src/video_core/renderer_vulkan/vk_presenter.cpp:1202:48: warning: null character(s) preserved in char literal [-Wnull-character]
  1202 |     for (const char* at = wanted_text; *at != '<U+0000>';) {
       |                                                ^
 1 warning generated.
-[1635/1666] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_scheduler.cpp.o
-[1636/1666] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_shader_hle.cpp.o
-[1637/1666] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_shader_util.cpp.o
-[1638/1666] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_swapchain.cpp.o
-[1639/1666] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/host_passes/fsr_pass.cpp.o
+[1632/1666] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_rasterizer.cpp.o
+[1633/1666] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_scheduler.cpp.o
+[1634/1666] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_resource_pool.cpp.o
+[1635/1666] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_shader_hle.cpp.o
+[1636/1666] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_shader_util.cpp.o
+[1637/1666] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_swapchain.cpp.o
+[1638/1666] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/host_passes/fsr_pass.cpp.o
+[1639/1666] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/host_passes/pp_pass.cpp.o
 [1640/1666] Building CXX object CMakeFiles/shadps4.dir/src/video_core/texture_cache/host_compatibility.cpp.o
 [1641/1666] Building CXX object CMakeFiles/shadps4.dir/src/video_core/texture_cache/blit_helper.cpp.o
-[1642/1666] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/host_passes/pp_pass.cpp.o
-[1643/1666] Building CXX object CMakeFiles/shadps4.dir/src/video_core/texture_cache/image_info.cpp.o
-[1644/1666] Building CXX object CMakeFiles/shadps4.dir/src/video_core/texture_cache/image.cpp.o
+[1642/1666] Building CXX object CMakeFiles/shadps4.dir/src/video_core/texture_cache/image.cpp.o
+[1643/1666] Building CXX object CMakeFiles/shadps4.dir/src/video_core/texture_cache/image_view.cpp.o
+[1644/1666] Building CXX object CMakeFiles/shadps4.dir/src/video_core/texture_cache/image_info.cpp.o
 [1645/1666] Building CXX object CMakeFiles/shadps4.dir/src/video_core/texture_cache/sampler.cpp.o
-[1646/1666] Building CXX object CMakeFiles/shadps4.dir/src/video_core/texture_cache/image_view.cpp.o
+[1646/1666] Building CXX object CMakeFiles/shadps4.dir/src/video_core/texture_cache/tile_manager.cpp.o
 [1647/1666] Building CXX object CMakeFiles/shadps4.dir/src/video_core/texture_cache/texture_cache.cpp.o
-[1648/1666] Building CXX object CMakeFiles/shadps4.dir/src/video_core/texture_cache/tile_manager.cpp.o
-[1649/1666] Building CXX object CMakeFiles/shadps4.dir/src/video_core/cache_storage.cpp.o
+[1648/1666] Building CXX object CMakeFiles/shadps4.dir/src/video_core/cache_storage.cpp.o
+[1649/1666] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderdoc.cpp.o
 [1650/1666] Building CXX object CMakeFiles/shadps4.dir/src/video_core/page_manager.cpp.o
-[1651/1666] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderdoc.cpp.o
-[1652/1666] Building CXX object CMakeFiles/shadps4.dir/src/emulator.cpp.o
+[1651/1666] Building CXX object CMakeFiles/shadps4.dir/src/emulator.cpp.o
+[1652/1666] Building CXX object CMakeFiles/shadps4.dir/src/sdl_window.cpp.o
 [1653/1666] Building CXX object CMakeFiles/shadps4.dir/src/platform/bachata/runtime_client.cpp.o
-[1654/1666] Building CXX object CMakeFiles/shadps4.dir/src/sdl_window.cpp.o
+[1654/1666] Building CXX object CMakeFiles/shadps4.dir/src/platform/bachata/controller_snapshot.cpp.o
 [1655/1666] Building CXX object CMakeFiles/shadps4.dir/src/main.cpp.o
-[1656/1666] Building CXX object CMakeFiles/shadps4.dir/src/platform/bachata/controller_snapshot.cpp.o
-[1657/1666] Building CXX object CMakeFiles/shadps4.dir/src/platform/bachata/audio_transport.cpp.o
-[1658/1666] Linking CXX static library src/imgui/renderer/libImGui_Resources.a
-[1659/1666] Linking CXX static library externals/glslang/glslang/libglslang.a
-[1660/1666] Building C object CMakeFiles/shadps4.dir/src/platform/visionos/jit_arena.c.o
-[1661/1666] Building C object CMakeFiles/shadps4.dir/src/platform/visionos/diagnostics.c.o
+[1656/1666] Building CXX object CMakeFiles/shadps4.dir/src/platform/bachata/audio_transport.cpp.o
+[1657/1666] Linking CXX static library src/imgui/renderer/libImGui_Resources.a
+[1658/1666] Building C object CMakeFiles/shadps4.dir/src/platform/visionos/jit_arena.c.o
+[1659/1666] Building C object CMakeFiles/shadps4.dir/src/platform/visionos/diagnostics.c.o
+[1660/1666] Building CXX object externals/glslang/glslang/CMakeFiles/glslang.dir/__/SPIRV/GlslangToSpv.cpp.o
+[1661/1666] Linking CXX static library externals/glslang/glslang/libglslang.a
 [1662/1666] Building CXX object CMakeFiles/shadps4.dir/src/common/jit_arena.cpp.o
 [1663/1666] Building CXX object CMakeFiles/shadps4.dir/src/platform/visionos/astro_core.mm.o
 [1664/1666] Building CXX object CMakeFiles/shadps4.dir/src/core/vr/openxr_host_visionos.mm.o
@@ -312,214 +317,3 @@ Into libastroquest_core.a:
   /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg/lib/libavutil.a
   /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg/lib/libswresample.a
   /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/build/visionos/ffmpeg/lib/libswscale.a
-total 240512
-drwxr-xr-x  4 runner  staff        128 Oct  6 13:33 .
-drwxr-xr-x  3 runner  staff         96 Oct  6 13:33 ..
--rw-r--r--  1 runner  staff  116012920 Oct  6 13:33 libastroquest_core.a
--rw-r--r--  1 runner  staff    7123752 Oct  6 13:33 libMoltenVK.a
-
-## app.log:      375 lines
-### errors
-343-    cd /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos
-344-    /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -Xlinker -reproducible -target arm64-apple-xros26.5 -isysroot /Applications/Xcode_26.6.app/Contents/Developer/Platforms/XROS.platform/Developer/SDKs/XROS26.5.sdk -Os -L/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Intermediates.noindex/EagerLinkingTBDs/Release-xros -L/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Products/Release-xros -L/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/core -F/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Intermediates.noindex/EagerLinkingTBDs/Release-xros -F/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Products/Release-xros -filelist /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/Objects-normal/arm64/AstroQuest.LinkFileList -Xlinker -rpath -Xlinker @executable_path/Frameworks -Xlinker -dead_strip -Xlinker -object_path_lto -Xlinker /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/Objects-normal/arm64/AstroQuest_lto.o -Xlinker -dependency_info -Xlinker /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/Objects-normal/arm64/AstroQuest_dependency_info.dat -fobjc-link-runtime -L/Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros -L/usr/lib/swift -Xlinker -add_ast_path -Xlinker /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/Objects-normal/arm64/AstroQuest.swiftmodule @/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/Objects-normal/arm64/AstroQuest-linker-args.resp -lastroquest_core -lMoltenVK -lc++ -framework Metal -framework IOSurface -framework QuartzCore -framework CoreFoundation -framework Foundation -framework UIKit -framework AVFoundation -framework AudioToolbox -framework CoreAudio -framework CoreHaptics -framework CoreMotion -framework GameController -framework CoreVideo -framework VideoToolbox -framework Security -framework CoreBluetooth -framework CoreGraphics -framework Metal -liconv -o /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Products/Release-xros/AstroQuest.app/AstroQuest
-345:/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/AstroQuest.xcodeproj: AstroQuest: ld: warning: reducing alignment of section __DATA,__common from 0x8000 to 0x4000 because it exceeds segment maximum alignment
-346-
-347-GenerateDSYMFile /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Products/Release-xros/AstroQuest.app.dSYM /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Products/Release-xros/AstroQuest.app/AstroQuest (in target 'AstroQuest' from project 'AstroQuest')
-348-    cd /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos
-349-    /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/dsymutil /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Products/Release-xros/AstroQuest.app/AstroQuest -o /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Products/Release-xros/AstroQuest.app.dSYM
-350-
-351-ExtractAppIntentsMetadata (in target 'AstroQuest' from project 'AstroQuest')
-### end
-SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/Foundation-E7Z53TOE86M09HKBHVAAYLG63.pcm
-
-SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CoreText-572UTW3CX6N9GOBLG4267MP71.pcm
-
-SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/ImageIO-8YDUC5C5WZYQMZAZAC2ULR82Q.pcm
-
-SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/UniformTypeIdentifiers-8YLN5W7G84XE9WGZ2T09OFZV2.pcm
-
-SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/Network-DIGP7UKQ52JB5GBR2GM8W6CII.pcm
-
-SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/LocalAuthentication-1YV4ERKHVDQDDWL95U48R6ROZ.pcm
-
-SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/_LocationEssentials-E7JZ1FLJGW4L1P9KPTG420UVF.pcm
-
-SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/DataDetection-2C2EV0M2IN9GKKA1M5WCIEX3F.pcm
-
-SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/Symbols-D5QPBIFH41FTU4HBB3LDNMJMQ.pcm
-
-SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/UIUtilities-BLV3XQOGLHGX228MOR26XP3MM.pcm
-
-SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CoreHaptics-5BITLAIGM8QZNWUIXMPNVYQUN.pcm
-
-SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/UserNotifications-DSR19L7U3IURMK4NZY2OAW92A.pcm
-
-SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CoreData-AUNYXUNA4XYHVDYVJU48NO7QY.pcm
-
-SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CoreLocation-F33HX2BY6PWGU8455IHH4WO7E.pcm
-
-SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CoreTransferable-9VX8KM4ZV1XIROUVE3CME6RSX.pcm
-
-SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/IOSurface-DN830F9I8A15ZPAWLXY2SSOIV.pcm
-
-SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CoreMIDI-3HIQL6RZD5FXUZYVB18KTS7X6.pcm
-
-SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/OSLog-3HRIOGQEBYPEI9V34K9FEWX2I.pcm
-
-SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/FileProvider-4X824MKF1A0G6M29O4MNAMVOV.pcm
-
-SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/AVRouting-3ADK288VOB1IYSFOBI9XAQXVY.pcm
-
-SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/OpenGLES-A9IJ5B6X0JEUKS1433AEHWSB2.pcm
-
-SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CoreMotion-3EHZVQAGAYV09GVQSN2GJT8KQ.pcm
-
-SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/Metal-DSH41D8QR1RQYDTMSN40TDDPV.pcm
-
-SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/AudioToolbox-DBPS00DKBSMGLWZD9ZDQQ106H.pcm
-
-SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CloudKit-E1U5X1P21VB74RDK9RCYZOGEU.pcm
-
-SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/Accessibility-Z4OW4BQ6A2UD9L9QHDZR20H.pcm
-
-SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CoreVideo-2WNB6QD7BJTFOD5TVB1E0QWCV.pcm
-
-SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CoreImage-9RX7BEOI2JFW6O3NL2QZEYIWK.pcm
-
-SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/QuartzCore-52WC3B4J1INQZ1GH1NQQ4833E.pcm
-
-SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/ARKit-D5WMG6PQDPIMG0CZRAE8XY0CD.pcm
-
-SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CoreMedia-BXUWOCSRYKASLE5LHIXWUEXI8.pcm
-
-SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/SwiftUICore-9G5LI68IC61QPOSO0234XO4CW.pcm
-
-SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/AVFAudio-8DWL1P6AJ3E3PK2VXEMQ4QBTR.pcm
-
-SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/MediaToolbox-AVRJ5JPELN2ET6PSNZTYHYA6J.pcm
-
-SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/UIKit-8O5LASIOD90VCR8IZWEUVWMI6.pcm
-
-SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/AVFoundation-1MQS1GK9Z4XXG365OB1J3B16L.pcm
-
-SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/GameController-579DDS4CK70YWAS82KPMY6UG6.pcm
-
-SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/SwiftUI-70AQJ3RTIT7ZO6W78D1LVY6J2.pcm
-
-SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/MultipeerConnectivity-99ITNYP076TR3UXQJ2F4JCYRE.pcm
-
-SwiftExplicitDependencyGeneratePcm arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CompositorServices-5WN8AI2T71UBN7QG2JJXCCBWZ.pcm
-
-SwiftGeneratePch normal arm64 Compiling\ bridging\ header (in target 'AstroQuest' from project 'AstroQuest')
-
-SwiftDriverJobDiscovery normal arm64 Compiling bridging header (in target 'AstroQuest' from project 'AstroQuest')
-
-SwiftCompile normal arm64 Compiling\ AppModel.swift,\ AstroQuestApp.swift,\ AstroSettings.swift,\ Diagnostics.swift,\ GameRenderer.swift,\ HeadsetTracking.swift,\ JITGate.swift,\ LauncherView.swift,\ PlayStationController.swift /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/App/Core/AppModel.swift /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/App/AstroQuestApp.swift /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/App/Core/AstroSettings.swift /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/App/Core/Diagnostics.swift /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/App/Render/GameRenderer.swift /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/App/Tracking/HeadsetTracking.swift /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/App/JIT/JITGate.swift /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/App/Views/LauncherView.swift /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/App/Controller/PlayStationController.swift /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/Combine.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/Foundation.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/Network.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/CryptoKit.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/AVFoundation.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/Symbols.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/UIKit.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/CoreMedia.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/Dispatch.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/GameController.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/_Concurrency.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/Accessibility.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/QuartzCore.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/CloudKit.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/FileProvider.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/CoreText.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/simd.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/Swift.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/_DarwinFoundation3.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/Synchronization.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/_Builtin_float.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/ObjectiveC.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/CoreFoundation.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/CoreMotion.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/CoreImage.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/Distributed.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/CompositorServices.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/Metal.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/CoreMIDI.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/System.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/OSLog.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/_DarwinFoundation1.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/LocalAuthentication.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/_DarwinFoundation2.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/Observation.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/ARKit.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/os.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/AVFAudio.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/AudioToolbox.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/Darwin.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/SwiftUI.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/CoreLocation.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/DeveloperToolsSupport.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/CoreAudio.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/Spatial.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/RealityFoundation.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/DataDetection.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/CoreGraphics.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/XPC.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/RealityKit.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/_CompositorServices_SwiftUI.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/CoreTransferable.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/CoreVideo.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/CoreData.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/_StringProcessing.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/SwiftUICore.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/UniformTypeIdentifiers.swiftmodule/arm64e-apple-xros.swiftmodule /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros/prebuilt-modules/26.5/GroupActivities.swiftmodule/arm64e-apple-xros.swiftmodule /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CFNetwork-2B848046ARX376BVN7RLSBN41.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CompositorServices-5WN8AI2T71UBN7QG2JJXCCBWZ.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CoreText-572UTW3CX6N9GOBLG4267MP71.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/ptrcheck-66EKZGHEVZJBLCQ795TR21FB3.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CoreGraphics-5PNS35A5JLC5D0JP2A8QRXVQT.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/Network-DIGP7UKQ52JB5GBR2GM8W6CII.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CoreData-AUNYXUNA4XYHVDYVJU48NO7QY.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/UIUtilities-BLV3XQOGLHGX228MOR26XP3MM.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CoreTransferable-9VX8KM4ZV1XIROUVE3CME6RSX.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/AVFAudio-8DWL1P6AJ3E3PK2VXEMQ4QBTR.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CoreMIDI-3HIQL6RZD5FXUZYVB18KTS7X6.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/_LocationEssentials-E7JZ1FLJGW4L1P9KPTG420UVF.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/_Builtin_stdatomic-DTGP8EOJKR8XOKUSUP8ZWE6EG.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/GameController-579DDS4CK70YWAS82KPMY6UG6.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/ImageIO-8YDUC5C5WZYQMZAZAC2ULR82Q.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/AVRouting-3ADK288VOB1IYSFOBI9XAQXVY.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/UserNotifications-DSR19L7U3IURMK4NZY2OAW92A.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CoreLocation-F33HX2BY6PWGU8455IHH4WO7E.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CoreAudio-9A8EY0TNLWP0ZE071S2PSN75N.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CoreMedia-BXUWOCSRYKASLE5LHIXWUEXI8.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/_SwiftConcurrencyShims-227F39MQWGFJXUET3SJ6UF9LI.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/Security-24RT8MACEN4VFVC5WKY6H3U8K.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/_Builtin_stdint-2BWPKMDQZUND6I55I725I37K8.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/UIKit-8O5LASIOD90VCR8IZWEUVWMI6.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/Metal-DSH41D8QR1RQYDTMSN40TDDPV.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/Spatial-3P62KVB0E4ZK4AVSHGE24SKHL.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CoreImage-9RX7BEOI2JFW6O3NL2QZEYIWK.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/MachO-9G034EDKJAKP1SXTPJB91INQD.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/Darwin-5XCGM6IZ30298ZBNZMUH55Z4G.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CoreHaptics-5BITLAIGM8QZNWUIXMPNVYQUN.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/SwiftUICore-9G5LI68IC61QPOSO0234XO4CW.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CoreAudioTypes-E12K4G58SFT3UI763RCDOF6FA.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/_Builtin_stdbool-992WM3S4ONCBZG2ASV29HFX8S.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/os-CIHKKEOLFLKAINKYYXMUNTT01.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/MultipeerConnectivity-99ITNYP076TR3UXQJ2F4JCYRE.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/LocalAuthentication-1YV4ERKHVDQDDWL95U48R6ROZ.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/_Builtin_stddef-CYNA0Q5SUCIXF4VB590G9BWJK.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/ObjectiveC-AKPE0DOMWOA0QCV27BQ9J28B8.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/_Builtin_inttypes-7FTHBFPXRUTCRDAQ5WXO0ILHK.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/_AvailabilityInternal-7FWHYC2WE3X8UXYAHU4O8MIJ0.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/Dispatch-DMFQ16BRBZIS3MVVAZGPHOLGQ.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/_DarwinFoundation1-6ZZ20X9MAS3L4F28WO15CFIW7.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CoreFoundation-501OZT2QIZ99K19CU258XMAG.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/_Builtin_float-DEOAQGCR9M9YI8TU5RAZE3WWG.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/_Builtin_intrinsics-9ZQ9QM3WTTEUA8DV82S7K7H7U.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/_Builtin_tgmath-A8CRBCSX2QDXNUIUF1DQR9WRD.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/AVFoundation-1MQS1GK9Z4XXG365OB1J3B16L.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/DeveloperToolsSupport-48E98J5W503JVYDBM28HHTP4K.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/GroupActivities-CPKSSDR0KT981KPXFQL8BVU1E.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/os_object-CZ8128HSJ6OA0XZDY37RLU2M1.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/ptrauth-3C2LN9VXP9HCACC1VKX76YXHN.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/Accessibility-Z4OW4BQ6A2UD9L9QHDZR20H.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CoreVideo-2WNB6QD7BJTFOD5TVB1E0QWCV.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/_DarwinFoundation3-12TADA1CD39AMLHLOEXRUBSNW.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/_Builtin_limits-AYMVUSO35N1XVOX76FAIRDBVQ.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/IOSurface-DN830F9I8A15ZPAWLXY2SSOIV.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/QuartzCore-52WC3B4J1INQZ1GH1NQQ4833E.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/OpenGLES-A9IJ5B6X0JEUKS1433AEHWSB2.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CoreServices-1S34MO11RI2Z6WN0310TZ02WS.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/simd-1SKTXLHI6P11B1020TG22OG4W.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/SwiftShims-8QLMP9IZTUP50TGT9KCVGKM3W.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/dnssd-1URU1LPQQP7LFVA40UMDIBDA2.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/DataDetection-2C2EV0M2IN9GKKA1M5WCIEX3F.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/Symbols-D5QPBIFH41FTU4HBB3LDNMJMQ.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/FileProvider-4X824MKF1A0G6M29O4MNAMVOV.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/_DarwinFoundation2-3S6OMPOY464U8PFIUOBZ7FFTM.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/sys_types-AQG89X3JWNOIBRB590RMMQV92.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CoreMotion-3EHZVQAGAYV09GVQSN2GJT8KQ.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/MediaToolbox-AVRJ5JPELN2ET6PSNZTYHYA6J.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/XPC-BY43L6MIP08UCLG8LJ2PIEV1.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/_Builtin_stdarg-93KS5QM4F9XG8CA1G1Z7GSXJO.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/CloudKit-E1U5X1P21VB74RDK9RCYZOGEU.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/UniformTypeIdentifiers-8YLN5W7G84XE9WGZ2T09OFZV2.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/os_workgroup-1X870YNILHOGOQAVHTEXMA77T.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/SwiftUI-70AQJ3RTIT7ZO6W78D1LVY6J2.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/AudioToolbox-DBPS00DKBSMGLWZD9ZDQQ106H.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/Foundation-E7Z53TOE86M09HKBHVAAYLG63.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/OSLog-3HRIOGQEBYPEI9V34K9FEWX2I.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/ARKit-D5WMG6PQDPIMG0CZRAE8XY0CD.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/notify-55S7PZEOB41T7SGYZC6LAWCYK.pcm /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/Objects-normal/arm64/AstroQuest-dependencies-1.json /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/Objects-normal/arm64/AstroQuest-primary-Bridging-header.pch (in target 'AstroQuest' from project 'AstroQuest')
-
-CompileSwift normal arm64 (in target 'AstroQuest' from project 'AstroQuest')
-    cd /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos
-    
-
-SwiftDriverJobDiscovery normal arm64 Compiling AppModel.swift, AstroQuestApp.swift, AstroSettings.swift, Diagnostics.swift, GameRenderer.swift, HeadsetTracking.swift, JITGate.swift, LauncherView.swift, PlayStationController.swift (in target 'AstroQuest' from project 'AstroQuest')
-
-SwiftDriver\ Compilation\ Requirements AstroQuest normal arm64 com.apple.xcode.tools.swift.compiler (in target 'AstroQuest' from project 'AstroQuest')
-    cd /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos
-    builtin-Swift-Compilation-Requirements -- /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc -module-name AstroQuest -O -whole-module-optimization @/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/Objects-normal/arm64/AstroQuest.SwiftFileList -enable-bare-slash-regex -enable-experimental-feature DebugDescriptionMacro -sdk /Applications/Xcode_26.6.app/Contents/Developer/Platforms/XROS.platform/Developer/SDKs/XROS26.5.sdk -target arm64-apple-xros26.5 -g -module-cache-path /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex -Xfrontend -serialize-debugging-options -swift-version 5 -I /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Products/Release-xros -F /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Products/Release-xros -c -num-threads 5 -Xcc -ivfsstatcache -Xcc /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/SDKStatCaches.noindex/xros26.5-23O469-688ef53f1462e2c8f657fdc38a81448f0ade8266673b0cdb1441e69d898f0d23.sdkstatcache -output-file-map /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/Objects-normal/arm64/AstroQuest-OutputFileMap.json -use-frontend-parseable-output -save-temps -no-color-diagnostics -explicit-module-build -module-cache-path /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules -clang-scanner-module-cache-path /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex -sdk-module-cache-path /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex -serialize-diagnostics -emit-dependencies -emit-module -emit-module-path /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/Objects-normal/arm64/AstroQuest.swiftmodule -validate-clang-modules-once -clang-build-session-file /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/ModuleCache.noindex/Session.modulevalidation -Xcc -I/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/swift-overrides.hmap -emit-const-values -Xfrontend -const-gather-protocols-file -Xfrontend /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/Objects-normal/arm64/AstroQuest_const_extract_protocols.json -Xcc -iquote -Xcc /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/AstroQuest-generated-files.hmap -Xcc -I/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/AstroQuest-own-target-headers.hmap -Xcc -I/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/AstroQuest-all-target-headers.hmap -Xcc -iquote -Xcc /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/AstroQuest-project-headers.hmap -Xcc -I/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Products/Release-xros/include -Xcc -I/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/shadps4-arm64-main/src/platform/visionos -Xcc -I/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/App/Render -Xcc -I/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/DerivedSources-normal/arm64 -Xcc -I/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/DerivedSources/arm64 -Xcc -I/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/DerivedSources -emit-objc-header -emit-objc-header-path /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/Objects-normal/arm64/AstroQuest-Swift.h -import-objc-header /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/App/Bridge/AstroQuest-Bridging-Header.h -working-directory /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos -no-emit-module-separately-wmo
-
-SwiftMergeGeneratedHeaders /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/DerivedSources/AstroQuest-Swift.h /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/Objects-normal/arm64/AstroQuest-Swift.h (in target 'AstroQuest' from project 'AstroQuest')
-    cd /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos
-    builtin-swiftHeaderTool -arch arm64 /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/Objects-normal/arm64/AstroQuest-Swift.h -o /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/DerivedSources/AstroQuest-Swift.h
-
-Copy /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Products/Release-xros/AstroQuest.swiftmodule/arm64-apple-xros.swiftmodule /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/Objects-normal/arm64/AstroQuest.swiftmodule (in target 'AstroQuest' from project 'AstroQuest')
-    cd /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos
-    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -resolve-src-symlinks -rename /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/Objects-normal/arm64/AstroQuest.swiftmodule /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Products/Release-xros/AstroQuest.swiftmodule/arm64-apple-xros.swiftmodule
-
-Copy /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Products/Release-xros/AstroQuest.swiftmodule/Project/arm64-apple-xros.swiftsourceinfo /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/Objects-normal/arm64/AstroQuest.swiftsourceinfo (in target 'AstroQuest' from project 'AstroQuest')
-    cd /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos
-    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -resolve-src-symlinks -rename /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/Objects-normal/arm64/AstroQuest.swiftsourceinfo /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Products/Release-xros/AstroQuest.swiftmodule/Project/arm64-apple-xros.swiftsourceinfo
-
-Copy /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Products/Release-xros/AstroQuest.swiftmodule/arm64-apple-xros.abi.json /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/Objects-normal/arm64/AstroQuest.abi.json (in target 'AstroQuest' from project 'AstroQuest')
-    cd /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos
-    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -resolve-src-symlinks -rename /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/Objects-normal/arm64/AstroQuest.abi.json /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Products/Release-xros/AstroQuest.swiftmodule/arm64-apple-xros.abi.json
-
-Copy /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Products/Release-xros/AstroQuest.swiftmodule/arm64-apple-xros.swiftdoc /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/Objects-normal/arm64/AstroQuest.swiftdoc (in target 'AstroQuest' from project 'AstroQuest')
-    cd /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos
-    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -resolve-src-symlinks -rename /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/Objects-normal/arm64/AstroQuest.swiftdoc /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Products/Release-xros/AstroQuest.swiftmodule/arm64-apple-xros.swiftdoc
-
-Ld /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Products/Release-xros/AstroQuest.app/AstroQuest normal (in target 'AstroQuest' from project 'AstroQuest')
-    cd /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos
-    /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -Xlinker -reproducible -target arm64-apple-xros26.5 -isysroot /Applications/Xcode_26.6.app/Contents/Developer/Platforms/XROS.platform/Developer/SDKs/XROS26.5.sdk -Os -L/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Intermediates.noindex/EagerLinkingTBDs/Release-xros -L/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Products/Release-xros -L/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/core -F/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Intermediates.noindex/EagerLinkingTBDs/Release-xros -F/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Products/Release-xros -filelist /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/Objects-normal/arm64/AstroQuest.LinkFileList -Xlinker -rpath -Xlinker @executable_path/Frameworks -Xlinker -dead_strip -Xlinker -object_path_lto -Xlinker /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/Objects-normal/arm64/AstroQuest_lto.o -Xlinker -dependency_info -Xlinker /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/Objects-normal/arm64/AstroQuest_dependency_info.dat -fobjc-link-runtime -L/Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros -L/usr/lib/swift -Xlinker -add_ast_path -Xlinker /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/Objects-normal/arm64/AstroQuest.swiftmodule @/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/Objects-normal/arm64/AstroQuest-linker-args.resp -lastroquest_core -lMoltenVK -lc++ -framework Metal -framework IOSurface -framework QuartzCore -framework CoreFoundation -framework Foundation -framework UIKit -framework AVFoundation -framework AudioToolbox -framework CoreAudio -framework CoreHaptics -framework CoreMotion -framework GameController -framework CoreVideo -framework VideoToolbox -framework Security -framework CoreBluetooth -framework CoreGraphics -framework Metal -liconv -o /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Products/Release-xros/AstroQuest.app/AstroQuest
-/Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/AstroQuest.xcodeproj: AstroQuest: ld: warning: reducing alignment of section __DATA,__common from 0x8000 to 0x4000 because it exceeds segment maximum alignment
-
-GenerateDSYMFile /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Products/Release-xros/AstroQuest.app.dSYM /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Products/Release-xros/AstroQuest.app/AstroQuest (in target 'AstroQuest' from project 'AstroQuest')
-    cd /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos
-    /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/dsymutil /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Products/Release-xros/AstroQuest.app/AstroQuest -o /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Products/Release-xros/AstroQuest.app.dSYM
-
-ExtractAppIntentsMetadata (in target 'AstroQuest' from project 'AstroQuest')
-    cd /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos
-    /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/appintentsmetadataprocessor --toolchain-dir /var/run/com.apple.security.cryptexd/mnt/com.apple.MobileAsset.MetalToolchain-v17.6.109.0.UNT19V/Metal.xctoolchain --module-name AstroQuest --sdk-root /Applications/Xcode_26.6.app/Contents/Developer/Platforms/XROS.platform/Developer/SDKs/XROS26.5.sdk --xcode-version 17F113 --platform-family xrOS --deployment-target 26.5 --bundle-identifier com.astroquest.visionpro --output /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Products/Release-xros/AstroQuest.app --target-triple arm64-apple-xros26.5 --binary-file /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Products/Release-xros/AstroQuest.app/AstroQuest --dependency-file /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/Objects-normal/arm64/AstroQuest_dependency_info.dat --stringsdata-file /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/Objects-normal/arm64/ExtractedAppShortcutsMetadata.stringsdata --source-file-list /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/Objects-normal/arm64/AstroQuest.SwiftFileList --metadata-file-list /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/AstroQuest.DependencyMetadataFileList --static-metadata-file-list /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/AstroQuest.DependencyStaticMetadataFileList --swift-const-vals-list /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/Objects-normal/arm64/AstroQuest.SwiftConstValuesFileList --compile-time-extraction --deployment-aware-processing --validate-assistant-intents --no-app-shortcuts-localization
-2026-10-06 13:33:44.400 appintentsmetadataprocessor[19872:49519] Starting appintentsmetadataprocessor export
-2026-10-06 13:33:44.407 appintentsmetadataprocessor[19872:49519] warning: Metadata extraction skipped. No AppIntents.framework dependency found.
-
-CopySwiftLibs /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Products/Release-xros/AstroQuest.app (in target 'AstroQuest' from project 'AstroQuest')
-    cd /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos
-    builtin-swiftStdLibTool --copy --verbose --scan-executable /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Products/Release-xros/AstroQuest.app/AstroQuest --scan-folder /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Products/Release-xros/AstroQuest.app/Frameworks --scan-folder /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Products/Release-xros/AstroQuest.app/PlugIns --scan-folder /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Products/Release-xros/AstroQuest.app/SystemExtensions --scan-folder /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Products/Release-xros/AstroQuest.app/Extensions --platform xros --toolchain /var/run/com.apple.security.cryptexd/mnt/com.apple.MobileAsset.MetalToolchain-v17.6.109.0.UNT19V/Metal.xctoolchain --toolchain /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain --destination /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Products/Release-xros/AstroQuest.app/Frameworks --strip-bitcode --strip-bitcode-tool /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/bitcode_strip --emit-dependency-info /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/SwiftStdLibToolInputDependencies.dep --filter-for-swift-os
-Ignoring --strip-bitcode because --sign was not passed
-
-RegisterExecutionPolicyException /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Products/Release-xros/AstroQuest.app (in target 'AstroQuest' from project 'AstroQuest')
-    cd /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos
-    builtin-RegisterExecutionPolicyException /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Products/Release-xros/AstroQuest.app
-
-Validate /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Products/Release-xros/AstroQuest.app (in target 'AstroQuest' from project 'AstroQuest')
-    cd /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos
-    builtin-validationUtility /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Products/Release-xros/AstroQuest.app -shallow-bundle -infoplist-subpath Info.plist
-
-Touch /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Products/Release-xros/AstroQuest.app (in target 'AstroQuest' from project 'AstroQuest')
-    cd /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos
-    /usr/bin/touch -c /Users/runner/work/AstroQuestVisionPro/AstroQuestVisionPro/visionos/build/dd/Build/Products/Release-xros/AstroQuest.app
-
-** BUILD SUCCEEDED **
-
-
-## binary.log:       39 lines
-### errors
-### end
-## Segments
-Segment __PAGEZERO: 4294967296 (zero fill) 
-Segment __TEXT: 56770560
-	total 56727517
-Segment __DATA_CONST: 3801088
-	total 3789088
-Segment __DATA: 21102592
-	Section __data: 416128
-	Section __bss: 3427960 (zerofill)
-	Section __common: 17210600 (zerofill)
-	total 21090968
-Segment __LINKEDIT: 10354688
-total 4386996224
-## Largest data symbols
-0000000104de1cd0 (__DATA,__common) external _yv12touyvy
-0000000104de1cd8 (__DATA,__common) external _yv12toyuy2
-0000000104de1ce0 (__DATA,__common) external _yvu9_to_yuy2
-0000000103d897c0 (__DATA,__common) external _yydebug
-00000001037fc4e8 (__DATA_CONST,__const) external _z_errmsg
-0000000103983430 (__DATA_CONST,__const) non-external epel_filters
-0000000103983450 (__DATA_CONST,__const) non-external epel_filters_abs
-0000000103983500 (__DATA_CONST,__const) non-external factors
-0000000103983570 (__DATA_CONST,__const) non-external idct_coeff_neon
-00000001039833c0 (__DATA_CONST,__const) non-external jsimd_fdct_islow_neon_consts
-0000000103983410 (__DATA_CONST,__const) non-external p16weight
-0000000103983420 (__DATA_CONST,__const) non-external p8weight
-0000000103983510 (__DATA_CONST,__const) non-external phi_noise_0
-0000000103983520 (__DATA_CONST,__const) non-external phi_noise_1
-0000000103983540 (__DATA_CONST,__const) non-external phi_noise_2
-0000000103983550 (__DATA_CONST,__const) non-external phi_noise_3
-0000000103983470 (__DATA_CONST,__const) non-external qpel_filters
-0000000103983490 (__DATA_CONST,__const) non-external qpel_filters_abs
-00000001039833e0 (__DATA_CONST,__const) non-external scan8
-000000010399baa0 (__DATA_CONST,__const) non-external shuf_4pt_x2
-000000010399ba90 (__DATA_CONST,__const) non-external subadd
-000000010399bac0 (__DATA_CONST,__const) non-external tab_16pt
-000000010399bab0 (__DATA_CONST,__const) non-external tab_8pt
-00000001039834f0 (__DATA_CONST,__const) non-external tbl_rev128_s
-00000001039834b0 (__DATA_CONST,__const) non-external trans
