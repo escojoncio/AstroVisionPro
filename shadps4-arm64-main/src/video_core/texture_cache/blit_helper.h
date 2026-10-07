@@ -61,8 +61,8 @@ private:
 
         auto operator<=>(const MsPipelineKey&) const noexcept = default;
     };
-    void CreateColorToMSDepthPipeline(const MsPipelineKey& key);
-    void CreateMsCopyPipeline(const MsPipelineKey& key);
+    bool CreateColorToMSDepthPipeline(const MsPipelineKey& key);
+    bool CreateMsCopyPipeline(const MsPipelineKey& key);
     vk::Pipeline SmoothPipeline(vk::Format attachment_format);
 
 private:
@@ -85,6 +85,8 @@ private:
     using MsPipeline = std::pair<MsPipelineKey, vk::UniquePipeline>;
     std::vector<MsPipeline> color_to_ms_depth_pl;
     std::vector<MsPipeline> ms_image_copy_pl;
+    std::vector<MsPipelineKey> failed_ms_copy_pl;
+    std::vector<MsPipelineKey> failed_ms_depth_pl;
 
     // Smoothing in place of a resolve: a texture read through a sampler, one pipeline for
     // every format drawn to.
