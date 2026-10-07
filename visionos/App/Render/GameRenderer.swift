@@ -70,6 +70,9 @@ final class GameRenderer: @unchecked Sendable {
     private var lastPresentation: TimeInterval = 0
     private var refreshPeriod: TimeInterval = 1.0 / 90.0
     private var lastIpd: Float = 0
+    private var framesTaken = 0
+    private var refreshes = 0
+    private var lastReport: TimeInterval = 0
     private var framesSinceOptics = 0
     private var fovSamples = 0
 
@@ -220,7 +223,10 @@ final class GameRenderer: @unchecked Sendable {
             retired = frame
             frame = newFrame
             frameTexture = Unmanaged<AnyObject>.fromOpaque(pointer).takeUnretainedValue() as? MTLTexture
+            framesTaken += 1
         }
+        refreshes += 1
+        reportNow(at: presentation)
 
         for drawable in drawables {
             let anchor = tracking.deviceAnchor(at: drawable.frameTiming.presentationTime.seconds)
@@ -237,6 +243,36 @@ final class GameRenderer: @unchecked Sendable {
             }
         }
         commandBuffer.commit()
+    }
+
+    /// Every few seconds, for the console log: whether the game's frames reach the headset, and
+    /// what they are.
+    private func reportNow(at now: TimeInterval) {
+        if lastReport == 0 {
+            lastReport = now
+            return
+        }
+        guard now - lastReport >= 5 else { return }
+        var text = "Headset: \(framesTaken) game frames taken in \(refreshes) refreshes, "
+            + "\(astro_core_frames_delivered()) delivered in all"
+        if let frame {
+            if let texture = frameTexture {
+                text += "; texture \(texture.width)x\(texture.height) format \(texture.pixelFormat.rawValue)"
+                    + " same device \(texture.device === device)"
+            } else {
+                text += "; the frame's texture is not a Metal texture"
+            }
+            text += String(format: "; tangents %.3f %.3f %.3f %.3f, orientation %.3f %.3f %.3f %.3f",
+                           frame.tan_out, frame.tan_in, frame.tan_up, frame.tan_down,
+                           frame.orientation.0, frame.orientation.1, frame.orientation.2,
+                           frame.orientation.3)
+        } else {
+            text += "; no game frame yet"
+        }
+        LogFiles.log(text)
+        framesTaken = 0
+        refreshes = 0
+        lastReport = now
     }
 
     /// The distance between the eyes, and what the headset shows, for the emulator (which tells
