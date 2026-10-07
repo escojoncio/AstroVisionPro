@@ -40,6 +40,11 @@ targets:
         # Everything the emulator needs is in one archive (scripts/build-core.sh), MoltenVK in
         # another; the C++ standard library and the system frameworks MoltenVK and SDL use.
         OTHER_LDFLAGS:
+          # The app exports nothing but its Mach-O header. The emulator's libraries bring their
+          # own FreeType, libpng, zlib and C++ operator new/delete; exported from the app, the
+          # system (CoreText, ImageIO, libc++) could end up calling them instead of its own,
+          # which broke glyphs all over the interface.
+          - -Wl,-exported_symbol,__mh_execute_header
           - -lastroquest_core
           - -lMoltenVK
           - -lc++
