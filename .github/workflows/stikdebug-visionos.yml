@@ -1,0 +1,61 @@
+# StikDebug for visionOS with its "quit after enabling JIT" option on (tools/stikdebug).
+# Only on request: by hand, or a push touching tools/stikdebug with [build] in the commit message.
+name: stikdebug-visionos
+on:
+  push:
+    branches: [main]
+    paths:
+      - tools/stikdebug/**
+      - .github/workflows/stikdebug-visionos.yml
+  workflow_dispatch:
+permissions:
+  contents: write
+env:
+  STIKDEBUG_REPO: https://github.com/rebelancap/StikDebug-visionos
+  # branch release @ 2026-08-27
+  STIKDEBUG_COMMIT: 8a7fc130b033dc1803313269ec3f9388cb63b7c7
+jobs:
+  build:
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[build]')
+    runs-on: macos-26
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - name: StikDebug source and the patch
+        run: |
+          git init -q stik && cd stik
+          git remote add origin "$STIKDEBUG_REPO"
+          git fetch -q --depth 1 origin "$STIKDEBUG_COMMIT"
+          git checkout -q FETCH_HEAD
+          git apply --verbose ../tools/stikdebug/autoquit.patch
+      - name: Build for visionOS
+        run: |
+          set -o pipefail
+          XCODE=$(ls -d /Applications/Xcode_26.6*.app 2>/dev/null | sort -V | tail -1)
+          [ -n "$XCODE" ] && sudo xcode-select -s "$XCODE"
+          xcodebuild -version
+          cd stik
+          xcodebuild -project StikDebug.xcodeproj -scheme StikDebug \
+            -sdk xros -configuration Release -destination 'generic/platform=visionOS' \
+            -derivedDataPath build/dd \
+            PRODUCT_BUNDLE_IDENTIFIER=com.stik.stikdebug \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            build 2>&1 | tee ../stikdebug.log | tail -40
+          APP=$(find build/dd/Build/Products -name 'StikDebug.app' -maxdepth 3 | head -n 1)
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Info.plist"
+          /usr/libexec/PlistBuddy -c 'Print :DTPlatformName' "$APP/Info.plist"
+          rm -rf "$APP/PlugIns"
+          mkdir -p ipa/Payload && cp -R "$APP" ipa/Payload/
+          (cd ipa && zip -qry ../StikDebug-visionOS-autoquit.ipa Payload)
+          ls -la StikDebug-visionOS-autoquit.ipa
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete stikdebug-visionos --yes --cleanup-tag || true
+          gh release create stikdebug-visionos stik/StikDebug-visionOS-autoquit.ipa \
+            --target "$GITHUB_SHA" --prerelease \
+            --title "StikDebug for visionOS (closes itself after enabling JIT)" \
+            --notes "rebelancap/StikDebug-visionos ${STIKDEBUG_COMMIT::7} with tools/stikdebug/autoquit.patch. Unsigned, bundle ID com.stik.stikdebug."
