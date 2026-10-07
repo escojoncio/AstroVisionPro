@@ -29,6 +29,13 @@
 #include <sys/syscall.h>
 #include <ucontext.h>
 #include <unistd.h>
+#elif defined(__APPLE__) && defined(__aarch64__)
+#define WATCHDOG_MACH_STACKS 1
+#include <cstring>
+#include <dlfcn.h>
+#include <mach-o/dyld.h>
+#include <mach/mach.h>
+#include <pthread.h>
 #endif
 
 namespace Core::GuestCpu {
@@ -199,6 +206,108 @@ std::string DescribeNativeThreads(const char* only = "") {
         text += '\n';
     }
     closedir(tasks);
+    return text;
+}
+#elif defined(WATCHDOG_MACH_STACKS)
+// Apple has no /proc and no signal for one thread of one's own: Mach stops each thread, reads
+// its registers and lets it go on. Nothing is allocated while a thread is stopped (it may hold
+// the allocator's lock), the frames are only formatted afterwards. Addresses inside the app are
+// printed relative to its Mach-O header, ready for: atos -o <app binary> -l 0x100000000 0x...
+std::string DescribeNativeThreads(const char* only = "") {
+    constexpr int MaxFrames = 20;
+    const auto* main_header = _dyld_get_image_header(0);
+    thread_act_array_t threads = nullptr;
+    mach_msg_type_number_t thread_count = 0;
+    if (task_threads(mach_task_self(), &threads, &thread_count) != KERN_SUCCESS) {
+        return {};
+    }
+    const thread_act_t self = mach_thread_self();
+    std::string text;
+    for (mach_msg_type_number_t t = 0; t < thread_count; ++t) {
+        const thread_act_t thread = threads[t];
+        if (thread == self) {
+            continue;
+        }
+        thread_extended_info_data_t info{};
+        mach_msg_type_number_t info_count = THREAD_EXTENDED_INFO_COUNT;
+        char name[64] = "?";
+        if (thread_info(thread, THREAD_EXTENDED_INFO, reinterpret_cast<thread_info_t>(&info),
+                        &info_count) == KERN_SUCCESS &&
+            info.pth_name[0] != '\0') {
+            std::strncpy(name, info.pth_name, sizeof(name) - 1);
+        }
+        if (std::strncmp(name, only, std::strlen(only)) != 0) {
+            continue;
+        }
+
+        uintptr_t frames[MaxFrames];
+        int count = 0;
+        if (thread_suspend(thread) != KERN_SUCCESS) {
+            continue;
+        }
+        arm_thread_state64_t state{};
+        mach_msg_type_number_t state_count = ARM_THREAD_STATE64_COUNT;
+        if (thread_get_state(thread, ARM_THREAD_STATE64, reinterpret_cast<thread_state_t>(&state),
+                             &state_count) == KERN_SUCCESS) {
+            frames[count++] = static_cast<uintptr_t>(arm_thread_state64_get_pc(state));
+            frames[count++] = static_cast<uintptr_t>(arm_thread_state64_get_lr(state));
+            uintptr_t frame = static_cast<uintptr_t>(arm_thread_state64_get_fp(state));
+            const uintptr_t stack = static_cast<uintptr_t>(arm_thread_state64_get_sp(state));
+            while (count < MaxFrames && (frame & 15) == 0 && frame >= stack &&
+                   frame - stack < (64u << 20)) {
+                uintptr_t record[2];
+                vm_size_t read = 0;
+                // The kernel does the copy: a frame pointer that leads nowhere is an error.
+                if (vm_read_overwrite(mach_task_self(), frame, sizeof(record),
+                                      reinterpret_cast<vm_address_t>(record),
+                                      &read) != KERN_SUCCESS ||
+                    read != sizeof(record)) {
+                    break;
+                }
+                frames[count++] = record[1];
+                if (record[0] <= frame) {
+                    break;
+                }
+                frame = record[0];
+            }
+        }
+        thread_resume(thread);
+
+        text += fmt::format("  {:<20} state {}:", name, info.pth_run_state);
+        for (int i = 0; i < count; ++i) {
+            uintptr_t address = frames[i];
+            Dl_info where{};
+            if (dladdr(reinterpret_cast<void*>(address), &where) == 0 &&
+                (address >> 40) != 0) {
+                // A return address signed by pointer authentication: the signature sits in the
+                // bits above the address.
+                address &= 0x0000'00ff'ffff'ffffull;
+                where = {};
+                dladdr(reinterpret_cast<void*>(address), &where);
+            }
+            if (where.dli_fbase != nullptr &&
+                where.dli_fbase == main_header) {
+                text += fmt::format(" {:#x}",
+                                    address - reinterpret_cast<uintptr_t>(main_header) +
+                                        0x1'0000'0000ull);
+            } else if (where.dli_fname != nullptr && where.dli_fbase != nullptr) {
+                const char* file = std::strrchr(where.dli_fname, 0x2f);
+                text += fmt::format(" [{}+{:#x}{}{}]", file != nullptr ? file + 1 : where.dli_fname,
+                                    address - reinterpret_cast<uintptr_t>(where.dli_fbase),
+                                    where.dli_sname != nullptr ? " " : "",
+                                    where.dli_sname != nullptr ? where.dli_sname : "");
+            } else {
+                text += fmt::format(" [{:#x}]", address);
+            }
+        }
+        text += '\n';
+    }
+    for (mach_msg_type_number_t t = 0; t < thread_count; ++t) {
+        mach_port_deallocate(mach_task_self(), threads[t]);
+    }
+    mach_port_deallocate(mach_task_self(), self);
+    vm_deallocate(mach_task_self(), reinterpret_cast<vm_address_t>(threads),
+                  thread_count * sizeof(thread_act_t));
     return text;
 }
 #else
