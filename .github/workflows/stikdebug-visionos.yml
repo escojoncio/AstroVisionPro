@@ -1,11 +1,11 @@
-# StikDebug for visionOS with its "quit after enabling JIT" option on (tools/stikdebug).
-# Only on request: by hand, or a push touching tools/stikdebug with [build] in the commit message.
+# StikDebug for visionOS with its "quit after enabling JIT" option on (.github/stikdebug).
+# Only on request: by hand, or a push touching .github/stikdebug with [build] in the commit message.
 name: stikdebug-visionos
 on:
   push:
     branches: [main]
     paths:
-      - tools/stikdebug/**
+      - .github/stikdebug/**
       - .github/workflows/stikdebug-visionos.yml
   workflow_dispatch:
 permissions:
@@ -29,7 +29,7 @@ jobs:
             set -ex
             git clone --depth 50 --branch release "$STIKDEBUG_REPO" stik
             git -C stik checkout -q "$STIKDEBUG_COMMIT"
-            git -C stik apply --verbose "$GITHUB_WORKSPACE/tools/stikdebug/autoquit.patch"
+            git -C stik apply --verbose "$GITHUB_WORKSPACE/.github/stikdebug/autoquit.patch"
           } > source.log 2>&1 || { tail -n 15 source.log | while IFS= read -r l; do echo "::error::$l"; done; exit 1; }
           cat source.log
       - name: Build for visionOS
@@ -61,4 +61,4 @@ jobs:
           gh release create stikdebug-visionos stik/StikDebug-visionOS-autoquit.ipa \
             --target "$GITHUB_SHA" --prerelease \
             --title "StikDebug for visionOS (closes itself after enabling JIT)" \
-            --notes "rebelancap/StikDebug-visionos ${STIKDEBUG_COMMIT::7} with tools/stikdebug/autoquit.patch. Unsigned, bundle ID com.stik.stikdebug."
+            --notes "rebelancap/StikDebug-visionos ${STIKDEBUG_COMMIT::7} with .github/stikdebug/autoquit.patch. Unsigned, bundle ID com.stik.stikdebug."
