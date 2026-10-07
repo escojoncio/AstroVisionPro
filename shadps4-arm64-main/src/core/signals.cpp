@@ -13,6 +13,12 @@
 #include "core/fex/fex_guest_engine.h"
 #endif
 #include "emulator.h"
+#if defined(SHADPS4_VISIONOS)
+#include <cstdio>
+#include <dlfcn.h>
+#include <sys/ucontext.h>
+#include "common/jit_arena.h"
+#endif
 
 #ifdef _WIN32
 #include <windows.h>
@@ -152,6 +158,68 @@ static std::string GuestCallers(u64 frame) {
 }
 #endif
 
+#if defined(SHADPS4_VISIONOS)
+// Where a crash happened, for the console log: the registers, which image (or the JIT arena) the
+// code belongs to, and the instructions there. visionOS keeps none of this for us.
+static void DescribeAddress(const char* what, uint64_t address) {
+    const auto [arena_begin, arena_end] = Common::JitArena::Range();
+    if (address >= arena_begin && address < arena_end) {
+        fprintf(stderr, "ASTRO_CRASH %s=%#llx in JIT arena +%#llx\n", what,
+                static_cast<unsigned long long>(address),
+                static_cast<unsigned long long>(address - arena_begin));
+        return;
+    }
+    Dl_info image{};
+    if (dladdr(reinterpret_cast<void*>(address), &image) != 0 && image.dli_fname != nullptr) {
+        const char* slash = strrchr(image.dli_fname, '/');
+        fprintf(stderr, "ASTRO_CRASH %s=%#llx in %s +%#llx (%s)\n", what,
+                static_cast<unsigned long long>(address), slash ? slash + 1 : image.dli_fname,
+                static_cast<unsigned long long>(address -
+                                                reinterpret_cast<uint64_t>(image.dli_fbase)),
+                image.dli_sname ? image.dli_sname : "?");
+        return;
+    }
+    fprintf(stderr, "ASTRO_CRASH %s=%#llx (no image)\n", what,
+            static_cast<unsigned long long>(address));
+}
+
+static void DescribeCrash(int sig, siginfo_t* info, void* raw_context) {
+    const auto* context = static_cast<ucontext_t*>(raw_context);
+    const auto& state = context->uc_mcontext->__ss;
+    const auto& exception = context->uc_mcontext->__es;
+    const auto [arena_begin, arena_end] = Common::JitArena::Range();
+    fprintf(stderr, "ASTRO_CRASH signal=%d code=%d addr=%p esr=%#x far=%#llx arena=%#llx-%#llx\n",
+            sig, info->si_code, info->si_addr, exception.__esr,
+            static_cast<unsigned long long>(exception.__far),
+            static_cast<unsigned long long>(arena_begin), static_cast<unsigned long long>(arena_end));
+    DescribeAddress("pc", state.__pc);
+    DescribeAddress("lr", state.__lr);
+    for (int i = 0; i < 29; i += 4) {
+        fprintf(stderr, "ASTRO_CRASH");
+        for (int j = i; j < i + 4 && j < 29; ++j) {
+            fprintf(stderr, " x%d=%#llx", j, static_cast<unsigned long long>(state.__x[j]));
+        }
+        fprintf(stderr, "\n");
+    }
+    fprintf(stderr, "ASTRO_CRASH fp=%#llx sp=%#llx\n", static_cast<unsigned long long>(state.__fp),
+            static_cast<unsigned long long>(state.__sp));
+    const auto* code = reinterpret_cast<const uint32_t*>(state.__pc & ~uint64_t{3});
+    fprintf(stderr, "ASTRO_CRASH code at pc-16..pc+12: %08x %08x %08x %08x [%08x] %08x %08x %08x\n",
+            code[-4], code[-3], code[-2], code[-1], code[0], code[1], code[2], code[3]);
+    // A few return addresses up the frame chain.
+    uint64_t frame = state.__fp;
+    for (int depth = 0; depth < 8 && frame != 0 && (frame & 7) == 0; ++depth) {
+        const auto* pair = reinterpret_cast<const uint64_t*>(frame);
+        char what[16];
+        snprintf(what, sizeof(what), "frame%d", depth);
+        DescribeAddress(what, pair[1]);
+        if (pair[0] <= frame) break;
+        frame = pair[0];
+    }
+    fflush(stderr);
+}
+#endif
+
 void SignalHandler(int sig, siginfo_t* info, void* raw_context) {
     Common::ReportCrash(raw_context, sig, info);
     const auto* signals = Signals::Instance();
@@ -197,6 +265,9 @@ void SignalHandler(int sig, siginfo_t* info, void* raw_context) {
                              gprs[7], gprs[6], gprs[2], gprs[1], rsp, return_address);
                 LOG_CRITICAL(Debug, "FEX guest callers:{}", GuestCallers(gprs[5]));
             }
+#endif
+#if defined(SHADPS4_VISIONOS)
+            DescribeCrash(sig, info, raw_context);
 #endif
             UNREACHABLE_MSG("Unhandled access violation at code address {}: {} address {}",
                             fmt::ptr(code_address), is_write ? "Write to" : "Read from",
