@@ -225,12 +225,24 @@ struct PageManager::Impl {
 
     static bool GuestFaultSignalHandler(void* context, void* fault_address) {
         const auto addr = reinterpret_cast<VAddr>(fault_address);
-        if (Common::IsWriteError(context)) {
-            return rasterizer->InvalidateMemory(addr, 8);
-        } else {
-            return rasterizer->ReadMemory(addr, 8);
+        const bool is_write = Common::IsWriteError(context);
+        bool handled =
+            is_write ? rasterizer->InvalidateMemory(addr, 8) : rasterizer->ReadMemory(addr, 8);
+#if defined(SHADPS4_VISIONOS)
+        // The caches let go of the 4 KB page that was touched, but the host protects the whole
+        // 16 KB page around it, and that stays protected while any of its other 4 KB pages is
+        // still watched: the access would fault again, forever. They let go of all of them.
+        const VAddr host_page = addr & ~static_cast<VAddr>(PM_PAGE_SIZE - 1);
+        const VAddr touched = addr & ~static_cast<VAddr>(TRACKED_PAGE_SIZE - 1);
+        for (VAddr sub = host_page; sub < host_page + PM_PAGE_SIZE; sub += TRACKED_PAGE_SIZE) {
+            if (sub == touched) {
+                continue;
+            }
+            handled |= is_write ? rasterizer->InvalidateMemory(sub, 8)
+                                : rasterizer->ReadMemory(sub, 8);
         }
-        return false;
+#endif
+        return handled;
     }
 #endif
 
