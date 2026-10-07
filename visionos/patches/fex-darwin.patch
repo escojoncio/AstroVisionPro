@@ -1,8 +1,8 @@
 diff --git a/CMakeLists.txt b/CMakeLists.txt
-index 4900aa1..7a3d48f 100644
+index 1d84840..fad7fc3 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
-@@ -65,9 +65,9 @@ if (NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
+@@ -61,9 +61,9 @@ if (NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
    message(FATAL_ERROR "Unsupported pointer size ${CMAKE_SIZEOF_VOID_P}."
      " FEX only supports 64-bit (8-byte pointer) systems."
      " If you believe this is in error, file an issue.")
@@ -387,7 +387,7 @@ index 296dc2b..b4d500b 100644
  MUNMAP_Hook munmap {::munmap};
  
 diff --git a/FEXCore/Source/Utils/AllocatorHooks.cpp b/FEXCore/Source/Utils/AllocatorHooks.cpp
-index fd6947f..b96d8e2 100644
+index fd6947f..f193a03 100644
 --- a/FEXCore/Source/Utils/AllocatorHooks.cpp
 +++ b/FEXCore/Source/Utils/AllocatorHooks.cpp
 @@ -11,7 +11,11 @@
@@ -415,7 +415,7 @@ index fd6947f..b96d8e2 100644
  }
  void* valloc(size_t size) {
    return ::valloc(size);
-@@ -203,7 +212,11 @@ void free(void* ptr) {
+@@ -203,10 +212,21 @@ void free(void* ptr) {
    return ::free(ptr);
  }
  size_t malloc_usable_size(void* ptr) {
@@ -426,7 +426,17 @@ index fd6947f..b96d8e2 100644
 +#endif
  }
  void* aligned_alloc(size_t a, size_t s) {
++#ifdef __APPLE__
++  // Apple's aligned_alloc returns null for alignments below sizeof(void*), which fextl asks for
++  // (alignof(char) for strings).
++  void* ptr {};
++  return ::posix_memalign(&ptr, a < sizeof(void*) ? sizeof(void*) : a, s) == 0 ? ptr : nullptr;
++#else
    return ::aligned_alloc(a, s);
++#endif
+ }
+ void aligned_free(void* ptr) {
+   return ::free(ptr);
 diff --git a/FEXCore/Source/Utils/ArchHelpers/Arm64.cpp b/FEXCore/Source/Utils/ArchHelpers/Arm64.cpp
 index 01e5bb2..5aea031 100644
 --- a/FEXCore/Source/Utils/ArchHelpers/Arm64.cpp
