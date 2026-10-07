@@ -25,10 +25,13 @@ jobs:
           fetch-depth: 1
       - name: StikDebug source and the patch
         run: |
-          set -x
-          git clone --depth 50 --branch release "$STIKDEBUG_REPO" stik
-          git -C stik checkout -q "$STIKDEBUG_COMMIT"
-          git -C stik apply --verbose "$GITHUB_WORKSPACE/tools/stikdebug/autoquit.patch"
+          {
+            set -ex
+            git clone --depth 50 --branch release "$STIKDEBUG_REPO" stik
+            git -C stik checkout -q "$STIKDEBUG_COMMIT"
+            git -C stik apply --verbose "$GITHUB_WORKSPACE/tools/stikdebug/autoquit.patch"
+          } > source.log 2>&1 || { tail -n 15 source.log | while IFS= read -r l; do echo "::error::$l"; done; exit 1; }
+          cat source.log
       - name: Build for visionOS
         run: |
           set -o pipefail
@@ -41,7 +44,8 @@ jobs:
             -derivedDataPath build/dd \
             PRODUCT_BUNDLE_IDENTIFIER=com.stik.stikdebug \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
-            build 2>&1 | tee ../stikdebug.log | tail -40
+            build > ../stikdebug.log 2>&1 || { grep -E 'error:|fatal' ../stikdebug.log | head -n 15 | while IFS= read -r l; do echo "::error::$l"; done; tail -n 5 ../stikdebug.log | while IFS= read -r l; do echo "::error::$l"; done; exit 1; }
+          tail -n 5 ../stikdebug.log
           APP=$(find build/dd/Build/Products -name 'StikDebug.app' -maxdepth 3 | head -n 1)
           /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Info.plist"
           /usr/libexec/PlistBuddy -c 'Print :DTPlatformName' "$APP/Info.plist"
