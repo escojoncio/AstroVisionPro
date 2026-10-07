@@ -903,8 +903,10 @@ HmdFrames Presenter::PrepareHmdFrame(std::span<const AmdGpu::Image, 2> eye_textu
         expected_ratio = static_cast<float>(eye_width * 2) / static_cast<float>(eye_height);
 #if defined(SHADPS4_VISIONOS)
         // Nothing shows the window while the immersive space is open: a frame the headset gets
-        // is not also drawn and presented there (its swapchain only holds the GPU up).
-        if (local == nullptr) {
+        // is not also drawn and presented there (its swapchain only holds the GPU up). With the
+        // headset showing but none of its images free, the frame is tried again a little later
+        // (OpenXrHost::BeginFrame waits for one) instead of going to the window.
+        if (local == nullptr && !Core::Vr::OpenXrHost::Instance().IsShowing()) {
             frame = GetRenderFrame();
         }
 #else
