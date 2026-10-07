@@ -17,6 +17,10 @@
 #include <string>
 
 #include <sys/syscall.h>
+#if defined(__APPLE__)
+#include <mach/mach.h>
+#include <pthread.h>
+#endif
 #if defined(__APPLE__) && !defined(CLOCK_MONOTONIC_COARSE)
 #define CLOCK_MONOTONIC_COARSE CLOCK_MONOTONIC
 #endif
@@ -50,6 +54,10 @@ private:
 // is in and the guest code that made it describe a deadlock well.
 struct ThreadActivity final {
     std::atomic<int> tid{};
+#if defined(__APPLE__)
+    // There is no /proc to look a thread up in by its id: the Mach port names it instead.
+    std::atomic<u32> port{};
+#endif
     std::atomic<u64> operation{}; ///< call in progress, 0 while running guest code
     std::atomic<u64> last_operation{};
     std::atomic<u64> rsp{};
@@ -76,6 +84,10 @@ ThreadActivity* ClaimActivity() {
         return nullptr;
     }
     Activities[index].tid.store(Common::HostThreadId(), std::memory_order_relaxed);
+#if defined(__APPLE__)
+    Activities[index].port.store(pthread_mach_thread_np(pthread_self()),
+                                 std::memory_order_relaxed);
+#endif
     return &Activities[index];
 }
 
@@ -134,7 +146,23 @@ bool ReadWord(u64 address, u64* value) {
     return read(pipe_ends[0], value, sizeof(*value)) == static_cast<ssize_t>(sizeof(*value));
 }
 
-std::string ThreadName(int tid) {
+#if defined(__APPLE__)
+/// The name of the thread behind a Mach port, or "gone" once that thread has ended.
+std::string ThreadName(const ThreadActivity& activity) {
+    const auto port = static_cast<thread_act_t>(activity.port.load(std::memory_order_relaxed));
+    thread_extended_info_data_t info{};
+    mach_msg_type_number_t count = THREAD_EXTENDED_INFO_COUNT;
+    if (port == MACH_PORT_NULL ||
+        thread_info(port, THREAD_EXTENDED_INFO, reinterpret_cast<thread_info_t>(&info), &count) !=
+            KERN_SUCCESS) {
+        return "gone";
+    }
+    info.pth_name[sizeof(info.pth_name) - 1] = '\0';
+    return info.pth_name[0] != '\0' ? std::string{info.pth_name} : std::string{"(unnamed)"};
+}
+#else
+std::string ThreadName(const ThreadActivity& activity) {
+    const int tid = activity.tid.load(std::memory_order_relaxed);
     char path[64];
     std::snprintf(path, sizeof(path), "/proc/self/task/%d/comm", tid);
     char name[64] = "gone";
@@ -146,6 +174,7 @@ std::string ThreadName(int tid) {
     }
     return name;
 }
+#endif
 } // namespace
 
 namespace Core::GuestCpu {
@@ -192,7 +221,7 @@ std::string DescribeGuestThreads() {
     for (std::size_t index = 0; index < count; ++index) {
         const auto& activity = Activities[index];
         const int tid = activity.tid.load(std::memory_order_relaxed);
-        const auto name = ThreadName(tid);
+        const auto name = ThreadName(activity);
         if (name == "gone") {
             continue;
         }
