@@ -1,0 +1,13 @@
+diff --git a/StikDebug/Views/HomeView.swift b/StikDebug/Views/HomeView.swift
+index a66c1a4..eb5ce3d 100644
+--- a/StikDebug/Views/HomeView.swift
++++ b/StikDebug/Views/HomeView.swift
+@@ -8,7 +8,7 @@
+ import SwiftUI
+ 
+ struct HomeView: View {
+-    @AppStorage("autoQuitAfterEnablingJIT") private var doAutoQuitAfterEnablingJIT = false
++    @AppStorage("autoQuitAfterEnablingJIT") private var doAutoQuitAfterEnablingJIT = true
+     @AppStorage("bundleID") private var bundleID: String = ""
+     // Upstream defaults this on. On the headset the deep link arrives while
+     // MeloNX is in the foreground and the confirmation sheet is easy to miss
