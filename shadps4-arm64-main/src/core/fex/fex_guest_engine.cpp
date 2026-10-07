@@ -1092,7 +1092,14 @@ bool HandleGuestSignal(int signal, siginfo_t* info, void* rawContext) noexcept {
   }
 
   auto* registers = HOST_CONTEXT_REGS(context);
+#if defined(__APPLE__)
+  // Darwin reports a write to a protected page as SIGBUS with the same code as a misaligned
+  // access (BUS_ADRALN). Only a real alignment fault (data fault status 0x21) is FEX's to
+  // handle; a permission fault belongs to the GPU memory tracking, which unprotects the page.
+  if ((context->uc_mcontext->__es.__esr & 0x3f) != 0x21) return false;
+#else
   if (info->si_code != BUS_ADRALN) return false;
+#endif
   const auto adjustment = FEXCore::ArchHelpers::Arm64::HandleUnalignedAccess(
       ActiveFexExecution.Thread,
       FEXCore::ArchHelpers::Arm64::UnalignedHandlerType::HalfBarrier, pc, registers);
