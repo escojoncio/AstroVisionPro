@@ -40,16 +40,22 @@ namespace VideoCore {
 #if defined(SHADPS4_VISIONOS)
 // Memory protection works on whole host pages, and Apple's ARM64 pages are 16 KB (mprotect of a
 // 4 KB page fails there).
-constexpr size_t PM_PAGE_SIZE = 16_KB;
-constexpr size_t PM_PAGE_BITS = 14;
+constexpr size_t HOST_PAGE_SIZE = 16_KB;
+constexpr size_t HOST_PAGE_BITS = 14;
 using PageWatcherCount = u16;
 #else
-constexpr size_t PM_PAGE_SIZE = 4_KB;
-constexpr size_t PM_PAGE_BITS = 12;
+constexpr size_t HOST_PAGE_SIZE = 4_KB;
+constexpr size_t HOST_PAGE_BITS = 12;
 using PageWatcherCount = u8;
 #endif
 
 struct PageManager::Impl {
+    // PageManager has a PM_PAGE_SIZE of its own (the tracker's, 4 KB), and inside this class a
+    // member of PageManager is found before anything of the namespace: the host's page size has
+    // to be named here, or every page below would be 4 KB again.
+    static constexpr size_t PM_PAGE_SIZE = HOST_PAGE_SIZE;
+    static constexpr size_t PM_PAGE_BITS = HOST_PAGE_BITS;
+
     struct PageState {
 #if defined(SHADPS4_VISIONOS)
         // A 16 KB page can hold several buffers, each with its own read watcher.
