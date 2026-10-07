@@ -14,8 +14,11 @@
 #endif
 #include "emulator.h"
 #if defined(SHADPS4_VISIONOS)
+#include <atomic>
 #include <cstdio>
 #include <dlfcn.h>
+#include <mach/mach.h>
+#include <sys/mman.h>
 #include <sys/ucontext.h>
 #include "common/jit_arena.h"
 #endif
@@ -220,6 +223,62 @@ static void DescribeCrash(int sig, siginfo_t* info, void* raw_context) {
 }
 #endif
 
+#if defined(SHADPS4_VISIONOS)
+/// A fault that a handler "resolves" without changing anything comes straight back: the thread
+/// then spends its time faulting on one address and the title hangs without a word. After many
+/// faults in a row on the same address this says what the page looks like (the first few times)
+/// and opens it up so the thread can go on.
+static bool BreakFaultLoop(int sig, siginfo_t* info, void* raw_context) {
+    constexpr uint32_t LoopFaults = 2000;
+    thread_local uintptr_t last_address = 0;
+    thread_local uint32_t repeats = 0;
+    const auto address = reinterpret_cast<uintptr_t>(info->si_addr);
+    if (address != last_address) {
+        last_address = address;
+        repeats = 0;
+        return false;
+    }
+    if (++repeats < LoopFaults) {
+        return false;
+    }
+    repeats = 0;
+    static std::atomic<uint32_t> reports{0};
+    const bool report = reports.fetch_add(1, std::memory_order_relaxed) < 16;
+
+    constexpr uintptr_t HostPage = 0x4000;
+    const uintptr_t page = address & ~(HostPage - 1);
+    vm_address_t region = page;
+    vm_size_t region_size = 0;
+    vm_region_basic_info_data_64_t region_info{};
+    mach_msg_type_number_t count = VM_REGION_BASIC_INFO_COUNT_64;
+    mach_port_t object = MACH_PORT_NULL;
+    const kern_return_t kr =
+        vm_region_64(mach_task_self(), &region, &region_size, VM_REGION_BASIC_INFO_64,
+                     reinterpret_cast<vm_region_info_t>(&region_info), &count, &object);
+    const auto* context = static_cast<const ucontext_t*>(raw_context);
+    if (report) {
+    fprintf(stderr,
+            "ASTRO_FAULT_LOOP signal=%d code=%d addr=%#lx write=%d esr=%#x pc=%#llx lr=%#llx "
+            "region=%#lx+%#lx (kr %d) protection=%d max=%d\n",
+            sig, info->si_code, static_cast<unsigned long>(address),
+            Common::IsWriteError(raw_context) ? 1 : 0, context->uc_mcontext->__es.__esr,
+            static_cast<unsigned long long>(context->uc_mcontext->__ss.__pc),
+            static_cast<unsigned long long>(context->uc_mcontext->__ss.__lr),
+            static_cast<unsigned long>(region), static_cast<unsigned long>(region_size), kr,
+            region_info.protection, region_info.max_protection);
+    DescribeAddress("pc", context->uc_mcontext->__ss.__pc);
+    DescribeAddress("lr", context->uc_mcontext->__ss.__lr);
+    fflush(stderr);
+    }
+    if (mprotect(reinterpret_cast<void*>(page), HostPage, PROT_READ | PROT_WRITE) != 0) {
+        fprintf(stderr, "ASTRO_FAULT_LOOP could not open the page: %s\n", strerror(errno));
+        fflush(stderr);
+        return false;
+    }
+    return true;
+}
+#endif
+
 void SignalHandler(int sig, siginfo_t* info, void* raw_context) {
     Common::ReportCrash(raw_context, sig, info);
     const auto* signals = Signals::Instance();
@@ -229,6 +288,11 @@ void SignalHandler(int sig, siginfo_t* info, void* raw_context) {
     switch (sig) {
     case SIGBUS:
     case SIGSEGV: {
+#if defined(SHADPS4_VISIONOS)
+        if (BreakFaultLoop(sig, info, raw_context)) {
+            return;
+        }
+#endif
 #ifdef SHADPS4_ENABLE_FEX_GUEST_CPU
         if (sig == SIGBUS && ::Core::Fex::HandleGuestSignal(sig, info, raw_context)) {
             return;
