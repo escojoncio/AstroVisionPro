@@ -348,7 +348,7 @@ s32 PS4_SYSV_ABI sceKernelQueryMemoryProtection(void* addr, void** start, void**
 }
 
 s32 PS4_SYSV_ABI sceKernelMprotect(const void* addr, u64 size, s32 prot) {
-    LOG_INFO(Kernel_Vmm, "called addr = {}, size = {:#x}, prot = {:#x}", fmt::ptr(addr), size,
+    LOG_DEBUG(Kernel_Vmm, "called addr = {}, size = {:#x}, prot = {:#x}", fmt::ptr(addr), size,
              prot);
     // Align addr and size to the nearest page boundary.
     const VAddr in_addr = reinterpret_cast<VAddr>(addr);
@@ -380,7 +380,7 @@ s32 PS4_SYSV_ABI posix_mprotect(const void* addr, u64 size, s32 prot) {
 }
 
 s32 PS4_SYSV_ABI sceKernelMtypeprotect(const void* addr, u64 size, s32 mtype, s32 prot) {
-    LOG_INFO(Kernel_Vmm, "called addr = {}, size = {:#x}, prot = {:#x}", fmt::ptr(addr), size,
+    LOG_DEBUG(Kernel_Vmm, "called addr = {}, size = {:#x}, prot = {:#x}", fmt::ptr(addr), size,
              prot);
     // Align addr and size to the nearest page boundary.
     const VAddr in_addr = reinterpret_cast<VAddr>(addr);
