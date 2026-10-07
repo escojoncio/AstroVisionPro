@@ -23,6 +23,7 @@
 #if defined(SHADPS4_VISIONOS)
 #include "common/jit_arena.h"
 #include <FEXCore/Utils/DarwinCompat.h>
+#include <mach/mach.h>
 #endif
 
 #include <array>
@@ -150,6 +151,49 @@ bool RangesOverlap(const GuestExecutionRange& lhs, const GuestExecutionRange& rh
   return lhsEnd >= lhs.Begin && rhsEnd >= rhs.Begin && lhs.Begin < rhsEnd && rhs.Begin < lhsEnd;
 }
 
+#if defined(SHADPS4_VISIONOS)
+// visionOS has no /proc/self/maps: the same check, walking the task's regions with vm_region_64.
+EngineResult<bool> ValidateHostMapping(const GuestExecutionRange& range) {
+  const auto rangeEnd = range.Begin + range.Size;
+  std::uintptr_t covered = range.Begin;
+  while (covered < rangeEnd) {
+    vm_address_t address = static_cast<vm_address_t>(covered);
+    vm_size_t size = 0;
+    vm_region_basic_info_data_64_t info {};
+    mach_msg_type_number_t count = VM_REGION_BASIC_INFO_COUNT_64;
+    mach_port_t object = MACH_PORT_NULL;
+    const kern_return_t result =
+      vm_region_64(mach_task_self(), &address, &size, VM_REGION_BASIC_INFO_64,
+                   reinterpret_cast<vm_region_info_t>(&info), &count, &object);
+    if (result != KERN_SUCCESS || static_cast<std::uintptr_t>(address) > covered) {
+      std::fprintf(stderr,
+                   "BACHATA_FEX_MAPPING_FAIL reason=host_mapping_gap error=%d begin=%#lx size=%#lx "
+                   "executable=%d writable=%d covered=%#lx kr=%d\n",
+                   EFAULT, static_cast<unsigned long>(range.Begin),
+                   static_cast<unsigned long>(range.Size), range.Executable, range.Writable,
+                   static_cast<unsigned long>(covered), result);
+      return Failure(EngineStage::Mapping, EFAULT);
+    }
+    const bool readable = (info.protection & VM_PROT_READ) != 0;
+    const bool writable = (info.protection & VM_PROT_WRITE) != 0;
+    const bool executable = (info.protection & VM_PROT_EXECUTE) != 0;
+    if ((range.Executable && (!readable || writable)) ||
+        (range.Writable && (!writable || executable))) {
+      std::fprintf(stderr,
+                   "BACHATA_FEX_MAPPING_FAIL reason=host_permission error=%d begin=%#lx "
+                   "size=%#lx executable=%d writable=%d host_begin=%#lx host_end=%#lx "
+                   "host_protection=%d\n",
+                   EACCES, static_cast<unsigned long>(range.Begin),
+                   static_cast<unsigned long>(range.Size), range.Executable, range.Writable,
+                   static_cast<unsigned long>(address), static_cast<unsigned long>(address + size),
+                   info.protection);
+      return Failure(EngineStage::Mapping, EACCES);
+    }
+    covered = std::min<std::uintptr_t>(static_cast<std::uintptr_t>(address + size), rangeEnd);
+  }
+  return true;
+}
+#else
 EngineResult<bool> ValidateHostMapping(const GuestExecutionRange& range) {
   std::ifstream maps {"/proc/self/maps"};
   if (!maps.is_open()) {
@@ -207,6 +251,7 @@ EngineResult<bool> ValidateHostMapping(const GuestExecutionRange& range) {
                static_cast<unsigned long>(covered));
   return Failure(EngineStage::Mapping, EFAULT);
 }
+#endif
 
 EngineResult<bool> ValidateRequest(const GuestExecutionRequest& request) {
   if (request.Rip == 0 || request.Rsp == 0 || request.MappedRanges.empty()) {
