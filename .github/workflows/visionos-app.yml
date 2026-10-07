@@ -25,7 +25,8 @@ jobs:
   app:
     if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[build]')
     runs-on: macos-26
-    timeout-minutes: 75
+    # The first run on a new repository builds the emulator too (no cache yet).
+    timeout-minutes: 150
     steps:
       - uses: actions/checkout@v4
         with:
@@ -105,6 +106,8 @@ jobs:
             build 2>&1 | tee ../app.log
           APP=$(find build/dd/Build/Products -name 'AstroQuest.app' -maxdepth 3 | head -n 1)
           mkdir -p build/ipa/Payload
+          echo "Symbols the app exports (should be just the Mach-O header):"
+          nm -gU "$APP/AstroQuest" | tee -a ../app.log | head -5
           cp -R "$APP" build/ipa/Payload/
           (cd build/ipa && zip -qry ../AstroQuest.ipa Payload)
           ls -la build/AstroQuest.ipa
