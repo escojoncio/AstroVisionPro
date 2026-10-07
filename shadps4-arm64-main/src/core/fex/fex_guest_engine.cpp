@@ -58,6 +58,12 @@ namespace Core::Fex {
 namespace {
 
 constexpr long kRequiredPageSize = 4096;
+// The host's page size. Guest (x86) pages stay 4 KB; Apple's ARM64 pages are 16 KB.
+#if defined(SHADPS4_VISIONOS)
+constexpr long kHostPageSize = 16384;
+#else
+constexpr long kHostPageSize = kRequiredPageSize;
+#endif
 constexpr uint32_t kFexBlockTraceLimit = 256;
 constexpr uint64_t kAddLeft = 0x1122'3344'5566'7788ULL;
 constexpr uint64_t kAddRight = 0x0102'0304'0506'0708ULL;
@@ -431,10 +437,10 @@ public:
   }
 
 private:
-  static constexpr size_t kAllocationSize = FEXCore::Core::InternalThreadState::CALLRET_STACK_SIZE + 2 * kRequiredPageSize;
+  static constexpr size_t kAllocationSize = FEXCore::Core::InternalThreadState::CALLRET_STACK_SIZE + 2 * kHostPageSize;
 
   [[nodiscard]] void* StackBase() const {
-    return static_cast<uint8_t*>(Address) + kRequiredPageSize;
+    return static_cast<uint8_t*>(Address) + kHostPageSize;
   }
 
   void* Address;
@@ -1359,7 +1365,11 @@ constexpr int kGuestCodeProtection = PROT_READ | PROT_EXEC;
 
 EngineResult<std::unique_ptr<GuestEngine>> GuestEngine::Create(GuestBridge& bridge) {
   const auto pageSize = sysconf(_SC_PAGESIZE);
-  if (pageSize != kRequiredPageSize) return Failure(EngineStage::Mapping, ENOTSUP);
+  if (pageSize != kHostPageSize) {
+    std::fprintf(stderr, "BACHATA_FEX_MAPPING_FAIL reason=page_size host=%ld expected=%ld\n",
+                 static_cast<long>(pageSize), kHostPageSize);
+    return Failure(EngineStage::Mapping, ENOTSUP);
+  }
 
   auto impl = std::make_unique<Impl>(bridge);
   impl->PageSize = static_cast<size_t>(pageSize);
