@@ -901,7 +901,15 @@ HmdFrames Presenter::PrepareHmdFrame(std::span<const AmdGpu::Image, 2> eye_textu
     Frame* const local = exported ? nullptr : vr_exporter->AcquireLocal(eye_width * 2, eye_height);
     if (!exported) {
         expected_ratio = static_cast<float>(eye_width * 2) / static_cast<float>(eye_height);
+#if defined(SHADPS4_VISIONOS)
+        // Nothing shows the window while the immersive space is open: a frame the headset gets
+        // is not also drawn and presented there (its swapchain only holds the GPU up).
+        if (local == nullptr) {
+            frame = GetRenderFrame();
+        }
+#else
         frame = GetRenderFrame();
+#endif
         if (!frame && !local) {
             return {};
         }
