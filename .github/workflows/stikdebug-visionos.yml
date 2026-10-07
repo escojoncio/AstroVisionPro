@@ -25,11 +25,10 @@ jobs:
           fetch-depth: 1
       - name: StikDebug source and the patch
         run: |
-          git init -q stik && cd stik
-          git remote add origin "$STIKDEBUG_REPO"
-          git fetch -q --depth 1 origin "$STIKDEBUG_COMMIT"
-          git checkout -q FETCH_HEAD
-          git apply --verbose ../tools/stikdebug/autoquit.patch
+          set -x
+          git clone --depth 50 --branch release "$STIKDEBUG_REPO" stik
+          git -C stik checkout -q "$STIKDEBUG_COMMIT"
+          git -C stik apply --verbose "$GITHUB_WORKSPACE/tools/stikdebug/autoquit.patch"
       - name: Build for visionOS
         run: |
           set -o pipefail
