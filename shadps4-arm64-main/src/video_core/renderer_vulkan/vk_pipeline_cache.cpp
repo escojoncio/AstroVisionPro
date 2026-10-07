@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <atomic>
 #include <exception>
 #include <ranges>
 
@@ -547,6 +548,27 @@ bool PipelineCache::RefreshGraphicsStages() {
     switch (regs.stage_enable.raw) {
     case AmdGpu::ShaderStageEnable::VgtStages::EsGs:
         if (!instance.IsGeometryStageSupported()) {
+#if defined(SHADPS4_VISIONOS)
+            // Experimental: Metal has no geometry shaders. Instead of dropping the draw, the
+            // export shader (what feeds the geometry shader) is drawn as the vertex shader, as if
+            // the geometry shader passed its triangles through unchanged. Right for the many
+            // that do (or that only pick a layer); wrong, but visible, for the rest.
+            if (!regs.vgt_gs_mode.onchip && !regs.vgt_strmout_config.raw &&
+                bind_stage(Stage::Export, LogicalStage::Vertex)) {
+                static std::atomic<u32> reported{};
+                if (reported.fetch_add(1, std::memory_order_relaxed) < 24) {
+                    LOG_INFO(Render_Vulkan,
+                             "GS_BYPASS: drawing without the geometry shader (instances {}, "
+                             "max vertices out {}, primitive in {}, out {})",
+                             regs.vgt_gs_instance_cnt.IsEnabled()
+                                 ? u32(regs.vgt_gs_instance_cnt.count)
+                                 : 1u,
+                             u32(regs.vgt_gs_max_vert_out), u32(regs.primitive_type),
+                             u32(regs.vgt_gs_out_prim_type.GetPrimitiveType(0)));
+                }
+                break;
+            }
+#endif
             LOG_WARNING(Render_Vulkan, "Geometry shader stage unsupported, skipping");
             return false;
         }
