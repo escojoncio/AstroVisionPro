@@ -30,8 +30,9 @@
 #include "shader_recompiler/ir/srt_gvn_table.h"
 #include "shader_recompiler/ir/value.h"
 
-#if defined(ARCH_ARM64) && defined(__linux__)
+#if defined(ARCH_ARM64) && (defined(__linux__) || defined(__APPLE__))
 #include <sys/mman.h>
+#include <sys/ucontext.h>
 #include "common/host_context.h"
 #include <unistd.h>
 #endif
@@ -320,7 +321,8 @@ void FlattenExtendedUserdataPass(IR::Program& program) {
 
 } // namespace Shader::Optimization
 
-#elif defined(ARCH_ARM64) && defined(__linux__)
+// visionOS too: the walkers go into the JIT arena there (RegisterWalkerCode).
+#elif defined(ARCH_ARM64) && (defined(__linux__) || defined(__APPLE__))
 
 namespace {
 
