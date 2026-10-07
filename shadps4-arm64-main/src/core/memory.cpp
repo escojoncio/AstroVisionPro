@@ -550,6 +550,20 @@ s32 MemoryManager::MapMemory(void** out_addr, VAddr virtual_addr, u64 size, Memo
         }
     }
 
+#if defined(SHADPS4_VISIONOS)
+    // visionOS has the console's address layout relocated and smaller (address_space.cpp), so a
+    // fixed address the game asks for by number can be outside it (ASTRO BOT maps its direct
+    // memory at 0x300000000). Such a request is mapped wherever there is room instead: the game
+    // gets the address back in out_addr.
+    if (True(flags & MemoryMapFlags::Fixed) && !IsValidMapping(virtual_addr, size)) {
+        LOG_WARNING(Kernel_Vmm,
+                    "Fixed mapping at {:#x} ({:#x} bytes) is outside the relocated address space; "
+                    "mapping it where there is room",
+                    virtual_addr, size);
+        flags &= ~(MemoryMapFlags::Fixed | MemoryMapFlags::NoOverwrite);
+        virtual_addr = 0;
+    }
+#endif
     if (True(flags & MemoryMapFlags::Fixed) && True(flags & MemoryMapFlags::NoOverwrite)) {
         // Perform necessary error checking for Fixed & NoOverwrite case
         ASSERT_MSG(IsValidMapping(virtual_addr, size), "Attempted to access invalid address {:#x}",
@@ -728,6 +742,20 @@ s32 MemoryManager::MapFile(void** out_addr, VAddr virtual_addr, u64 size, Memory
         prot &= ~MemoryProt::CpuExec;
     }
 
+#if defined(SHADPS4_VISIONOS)
+    // visionOS has the console's address layout relocated and smaller (address_space.cpp), so a
+    // fixed address the game asks for by number can be outside it (ASTRO BOT maps its direct
+    // memory at 0x300000000). Such a request is mapped wherever there is room instead: the game
+    // gets the address back in out_addr.
+    if (True(flags & MemoryMapFlags::Fixed) && !IsValidMapping(virtual_addr, size)) {
+        LOG_WARNING(Kernel_Vmm,
+                    "Fixed mapping at {:#x} ({:#x} bytes) is outside the relocated address space; "
+                    "mapping it where there is room",
+                    virtual_addr, size);
+        flags &= ~(MemoryMapFlags::Fixed | MemoryMapFlags::NoOverwrite);
+        virtual_addr = 0;
+    }
+#endif
     if (True(flags & MemoryMapFlags::Fixed) && True(flags & MemoryMapFlags::NoOverwrite)) {
         ASSERT_MSG(IsValidMapping(virtual_addr, size), "Attempted to access invalid address {:#x}",
                    virtual_addr);
