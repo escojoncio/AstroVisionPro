@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <algorithm>
+#include <stdexcept>
 #include <utility>
 #include <boost/container/small_vector.hpp>
 
@@ -372,8 +373,17 @@ GraphicsPipeline::GraphicsPipeline(
 
     auto [pipeline_result, pipe] =
         device.createGraphicsPipelineUnique(pipeline_cache, pipeline_info);
+#if defined(SHADPS4_VISIONOS)
+    // A pipeline Metal refuses (as one drawn without its geometry shader may be) is a draw left
+    // out, not the end of the game: the cache catches this and skips the draw.
+    if (pipeline_result != vk::Result::eSuccess) {
+        throw std::runtime_error("Failed to create graphics pipeline: " +
+                                 vk::to_string(pipeline_result));
+    }
+#else
     ASSERT_MSG(pipeline_result == vk::Result::eSuccess, "Failed to create graphics pipeline: {}",
                vk::to_string(pipeline_result));
+#endif
     pipeline = std::move(pipe);
     SetObjectName(device, *pipeline, "Graphics Pipeline {}", debug_str);
 }
