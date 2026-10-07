@@ -1406,6 +1406,13 @@ bool Rasterizer::ReadMemory(VAddr addr, u64 size) {
         // Not GPU mapped memory, can skip invalidation logic entirely.
         return false;
     }
+#if defined(SHADPS4_VISIONOS)
+    // Only buffers set read watches. The fault handler also asks about the other 4 KB pages of
+    // a 16 KB host page, and a page no buffer covers must not get a buffer made for it here.
+    if (!buffer_cache.IsRegionRegistered(addr, size)) {
+        return false;
+    }
+#endif
     buffer_cache.ReadMemory(addr, size);
     return true;
 }
