@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cstdlib>
 
+#include "common/logging/log.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
 #include "video_core/renderer_vulkan/vk_shader_util.h"
@@ -120,7 +121,11 @@ void BlitHelper::ReinterpretColorAsMsDepth(u32 width, u32 height, vk::SampleCoun
     const MsPipelineKey key{samples, dst_pixel_format, false};
     auto it = std::ranges::find(color_to_ms_depth_pl, key, &MsPipeline::first);
     if (it == color_to_ms_depth_pl.end()) {
-        CreateColorToMSDepthPipeline(key);
+        if (!CreateColorToMSDepthPipeline(key)) {
+            scheduler.EndRendering();
+            scheduler.GetDynamicState().Invalidate();
+            return;
+        }
         it = --color_to_ms_depth_pl.end();
     }
     cmdbuf.bindPipeline(vk::PipelineBindPoint::eGraphics, *it->second);
@@ -191,6 +196,17 @@ void BlitHelper::CopyBetweenMsImages(u32 width, u32 height, vk::SampleCountFlagB
         device.destroyImageView(dst_view);
     });
 
+    // The pipeline first: a driver that cannot make it (Metal, for some sample counts and
+    // formats) leaves the copy out instead of ending the game.
+    const MsPipelineKey key{samples, pixel_format, src_msaa};
+    auto it = std::ranges::find(ms_image_copy_pl, key, &MsPipeline::first);
+    if (it == ms_image_copy_pl.end()) {
+        if (!CreateMsCopyPipeline(key)) {
+            return;
+        }
+        it = --ms_image_copy_pl.end();
+    }
+
     Vulkan::RenderState state{};
     state.width = width;
     state.height = height;
@@ -227,12 +243,6 @@ void BlitHelper::CopyBetweenMsImages(u32 width, u32 height, vk::SampleCountFlagB
                                   desc_set, {});
     }
 
-    const MsPipelineKey key{samples, pixel_format, src_msaa};
-    auto it = std::ranges::find(ms_image_copy_pl, key, &MsPipeline::first);
-    if (it == ms_image_copy_pl.end()) {
-        CreateMsCopyPipeline(key);
-        it = --ms_image_copy_pl.end();
-    }
     cmdbuf.bindPipeline(vk::PipelineBindPoint::eGraphics, *it->second);
 
     const vk::Viewport viewport = {
@@ -538,7 +548,10 @@ vk::Pipeline BlitHelper::SmoothPipeline(vk::Format attachment_format) {
     return *resolve_aa_pl.emplace_back(attachment_format, std::move(pipeline)).second;
 }
 
-void BlitHelper::CreateColorToMSDepthPipeline(const MsPipelineKey& key) {
+bool BlitHelper::CreateColorToMSDepthPipeline(const MsPipelineKey& key) {
+    if (std::ranges::find(failed_ms_depth_pl, key) != failed_ms_depth_pl.end()) {
+        return false;
+    }
     const vk::PipelineInputAssemblyStateCreateInfo input_assembly = {
         .topology = vk::PrimitiveTopology::eTriangleList,
     };
@@ -598,15 +611,26 @@ void BlitHelper::CreateColorToMSDepthPipeline(const MsPipelineKey& key) {
 
     auto [pipeline_result, pipeline] =
         instance.GetDevice().createGraphicsPipelineUnique(VK_NULL_HANDLE, pipeline_info);
-    ASSERT_MSG(pipeline_result == vk::Result::eSuccess, "Failed to create graphics pipeline: {}",
-               vk::to_string(pipeline_result));
+    if (pipeline_result != vk::Result::eSuccess) {
+        LOG_ERROR(Render_Vulkan,
+                  "No pipeline to turn color into multisampled depth ({} samples, {}): {}; such "
+                  "copies are left out",
+                  vk::to_string(key.samples), vk::to_string(key.attachment_format),
+                  vk::to_string(pipeline_result));
+        failed_ms_depth_pl.push_back(key);
+        return false;
+    }
     Vulkan::SetObjectName(instance.GetDevice(), *pipeline, "Color to MS Depth {}",
                           vk::to_string(key.samples));
 
     color_to_ms_depth_pl.emplace_back(key, std::move(pipeline));
+    return true;
 }
 
-void BlitHelper::CreateMsCopyPipeline(const MsPipelineKey& key) {
+bool BlitHelper::CreateMsCopyPipeline(const MsPipelineKey& key) {
+    if (std::ranges::find(failed_ms_copy_pl, key) != failed_ms_copy_pl.end()) {
+        return false;
+    }
     const vk::PipelineInputAssemblyStateCreateInfo input_assembly = {
         .topology = vk::PrimitiveTopology::eTriangleList,
     };
@@ -677,12 +701,20 @@ void BlitHelper::CreateMsCopyPipeline(const MsPipelineKey& key) {
 
     auto [pipeline_result, pipeline] =
         instance.GetDevice().createGraphicsPipelineUnique(VK_NULL_HANDLE, pipeline_info);
-    ASSERT_MSG(pipeline_result == vk::Result::eSuccess, "Failed to create graphics pipeline: {}",
-               vk::to_string(pipeline_result));
+    if (pipeline_result != vk::Result::eSuccess) {
+        LOG_ERROR(Render_Vulkan,
+                  "No pipeline to copy between multisampled images ({} samples, {}, from MS {}): "
+                  "{}; such copies are left out",
+                  vk::to_string(key.samples), vk::to_string(key.attachment_format), key.src_msaa,
+                  vk::to_string(pipeline_result));
+        failed_ms_copy_pl.push_back(key);
+        return false;
+    }
     Vulkan::SetObjectName(instance.GetDevice(), *pipeline, "Non MS Image to MS Image {}",
                           vk::to_string(key.samples));
 
     ms_image_copy_pl.emplace_back(key, std::move(pipeline));
+    return true;
 }
 
 } // namespace VideoCore
