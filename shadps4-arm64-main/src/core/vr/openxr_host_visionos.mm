@@ -25,6 +25,7 @@
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <condition_variable>
 #include <cstdlib>
 #include <mutex>
 
@@ -39,8 +40,9 @@ namespace {
 
 using Clock = std::chrono::steady_clock;
 
-/// One being drawn, one waiting to be shown, one being shown, and one to spare (as on the PC).
-constexpr u32 NumSlots = 4;
+/// Being drawn (the GPU may be a frame or two ahead), waiting to be shown, being shown, and
+/// some to spare: with fewer, the GPU thread found none free at times and stalled.
+constexpr u32 NumSlots = 6;
 
 float EnvFloat(const char* name, float fallback) {
     const char* value = std::getenv(name);
@@ -84,6 +86,7 @@ struct OpenXrHost::Impl {
     bool started{};
 
     std::mutex slot_mutex;
+    std::condition_variable slot_freed;
     std::array<Slot, NumSlots> slots;
     s32 latest{-1};
     u32 next_slot{};
@@ -288,8 +291,21 @@ std::optional<OpenXrHost::Target> OpenXrHost::BeginFrame(u32 width, u32 height) 
         height == 0) {
         return std::nullopt;
     }
-    std::scoped_lock lock{impl->slot_mutex};
+    std::unique_lock lock{impl->slot_mutex};
     impl->DestroyRetired();
+    // All in use: the app gives one back once the GPU has shown it, which is soon. Waiting a
+    // little here beats the GPU thread trying again and again.
+    const auto has_free = [&] {
+        for (u32 index = 0; index < NumSlots; ++index) {
+            const Impl::Slot& slot = impl->slots[index];
+            if (slot.state == Impl::Slot::State::Free ||
+                (slot.state == Impl::Slot::State::Ready && static_cast<s32>(index) != impl->latest)) {
+                return true;
+            }
+        }
+        return false;
+    };
+    impl->slot_freed.wait_for(lock, std::chrono::milliseconds{100}, has_free);
     for (u32 attempt = 0; attempt < NumSlots; ++attempt) {
         const u32 index = (impl->next_slot + attempt) % NumSlots;
         Impl::Slot& slot = impl->slots[index];
@@ -329,6 +345,7 @@ void OpenXrHost::EndFrame(u32 index, const PresentedFrame& info) {
     slot.info = info;
     impl->latest = static_cast<s32>(index % NumSlots);
     impl->delivered_frames.fetch_add(1, std::memory_order_relaxed);
+    impl->slot_freed.notify_all();
     const auto now = Clock::now();
     if (impl->last_delivery != Clock::time_point{}) {
         const double gap = std::chrono::duration<double>(now - impl->last_delivery).count();
@@ -346,6 +363,7 @@ void OpenXrHost::DropFrame(u32 index) {
     if (slot.state == Impl::Slot::State::Drawing) {
         slot.state = Impl::Slot::State::Free;
     }
+    impl->slot_freed.notify_all();
 }
 
 bool OpenXrHost::IsShowing() const {
@@ -403,6 +421,7 @@ struct VisionOsBridge {
         // A title with nothing to show hands over a black picture of a pixel an eye.
         if (slot.width < 64 || slot.height < 64) {
             slot.state = Slot::State::Free;
+            host.slot_freed.notify_all();
             return false;
         }
         slot.state = Slot::State::Reading;
@@ -444,6 +463,7 @@ struct VisionOsBridge {
         if (slot.state == Slot::State::Reading) {
             slot.state = Slot::State::Free;
         }
+        host.slot_freed.notify_all();
     }
 
     static u32 FramesDelivered() {
