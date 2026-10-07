@@ -913,8 +913,18 @@ struct AddressSpace::Impl {
             flags |= PROT_EXEC;
         }
 #endif
+#if defined(SHADPS4_VISIONOS)
+        // Apple's ARM64 pages are 16 KB: mprotect takes whole pages only.
+        constexpr VAddr host_page = 0x4000;
+        const VAddr begin = virtual_addr & ~(host_page - 1);
+        const VAddr end = (virtual_addr + size + host_page - 1) & ~(host_page - 1);
+        int ret = mprotect(reinterpret_cast<void*>(begin), end - begin, flags);
+        ASSERT_MSG(ret == 0, "mprotect of {:#x} ({:#x} bytes, as {:#x}-{:#x}) failed: {}",
+                   virtual_addr, size, begin, end, strerror(errno));
+#else
         int ret = mprotect(reinterpret_cast<void*>(virtual_addr), size, flags);
         ASSERT_MSG(ret == 0, "mprotect failed: {}", strerror(errno));
+#endif
     }
 
     int backing_fd;
