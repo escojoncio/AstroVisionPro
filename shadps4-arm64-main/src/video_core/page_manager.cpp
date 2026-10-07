@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <boost/container/small_vector.hpp>
+#include "common/alignment.h"
 #include "common/assert.h"
 #include "common/debug.h"
 #include "common/div_ceil.h"
@@ -36,15 +37,30 @@
 
 namespace VideoCore {
 
+#if defined(SHADPS4_VISIONOS)
+// Memory protection works on whole host pages, and Apple's ARM64 pages are 16 KB (mprotect of a
+// 4 KB page fails there).
+constexpr size_t PM_PAGE_SIZE = 16_KB;
+constexpr size_t PM_PAGE_BITS = 14;
+using PageWatcherCount = u16;
+#else
 constexpr size_t PM_PAGE_SIZE = 4_KB;
 constexpr size_t PM_PAGE_BITS = 12;
+using PageWatcherCount = u8;
+#endif
 
 struct PageManager::Impl {
     struct PageState {
+#if defined(SHADPS4_VISIONOS)
+        // A 16 KB page can hold several buffers, each with its own read watcher.
+        u16 num_write_watchers : 11;
+        u16 num_read_watchers : 5;
+#else
         u8 num_write_watchers : 7;
         // At the moment only buffer cache can request read watchers.
         // And buffers cannot overlap, thus only 1 can exist per page.
         u8 num_read_watchers : 1;
+#endif
 
         Core::MemoryPermission WritePerm() const noexcept {
             return num_write_watchers == 0 ? Core::MemoryPermission::Write
@@ -61,7 +77,7 @@ struct PageManager::Impl {
         }
 
         template <s32 delta, bool is_read>
-        u8 AddDelta() {
+        PageWatcherCount AddDelta() {
             if constexpr (is_read) {
                 if constexpr (delta == 1) {
                     return ++num_read_watchers;
@@ -218,6 +234,55 @@ struct PageManager::Impl {
     }
 #endif
 
+#if defined(SHADPS4_VISIONOS)
+    // visionOS: the buffer cache tracks 4 KB pages, the host protects 16 KB ones. Every 4 KB page
+    // that is watched counts once on the 16 KB page holding it, so tracking and untracking stay
+    // balanced however the ranges are split; a 16 KB page is protected while any count is up.
+    static constexpr size_t TRACKED_PAGE_SIZE = 4_KB;
+
+    template <bool track, bool is_read>
+    void UpdatePageWatchers(VAddr addr, u64 size) {
+        RENDERER_TRACE;
+        if (size == 0) {
+            return;
+        }
+        const VAddr begin = Common::AlignDown(addr, TRACKED_PAGE_SIZE);
+        const VAddr end = Common::AlignUp(addr + size, TRACKED_PAGE_SIZE);
+        const size_t first_page = begin >> PM_PAGE_BITS;
+        const size_t last_page = (end - 1) >> PM_PAGE_BITS;
+        const auto lock_start = locks.begin() + (first_page / PAGES_PER_LOCK);
+        const auto lock_end = locks.begin() + (last_page / PAGES_PER_LOCK) + 1;
+        Common::RangeLockGuard lk(lock_start, lock_end);
+        for (VAddr sub = begin; sub < end; sub += TRACKED_PAGE_SIZE) {
+            PageState& state = cached_pages[sub >> PM_PAGE_BITS];
+            const auto before = state.Perms();
+            state.template AddDelta<track ? 1 : -1, is_read>();
+            if (const auto after = state.Perms(); after != before) {
+                Protect(Common::AlignDown(sub, PM_PAGE_SIZE), PM_PAGE_SIZE, after);
+            }
+        }
+    }
+
+    template <bool track, bool is_read>
+    void UpdatePageWatchersForRegion(VAddr base_addr, RegionBits& mask) {
+        RENDERER_TRACE;
+        const auto start_range = mask.FirstRange();
+        const auto end_range = mask.LastRange();
+        size_t run_begin = 0;
+        bool in_run = false;
+        for (size_t page = start_range.first; page <= end_range.second; ++page) {
+            const bool set = page < end_range.second && mask.Get(page);
+            if (set && !in_run) {
+                run_begin = page;
+                in_run = true;
+            } else if (!set && in_run) {
+                UpdatePageWatchers<track, is_read>(base_addr + run_begin * TRACKED_PAGE_SIZE,
+                                                   (page - run_begin) * TRACKED_PAGE_SIZE);
+                in_run = false;
+            }
+        }
+    }
+#else
     template <bool track, bool is_read>
     void UpdatePageWatchers(VAddr addr, u64 size) {
         RENDERER_TRACE;
@@ -258,7 +323,7 @@ struct PageManager::Impl {
             PageState& state = cached_pages[page];
 
             // Apply the change to the page state
-            const u8 new_count = state.AddDelta<track ? 1 : -1, is_read>();
+            const PageWatcherCount new_count = state.AddDelta<track ? 1 : -1, is_read>();
 
             if (auto new_perms = state.Perms(); new_perms != perms) [[unlikely]] {
                 // If the protection changed add pending (un)protect action
@@ -354,6 +419,7 @@ struct PageManager::Impl {
         // Add pending (un)protect action
         release_pending();
     }
+#endif
 
     std::array<PageState, NUM_ADDRESS_PAGES> cached_pages{};
 #ifdef PTHREAD_ADAPTIVE_MUTEX_INITIALIZER_NP
