@@ -12,7 +12,9 @@
 #include <chrono>
 #include <cmath>
 #include <cstdlib>
+#include <cstdio>
 #include <cstring>
+#include <filesystem>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -78,6 +80,14 @@ int astro_core_start(const char* game_path, const char* const* environment, int 
     setenv("SDL_CAMERA_DRIVER", "dummy", 1);
     // (The app is SwiftUI's; SDL's own main is not used. This is the main thread.)
     SDL_SetMainReady();
+
+    // The users and their saves where the app says (its VPS4 folder, which outlives the app).
+    if (const char* home = std::getenv("SHADPS4_HOME_DIR"); home != nullptr && *home != '\0') {
+        std::error_code error;
+        std::filesystem::create_directories(home, error);
+        Common::FS::SetUserPath(Common::FS::PathType::HomeDir, home);
+        std::fprintf(stderr, "Users and saves in %s\n", home);
+    }
 
     g_log_path = (Common::FS::GetUserPath(Common::FS::PathType::LogDir) / "shad_log.txt").string();
 
