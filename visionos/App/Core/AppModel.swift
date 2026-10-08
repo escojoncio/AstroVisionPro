@@ -102,8 +102,8 @@ final class AppModel {
         gameFolder = GameFolder.url()
         let manager = FileManager.default
         func isGame(_ url: URL) -> Bool {
+            // What the emulator starts is eboot.bin (sce_sys is checked in the Check tab).
             manager.fileExists(atPath: url.appendingPathComponent("eboot.bin").path)
-                || manager.fileExists(atPath: url.appendingPathComponent("sce_sys/param.sfo").path)
         }
         func preferred(_ url: URL) -> Bool {
             url.lastPathComponent.caseInsensitiveCompare("CUSA12392") == .orderedSame
