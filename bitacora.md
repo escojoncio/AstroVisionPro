@@ -5,6 +5,16 @@ Base: shadPS4 ARM64 (`shadps4-arm64-main/`) + FEXCore (x86-64 → ARM64) + Molte
 App visionOS en `visionos/` (SwiftUI + Compositor Services + ARKit + GameController).
 JIT: arena RWX preparada por StikDebug (protocolo `brk #0xf00d` + universal.js); la app hace detach al terminar.
 
+## Build 47cf082 probada: test 1 (log 2026-10-09 00:21; dinámica, MetalFX ×1.5, JIT 512, MSAA 1)
+- Sin cierre. Nave 33–48 fps (GPU 70–96 %); mundo 19–33 fps (casi siempre 28–33), GPU 94–99 %, escena a 816x870. `PACE` memoria en el mundo 7.36–7.59 GB con 600–850 MB libres; GPU 3.0 GB; consola en RAM 1.5 GB.
+- `GS_DRAWS` (mundo): `0x3b916cc5043` (GS `0x3b88b54e`, partículas, 3198 dwords) 300–1140/s; `0x7e8aa19af8e` (GS `0x7e82e7ba`, 7050 dwords, ES `0x3cac3810`) 150–800/s; `0xf25459bf2ca` (GS de paso `0xf250a6ed`) 100–133/s, solo en la pasada `1440x1536 1 colour` (1 draw por pasada); `0x6a3e0045bf3` (GS `0x6a2e54fb`, 355 dwords) ocasional; `0x3b916cc5040/41` variantes.
+- **Refutado**: la escena no va por el GS de paso; los draws con GS son 3–8 % de los de la pasada principal (600–1470 de 10–30 k/s).
+- **Pero cada draw con GS es caro**: regresión sobre 22 ventanas de `816x870 1 colour +depth` (ms/s ~ pasadas + draws + draws GS, R² 0.88): ~0.23 ms por draw con GS, ~3 µs por draw normal. Solo GS: R² 0.46, 0.18 ms/draw; solo draws: R² 0.07. ~1000 draws GS/s ≈ 200 ms/s ≈ 20 % de la GPU (40 % de la pasada principal).
+- Causa (fuente KK `b628375`): `kk_launch_gs_prerast` → `cs_get_compute` hace `kk_apply_attachment_store_ops(cmd, true)` + `cs_end` (barrera ALL→ALL en `end_encoder`), dos dispatch (VS-como-compute y GS) con barreras, y `need_to_start_render_pass` → nuevo encoder de render con load y `kk_cmd_buffer_dirty_all_gfx`. Por cada draw con GS: store+load de color y profundidad de la pasada y vaciado completo de la GPU.
+- Cadena de pasadas diminutas (25x27…408x435, 1 draw cada una): 0.25–0.3 ms por pasada (~150 ms/s). Coste fijo por encoder: `end_encoder` pone barrera ALL→ALL siempre (KK ignora las barreras de Vulkan fuera de render y confía en esa; `kk_CmdPipelineBarrier2`). Quitarla exige implementar barreras reales: no por ahora.
+- Plan elegido (A): en KK, si hay encoder de render abierto y el draw es directo sin unroll de restart, ejecutar VS-como-compute y GS dentro del mismo encoder como draws de solo vértice (`rasterizationEnabled = NO`, vertex_id/instance_id = rejilla 2D) con barrera vértice→vértice, sin cerrar la pasada. Requiere compilar los `pre_render` también como funciones de vértice (sin memoria de grupo ni barreras de grupo). Alternativas: shaders de malla de Metal (lo que hace Metal Shader Converter; mayor), reescribir los 4 GS de ASTRO BOT (específico del juego, inviable para los de 3198/7050 dwords), agrupar draws GS consecutivos (falta saber si lo son).
+- Pendiente: test 2 (resolución fija 1440) para el coste por píxel; dónde atravesó Astro la pared.
+
 ## Build e05ce18 probada (log 2026-10-08 15:41) y arreglos siguientes
 - Pipelines en segundo plano: funcionan (PIPELINE_SLOW 18–96 ms, cientos de draws omitidos, sin tirones).
 - Mando: posición por las manos OK (`PAD: seen`). Giróscopo: el último `Controller motion` de la app es 15:42:20; después el emulador recibe siempre el mismo valor (`heading -1 pitch 16 roll 12`) → visionOS apagó los sensores del DualSense al girar la cabeza.
