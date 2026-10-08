@@ -1,8 +1,12 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <algorithm>
 #include <atomic>
 #include <exception>
+#include <mutex>
+#include <string>
+#include <vector>
 #include <ranges>
 
 #include "common/hash.h"
@@ -39,6 +43,59 @@ constexpr static std::array DescriptorHeapSizes = {
     vk::DescriptorPoolSize{vk::DescriptorType::eStorageImage, 1024},
     vk::DescriptorPoolSize{vk::DescriptorType::eSampler, 1024},
 };
+
+#if defined(SHADPS4_VISIONOS)
+// What a draw drawn without its geometry shader would have done: the export shader, the
+// geometry shader and its copy shader as the console's code (GCN, dwords in hex), with where it
+// draws to (the first colour target's slices, the viewports in use). Once for each pair of
+// shaders, the first few: lines "GS_CODE <kind> <hash> <offset>: <dwords>".
+static void LogGsBypassShaders(const AmdGpu::Regs& regs) {
+    static std::mutex mutex;
+    static std::vector<std::pair<u64, u64>> seen;
+    const auto gs = AmdGpu::GetParams(regs.gs_program);
+    const auto es = AmdGpu::GetParams(regs.es_program);
+    const auto vc = AmdGpu::GetParams(regs.vs_program);
+    {
+        std::scoped_lock lock{mutex};
+        const std::pair<u64, u64> pair{es.hash, gs.hash};
+        if (seen.size() >= 6 || std::ranges::find(seen, pair) != seen.end()) {
+            return;
+        }
+        seen.push_back(pair);
+    }
+    std::string viewports;
+    for (u32 i = 0; i < AmdGpu::NUM_VIEWPORTS; ++i) {
+        const auto& vp = regs.viewports[i];
+        if (vp.xscale != 0.f) {
+            viewports += fmt::format(" [{}: x {} {} y {} {}]", i, vp.xoffset, vp.xscale,
+                                     vp.yoffset, vp.yscale);
+        }
+    }
+    const auto& cb = regs.color_buffers[0];
+    LOG_INFO(Render_Vulkan,
+             "GS_INFO es {:#x} ({} dwords) gs {:#x} ({} dwords) copy {:#x} ({} dwords); esgs "
+             "item {} gsvs item {} max out {} instances {}; target 0 at {:#x} slices {}..{}; "
+             "viewports{}",
+             es.hash, es.code.size(), gs.hash, gs.code.size(), vc.hash, vc.code.size(),
+             u32(regs.vgt_esgs_ring_itemsize), u32(regs.vgt_gs_vert_itemsize[0]),
+             u32(regs.vgt_gs_max_vert_out),
+             regs.vgt_gs_instance_cnt.IsEnabled() ? u32(regs.vgt_gs_instance_cnt.count) : 1u,
+             cb.Address(), cb.BaseSlice(), cb.NumSlices(), viewports);
+    const auto dump = [](const char* kind, const Shader::ShaderParams& params) {
+        const auto code = params.code;
+        for (size_t offset = 0; offset < code.size(); offset += 16) {
+            std::string line;
+            for (size_t i = offset; i < std::min(code.size(), offset + 16); ++i) {
+                line += fmt::format(" {:08x}", code[i]);
+            }
+            LOG_INFO(Render_Vulkan, "GS_CODE {} {:#x} {}:{}", kind, params.hash, offset, line);
+        }
+    };
+    dump("es", es);
+    dump("gs", gs);
+    dump("copy", vc);
+}
+#endif
 
 static u32 MapOutputs(std::span<Shader::OutputMap, 3> outputs, const AmdGpu::VsOutputControl& ctl) {
     u32 num_outputs = 0;
@@ -455,6 +512,18 @@ bool PipelineCache::RefreshGraphicsKey() {
         return false;
     }
 
+    // Targets this pass of a draw leaves out (LeaveTargetsOut): the shaders are the ones of
+    // the whole draw, what they write there goes nowhere.
+    if (targets_left_out != 0) {
+        key.mrt_mask &= ~targets_left_out;
+        key.num_color_attachments = std::bit_width(key.mrt_mask);
+        for (s32 cb = 0; cb < AmdGpu::NUM_COLOR_BUFFERS; ++cb) {
+            if ((targets_left_out & (1u << cb)) != 0) {
+                std::memset(&key.color_buffers[cb], 0, sizeof(Shader::PsColorBuffer));
+            }
+        }
+    }
+
     // Second pass to mask out render targets not written by shader and fill remaining info
     u8 color_samples = 0;
     bool all_color_samples_same = true;
@@ -566,6 +635,7 @@ bool PipelineCache::RefreshGraphicsStages() {
                              u32(regs.vgt_gs_max_vert_out), u32(regs.primitive_type),
                              u32(regs.vgt_gs_out_prim_type.GetPrimitiveType(0)));
                 }
+                LogGsBypassShaders(regs);
                 break;
             }
 #endif

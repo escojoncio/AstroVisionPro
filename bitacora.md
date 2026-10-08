@@ -15,9 +15,25 @@ Funciona en el dispositivo:
 
 No funciona / pendiente:
 - Ojo izquierdo deforme (GS no emulado; el bypass dibuja el ES como VS).
-- Rendimiento: ~3 fps en la intro/carga, ~25 fps estable después; compositor baja a ~50 Hz. Audio petardea por falta de ritmo.
-- Calibración del jugador (pantalla verde con silueta) no avanza: el juego espera el mando localizado.
+- Rendimiento: tramos de 2.8–5 fps con muchos efectos (log 2026-10-07 22:12:53–22:13:28: 14 frames/5 s), ~25 fps en otros con el compositor a 50 Hz. Audio petardea.
+- Calibración (pantalla verde con silueta): causa encontrada — el juego llama a `sceVrTrackerRecalibrate` y espera ver el estado CALIBRATING→TRACKING; nuestro `vr_tracker.cpp` era el stub de 0.13. Corregido con la fusión de upstream (ver abajo), pendiente de probar.
 - Borde azul provisional en `Shaders.metal` (diagnóstico; quitar cuando haya imagen correcta).
+
+## Sesión 2026-10-08: fusión con upstream AstroQuest + diagnóstico
+
+### Fusión
+- Base del fork: upstream `bigmak94/AstroQuest` 0.13 (`8431e43`). Fusionado a 3 vías con upstream `807ca1f` (0.20). Único conflicto: `vk_presenter.cpp` (`expected_ratio` ahora `std::optional` de upstream + bloque visionOS conservado).
+- Trae: `vr_tracker.cpp` Recalibration (CALIBRATING 200 ms tras `sceVrTrackerRecalibrate`), entradas completas del GS (V0–V7, InvocationId) en `translate.cpp`/`spirv_emit_context.cpp`, viewports conservan su slot en `vk_rasterizer.cpp`, colocación del mando sin tracking (`MoveOwnPadPlace`/`SwitchPadPlace`), giro por pasos, idioma de consola, builds 1.00/1.04 conocidas (`known_title_builds.h`), `ShaderBinaryVersion = 3`.
+- `openxr_host_visionos.mm`: añadido `OpenXrHost::AudioDevicesChanged()` vacío (nuevo en upstream, lo llama `sdl_audio_out.cpp`).
+- Comprobación local: `clang++ -fsyntax-only -DSHADPS4_VISIONOS=1` de los ficheros fusionados (sin rutas Apple/Mach) sin errores. Script en el historial de la sesión: incluye submódulos fmt, vulkan-headers, ext-boost, robin-map, sirit(+SPIRV-Headers), magic_enum, toml11, half, xbyak, json, vma, dear_imgui, sdl3, date, spdlog, tracy, zydis, xxhash, pugixml, stb; `cmrc` con stub.
+
+### Diagnóstico añadido
+- `vk_pipeline_cache.cpp` `LogGsBypassShaders` (visionOS): por cada par ES/GS (máx. 6) escribe `GS_INFO` (hashes, tamaños, itemsize ESGS/GSVS, max out, instancias, slices del color target 0, viewports activos) y `GS_CODE <es|gs|copy> <hash> <offset>: <dwords hex>`. Para desensamblar offline con el decoder GCN del repo.
+- `guest_watchdog.cpp` `ReportPace` (Apple): cada 5 s `PACE: <fps> guest frames/s; CPU <total>% in all: <hilo> <%>...` (tiempo de CPU por hilo vía `THREAD_BASIC_INFO`). Si fps < 10: hasta 6 veces por sesión, 12 muestras de pila nativa de los 2 hilos más ocupados (`PACE_SAMPLE`). Simbolizar con `atos -o <binario del IPA> -l 0x100000000`.
+
+### Hallazgo para el GS (decisión pendiente de aplicar)
+- KosmicKrisp (Mesa, el driver Vulkan-sobre-Metal que usa shadPS4 en macOS; submódulo `externals/mesa-kosmickrisp` → `shadexternals/mesa`) declara `geometryShader = true`, `tessellationShader`, `multiViewport`, `shaderOutputLayer/ViewportIndex` (`src/kosmickrisp/vulkan/kk_physical_device.c`), emulando GS por compute (`src/kosmickrisp/libkk/kk_geometry.cl`, `src/poly`). MoltenVK no tiene GS.
+- Para visionOS habría que: compilar Mesa para `xros` (crossfile meson), sustituir `MTLCopyAllDevices` (solo macOS, `bridge/mtl_device.m`) por `MTLCreateSystemDefaultDevice`, revisar `mach_vm_remap` (`vulkan/kk_bo.c`), enlazar estático sin loader (`vk_icdGetInstanceProcAddr`), y cambiar la exportación de texturas del visor de `VK_EXT_metal_objects` a `VK_EXT_external_memory_metal`.
 
 ## Cambios por archivo (sesión de depuración en dispositivo)
 
@@ -67,9 +83,9 @@ No funciona / pendiente:
 - El remoto `origin` del clon local tiende a apuntar al nombre antiguo del repo: hacer push explícito a la URL de AstroVisionPro.
 
 ## Pendiente (orden recomendado)
-1. **Emular el GS** (`max_vert_out 32`, entrada TriangleStrip, salida TriangleStrip): compute shader que ejecute ES+GS y escriba vértices en un buffer + VS de paso; o mesh shaders de Metal. Objetivo: ojo izquierdo correcto. Partir de `ring_access_elimination.cpp` (mapeo ES ring → atributos, `gs_copy_data.attr_map`).
-2. **Rendimiento**: medir dónde se va el tiempo en la fase de 3 fps (sampleo nativo del watchdog bajo demanda, fallos de página por segundo, traducción FEX, GPU). Considerar `Log sync` desactivado.
-3. **Calibración**: registrar en el log si ARKit entrega manos (`HeadsetTracking.swift`) y la pose del mando que recibe `vr_tracker.cpp`; revisar `sceVrTrackerRecalibrate` (stub).
+1. **Probar build de esta sesión**: ¿pasa la pantalla de calibración? Recoger del log `GS_INFO`/`GS_CODE` y `PACE`/`PACE_SAMPLE`.
+2. **GS → KosmicKrisp en visionOS** (ver "Hallazgo para el GS"). Alternativa si no compila para xros: emulación propia por compute partiendo de `ring_access_elimination.cpp`.
+3. **Rendimiento**: decidir con `PACE` si los tramos de 3 fps son CPU invitada (Game:*), procesador de comandos (GpuCommandProcessor) o GPU (ningún hilo ocupado). Considerar `Log sync` desactivado y bajar a DEBUG los `Kernel.Fs open/close`.
 4. Texturas BC6H/BC7 con uso Storage que MoltenVK no crea (`image.cpp:247`).
 5. Quitar borde azul; activar caché de pipelines en disco.
 6. Comprobación en la app de ficheros `sce_sys` (param.sfo obligatorio; playgo-chunk.dat, npbind.dat, nptitle.dat, icon0.png, pic0.png, pic1.png, trophy/trophy00.trp opcionales) en la pestaña Comprobación y en la tarjeta Juego.
