@@ -5,12 +5,14 @@
 // missing, and the button that starts it.
 
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct HomeView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.openImmersiveSpace) private var openImmersiveSpace
     @Environment(\.dismissWindow) private var dismissWindow
     @State private var artwork = Artwork()
+    @State private var choosingFolder = false
 
     var body: some View {
         ZStack(alignment: .bottomLeading) {
@@ -108,13 +110,29 @@ struct HomeView: View {
     private var gameCard: some View {
         StatusCard(title: L("Juego", "Game"), symbol: "opticaldisc.fill",
                    verdict: model.gamePath != nil ? .ok : .missing,
-                   detail: model.gamePath?.lastPathComponent ?? L("Copia CUSA12392 con Archivos", "Copy CUSA12392 with Files")) {
-            if model.gamePath == nil {
+                   detail: gameDetail) {
+            if model.gameFolder == nil {
+                Button(L("Elegir VPS4", "Choose VPS4")) {
+                    choosingFolder = true
+                }
+            } else if model.gamePath == nil {
                 Button(L("Buscar", "Find")) {
                     model.findGame()
                 }
             }
         }
+        .fileImporter(isPresented: $choosingFolder, allowedContentTypes: [.folder]) { result in
+            model.folderChosen(result)
+        }
+    }
+
+    private var gameDetail: String {
+        if let path = model.gamePath {
+            return model.gameFolder != nil ? "VPS4 › \(path.lastPathComponent)" : path.lastPathComponent
+        }
+        return model.gameFolder == nil
+            ? L("Elige tu carpeta VPS4", "Choose your VPS4 folder")
+            : L("Mete el juego en VPS4 › Juegos", "Put the game in VPS4 › Juegos")
     }
 
     private var controllerCard: some View {
