@@ -1,6 +1,6 @@
-# kosmickrisp-visionos - ef303b81217a21b9160bf2c6b1703c6229eb8773 - 2026-10-08T11:49:51Z
+# kosmickrisp-visionos - 7715f7f639dc4b5c52e1de4242b59eba574f532f - 2026-10-08T11:54:55Z
 
-## kosmickrisp.log:     1617 lines
+## kosmickrisp.log:     7759 lines
 ### errors
 59-Compiler for C supports function attribute noreturn: YES 
 60-Compiler for C supports function attribute optimize: NO 
@@ -59,171 +59,173 @@
 1032-Program kk_clc found: YES (/Users/runner/work/AstroVisionPro/AstroVisionPro/build/visionos/kosmickrisp-src/mesa/build-tools/src/kosmickrisp/clc/kk_clc)
 1033-Program sphinx-build skipped: feature html-docs disabled
 --
-1594-[477/559] Compiling Objective-C object src/kosmickrisp/bridge/libmtl_bridge.a.p/mtl_argument_table.m.o
-1595-[478/559] Compiling Objective-C object src/vulkan/wsi/libvulkan_wsi.a.p/wsi_common_metal_layer.m.o
-1596:FAILED: [code=1] src/vulkan/wsi/libvulkan_wsi.a.p/wsi_common_metal_layer.m.o 
-1597-/Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -Isrc/vulkan/wsi/libvulkan_wsi.a.p -Isrc/vulkan/wsi -I../src/vulkan/wsi -Iinclude -I../include -Isrc -I../src -Isrc/vulkan/util -I../src/vulkan/util -Isrc/vulkan/runtime -I../src/vulkan/runtime -I../src/vulkan/runtime/bvh -Isrc/compiler/spirv -Isrc/util -Isrc/util/format -fvisibility=hidden -fdiagnostics-color=always -DNDEBUG -Wall -Winvalid-pch -std=c11 -O3 -D__STDC_CONSTANT_MACROS -D__STDC_FORMAT_MACROS -D__STDC_LIMIT_MACROS '-DPACKAGE_VERSION="26.3.0-devel"' -DHAVE_OPENGL=0 -DHAVE_OPENGL_ES_1=1 -DHAVE_OPENGL_ES_2=1 -DMESA_SYSTEM_HAS_KMS_DRM=0 -DBUILDING_MESA -DVK_ENABLE_BETA_EXTENSIONS -DVIDEO_CODEC_VC1DEC=0 -DVIDEO_CODEC_H264DEC=0 -DVIDEO_CODEC_H264ENC=0 -DVIDEO_CODEC_H265DEC=0 -DVIDEO_CODEC_H265ENC=0 -DVIDEO_CODEC_AV1DEC=1 -DVIDEO_CODEC_AV1ENC=1 -DVIDEO_CODEC_VP9DEC=1 -DVIDEO_CODEC_MPEG12DEC=1 -DVIDEO_CODEC_JPEGDEC=1 -DHAVE_MACOS_PLATFORM -DUSE_LIBGLVND=0 -DHAVE_GFX_COMPUTE -DGLAPI_EXPORT_PROTO_ENTRY_POINTS=1 -DALLOW_KCMP -DMESA_DEBUG=0 -DENABLE_SHADER_CACHE -DHAVE___BUILTIN_BSWAP32 -DHAVE___BUILTIN_BSWAP64 -DHAVE___BUILTIN_CLZ -DHAVE___BUILTIN_CLZLL -DHAVE___BUILTIN_CTZ -DHAVE___BUILTIN_EXPECT -DHAVE___BUILTIN_FFS -DHAVE___BUILTIN_FFSLL -DHAVE___BUILTIN_POPCOUNT -DHAVE___BUILTIN_POPCOUNTLL -DHAVE___BUILTIN_UNREACHABLE -DHAVE___BUILTIN_TYPES_COMPATIBLE_P -DHAVE___BUILTIN_ADD_OVERFLOW -DHAVE_FUNC_ATTRIBUTE_CONST -DHAVE_FUNC_ATTRIBUTE_FLATTEN -DHAVE_FUNC_ATTRIBUTE_MALLOC -DHAVE_FUNC_ATTRIBUTE_PURE -DHAVE_FUNC_ATTRIBUTE_UNUSED -DHAVE_FUNC_ATTRIBUTE_WARN_UNUSED_RESULT -DHAVE_FUNC_ATTRIBUTE_WEAK -DHAVE_FUNC_ATTRIBUTE_FORMAT -DHAVE_FUNC_ATTRIBUTE_PACKED -DHAVE_FUNC_ATTRIBUTE_RETURNS_NONNULL -DHAVE_FUNC_ATTRIBUTE_NORETURN -DHAVE_FUNC_ATTRIBUTE_COLD -DHAVE_FUNC_ATTRIBUTE_VISIBILITY -DHAVE_UINT128 -DHAVE_FMEMOPEN -DUSE_GCC_ATOMIC_BUILTINS -DHAS_SCHED_H -DHAVE_SYS_SYSCTL_H -DHAVE_XLOCALE_H -DHAVE_ENDIAN_H -DHAVE_DLFCN_H -DHAVE_SYS_SHM_H -DHAVE_CET_H -DHAVE_POLL_H -DHAVE_STRTOF -DHAVE_MKOSTEMP -DHAVE_FLOCK -DHAVE_STRTOK_R -DHAVE_SYSCONF -DHAVE_SC_PHYS_PAGES -DHAVE_BSD_QSORT_R -DHAVE_STRUCT_TIMESPEC -DHAVE_POSIX_MEMALIGN -DHAVE_DIRENT_D_TYPE -DHAVE_STRTOD_L -DHAVE_DLADDR -DHAVE_ZLIB -DHAVE_COMPRESSION -DHAVE_PTHREAD -DDRAW_LLVM_AVAILABLE=0 -DAMD_LLVM_AVAILABLE=0 -DGALLIVM_USE_ORCJIT=0 -DTHREAD_SANITIZER=0 -DHAVE_DRI2 -DHAVE_RENDERDOC_INTEGRATION=0 -target arm64-apple-xros26.0 -isysroot /Applications/Xcode_26.6.app/Contents/Developer/Platforms/XROS.platform/Developer/SDKs/XROS26.5.sdk -DXXH_FORCE_ALIGN_CHECK=0 -DXXH_FORCE_MEMORY_ACCESS=0 -DVK_USE_PLATFORM_MACOS_MVK -DVK_USE_PLATFORM_METAL_EXT -MD -MQ src/vulkan/wsi/libvulkan_wsi.a.p/wsi_common_metal_layer.m.o -MF src/vulkan/wsi/libvulkan_wsi.a.p/wsi_common_metal_layer.m.o.d -o src/vulkan/wsi/libvulkan_wsi.a.p/wsi_common_metal_layer.m.o -c ../src/vulkan/wsi/wsi_common_metal_layer.m
-1598:../src/vulkan/wsi/wsi_common_metal_layer.m:142:16: error: 'displaySyncEnabled' is unavailable: not available on visionOS
-1599-  142 |    metal_layer.displaySyncEnabled = !enable_immediate;
-1600-      |                ^
-1601-/Applications/Xcode_26.6.app/Contents/Developer/Platforms/XROS.platform/Developer/SDKs/XROS26.5.sdk/System/Library/Frameworks/QuartzCore.framework/Headers/CAMetalLayer.h:143:16: note: 'displaySyncEnabled' has been explicitly marked unavailable here
-1602-  143 | @property BOOL displaySyncEnabled
-1603-      |                ^
-1604:../src/vulkan/wsi/wsi_common_metal_layer.m:173:19: error: 'displaySyncEnabled' is unavailable: not available on visionOS
-1605-  173 |       metal_layer.displaySyncEnabled = !enable_immediate;
-1606-      |                   ^
-1607-/Applications/Xcode_26.6.app/Contents/Developer/Platforms/XROS.platform/Developer/SDKs/XROS26.5.sdk/System/Library/Frameworks/QuartzCore.framework/Headers/CAMetalLayer.h:143:16: note: 'displaySyncEnabled' has been explicitly marked unavailable here
-1608-  143 | @property BOOL displaySyncEnabled
-1609-      |                ^
-1610-2 errors generated.
+1675-[558/559] Linking static target src/kosmickrisp/vulkan/libkk.a
+1676-[559/559] Linking target src/kosmickrisp/vulkan/libvulkan_kosmickrisp.dylib
+1677:FAILED: [code=1] src/kosmickrisp/vulkan/libvulkan_kosmickrisp.dylib 
+1678-/Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang++  -o src/kosmickrisp/vulkan/libvulkan_kosmickrisp.dylib  -Wl,-dead_strip_dylibs -Wl,-headerpad_max_install_names -shared -Wl,-install_name,@rpath/libvulkan_kosmickrisp.dylib -Wl,-force_load src/kosmickrisp/vulkan/libkk.a -target arm64-apple-xros26.0 -isysroot /Applications/Xcode_26.6.app/Contents/Developer/Platforms/XROS.platform/Developer/SDKs/XROS26.5.sdk src/compiler/nir/libnir.a src/compiler/libcompiler.a src/util/libmesa_util.a src/util/libmesa_util_simd.a src/util/blake3/libblake3.a src/c11/impl/libmesa_util_c11.a src/vulkan/util/libvulkan_util.a src/compiler/spirv/libvtn.a src/kosmickrisp/compiler/libmsl_compiler.a src/kosmickrisp/bridge/libmtl_bridge.a src/kosmickrisp/libkk/liblibkk_shaders.a src/poly/nir/liblibpoly_nir.a src/util/libxmlconfig.a -framework Metal -framework Foundation -framework QuartzCore -framework IOSurface -Wl,-install_name,@rpath/KosmicKrisp.framework/KosmicKrisp -lz -lm -framework QuartzCore -framework Metal -lz -lz -framework QuartzCore -framework Metal -lz -lz -lz -framework QuartzCore -framework Metal -lz -framework Foundation -lz -lz -lz
+1679:ld: warning: ignoring duplicate libraries: '-lz'
+1680-Undefined symbols for architecture arm64:
+1681-  "_CGColorSpaceCreateWithName", referenced from:
+1682-      _wsi_metal_layer_configure in libkk.a[70](wsi_common_metal_layer.m.o)
+1683-  "_CGColorSpaceRelease", referenced from:
+1684-      _wsi_metal_layer_configure in libkk.a[70](wsi_common_metal_layer.m.o)
+1685-  "_kCGColorSpaceAdobeRGB1998", referenced from:
+--
+7753-  "_wsi_WriteSamplerDescriptorsEXT", referenced from:
+7754-      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
+7755:ld: symbol(s) not found for architecture arm64
+7756:clang++: error: linker command failed with exit code 1 (use -v to see invocation)
+7757-ninja: build stopped: cannot make progress due to previous errors.
+7758-INFO: autodetecting backend as ninja
+7759-INFO: calculating backend command to run: /opt/homebrew/bin/ninja -C /Users/runner/work/AstroVisionPro/AstroVisionPro/build/visionos/kosmickrisp-src/mesa/build-xros -k0 src/kosmickrisp/vulkan/libvulkan_kosmickrisp.dylib
 ### end
-[351/559] Compiling C object src/compiler/nir/libnir.a.p/nir_phi_builder.c.o
-[352/559] Compiling C object src/compiler/nir/libnir.a.p/nir_passthrough_gs.c.o
-[353/559] Compiling C object src/compiler/nir/libnir.a.p/nir_passthrough_tcs.c.o
-[354/559] Compiling C object src/compiler/nir/libnir.a.p/nir_propagate_invariant.c.o
-[355/559] Compiling C object src/compiler/nir/libnir.a.p/nir_recompute_io_bases.c.o
-[356/559] Compiling C object src/compiler/nir/libnir.a.p/nir_range_analysis.c.o
-[357/559] Compiling C object src/compiler/nir/libnir.a.p/nir_opt_varyings.c.o
-[358/559] Compiling C object src/compiler/nir/libnir.a.p/nir_remove_dead_variables.c.o
-[359/559] Compiling C object src/compiler/nir/libnir.a.p/nir_repair_ssa.c.o
-[360/559] Compiling C object src/compiler/nir/libnir.a.p/nir_print.c.o
-[361/559] Compiling C object src/compiler/nir/libnir.a.p/nir_remove_tex_shadow.c.o
-[362/559] Compiling C object src/compiler/nir/libnir.a.p/nir_remove_outputs.c.o
-[363/559] Compiling C object src/compiler/nir/libnir.a.p/nir_scale_fdiv.c.o
-[364/559] Compiling C object src/compiler/nir/libnir.a.p/nir_separate_merged_clip_cull_io.c.o
-[365/559] Compiling C object src/compiler/nir/libnir.a.p/nir_schedule.c.o
-[366/559] Compiling C object src/compiler/nir/libnir.a.p/nir_shader_bisect.c.o
-[367/559] Compiling C object src/compiler/nir/libnir.a.p/nir_search.c.o
-[368/559] Compiling C object src/compiler/nir/libnir.a.p/nir_split_conversions.c.o
-[369/559] Compiling C object src/compiler/nir/libnir.a.p/nir_split_64bit_vec3_and_vec4.c.o
-[370/559] Compiling C object src/compiler/nir/libnir.a.p/nir_split_per_member_structs.c.o
-[371/559] Compiling C object src/compiler/nir/libnir.a.p/nir_sweep.c.o
-[372/559] Compiling C object src/compiler/nir/libnir.a.p/nir_serialize.c.o
-[373/559] Compiling C object src/compiler/nir/libnir.a.p/nir_split_var_copies.c.o
-[374/559] Compiling C object src/compiler/nir/libnir.a.p/nir_to_lcssa.c.o
-[375/559] Compiling C object src/compiler/nir/libnir.a.p/nir_use_dominance.c.o
-[376/559] Compiling C object src/compiler/nir/libnir.a.p/nir_validate.c.o
-[377/559] Compiling C object src/compiler/nir/libnir.a.p/nir_trivialize_registers.c.o
-[378/559] Compiling C object src/compiler/nir/libnir.a.p/nir_worklist.c.o
-[379/559] Compiling C object src/compiler/nir/libnir.a.p/nir_split_vars.c.o
-[380/559] Compiling C object src/compiler/nir/libnir.a.p/nir_unlower_io_to_vars.c.o
-[381/559] Compiling C object src/compiler/spirv/libvtn.a.p/meson-generated_.._spirv_info.c.o
-[382/559] Compiling C object src/compiler/nir/libnir.a.p/nir_lower_atomics.c.o
-[383/559] Compiling C object src/compiler/spirv/libvtn.a.p/meson-generated_.._vtn_gather_types.c.o
-[384/559] Compiling C object src/compiler/spirv/libvtn.a.p/gl_spirv.c.o
-[385/559] Compiling C object src/compiler/spirv/libvtn.a.p/vtn_amd.c.o
-[386/559] Compiling C object src/compiler/spirv/libvtn.a.p/vtn_cfg.c.o
-[387/559] Compiling C object src/compiler/spirv/libvtn.a.p/vtn_alu.c.o
-[388/559] Generating src/compiler/nir/nir_opt_algebraic with a custom command
-[389/559] Compiling C object src/compiler/spirv/libvtn.a.p/vtn_debug.c.o
-[390/559] Compiling C object src/compiler/spirv/libvtn.a.p/vtn_cmat.c.o
-[391/559] Compiling C object src/compiler/spirv/libvtn.a.p/vtn_glsl450.c.o
-[392/559] Compiling C object src/compiler/spirv/libvtn.a.p/vtn_opencl.c.o
-[393/559] Compiling C object src/compiler/spirv/libvtn.a.p/vtn_subgroup.c.o
-[394/559] Compiling C object src/compiler/spirv/libvtn.a.p/vtn_structured_cfg.c.o
-[395/559] Compiling C++ object src/poly/nir/liblibpoly_nir.a.p/meson-generated_.._.._cl_libpoly.cpp.o
-[396/559] Compiling C object src/compiler/spirv/libvtn.a.p/spirv_to_nir.c.o
-[397/559] Compiling C object src/poly/nir/liblibpoly_nir.a.p/poly_nir_lower_sysvals.c.o
-[398/559] Compiling C object src/poly/nir/liblibpoly_nir.a.p/poly_nir_lower_tess.c.o
-[399/559] Compiling C object src/poly/nir/liblibpoly_nir.a.p/poly_nir_lower_vs.c.o
-[400/559] Compiling C object src/compiler/spirv/libvtn.a.p/vtn_variables.c.o
-[401/559] Compiling C object src/poly/nir/liblibpoly_nir.a.p/poly_nir_lower_gs.c.o
-[402/559] Compiling C object src/vulkan/util/libvulkan_util.a.p/meson-generated_.._vk_extensions.c.o
-[403/559] Compiling C object src/poly/nir/liblibpoly_nir.a.p/poly_nir_passthrough_gs.c.o
-[404/559] Compiling C object src/vulkan/util/libvulkan_util.a.p/vk_alloc.c.o
-[405/559] Compiling C object src/vulkan/util/libvulkan_util.a.p/vk_format.c.o
-[406/559] Compiling C object src/vulkan/util/libvulkan_util.a.p/vk_util.c.o
-[407/559] Compiling C object src/vulkan/runtime/libvulkan_lite_runtime.a.p/meson-generated_.._vk_cmd_enqueue_entrypoints.c.o
-[408/559] Compiling C object src/vulkan/runtime/libvulkan_lite_runtime.a.p/meson-generated_.._vk_common_entrypoints.c.o
-[409/559] Compiling C object src/vulkan/util/libvulkan_util.a.p/meson-generated_.._vk_dispatch_table.c.o
-[410/559] Compiling C object src/vulkan/runtime/libvulkan_lite_runtime.a.p/meson-generated_.._vk_format_info.c.o
-[411/559] Compiling C object src/vulkan/runtime/libvulkan_lite_runtime.a.p/meson-generated_.._vk_dispatch_trampolines.c.o
-[412/559] Compiling C object src/vulkan/util/libvulkan_util.a.p/meson-generated_.._vk_enum_to_str.c.o
-[413/559] Compiling C object src/vulkan/runtime/libvulkan_lite_runtime.a.p/meson-generated_.._vk_physical_device_spirv_caps.c.o
-[414/559] Compiling C object src/vulkan/runtime/libvulkan_lite_runtime.a.p/meson-generated_.._vk_synchronization_helpers.c.o
-[415/559] Compiling C object src/vulkan/runtime/libvulkan_lite_runtime.a.p/rmv_vk_rmv_common.c.o
-[416/559] Compiling C object src/vulkan/runtime/libvulkan_lite_runtime.a.p/meson-generated_.._vk_physical_device_properties.c.o
-[417/559] Compiling C object src/vulkan/runtime/libvulkan_lite_runtime.a.p/vk_blend.c.o
-[418/559] Compiling C object src/vulkan/runtime/libvulkan_lite_runtime.a.p/rmv_vk_rmv_exporter.c.o
-[419/559] Compiling C object src/vulkan/runtime/libvulkan_lite_runtime.a.p/vk_buffer.c.o
-[420/559] Compiling C object src/vulkan/runtime/libvulkan_lite_runtime.a.p/vk_buffer_view.c.o
-[421/559] Compiling C object src/vulkan/runtime/libvulkan_lite_runtime.a.p/vk_cmd_copy.c.o
-[422/559] Compiling C object src/vulkan/runtime/libvulkan_lite_runtime.a.p/vk_cmd_enqueue.c.o
-[423/559] Compiling C object src/vulkan/runtime/libvulkan_lite_runtime.a.p/vk_command_pool.c.o
-[424/559] Compiling C object src/vulkan/runtime/libvulkan_lite_runtime.a.p/vk_debug_report.c.o
-[425/559] Compiling C object src/vulkan/runtime/libvulkan_lite_runtime.a.p/vk_command_buffer.c.o
-[426/559] Compiling C object src/vulkan/runtime/libvulkan_lite_runtime.a.p/vk_deferred_operation.c.o
-[427/559] Compiling C object src/vulkan/runtime/libvulkan_lite_runtime.a.p/vk_debug_utils.c.o
-[428/559] Compiling C object src/vulkan/runtime/libvulkan_lite_runtime.a.p/vk_descriptor_set_layout.c.o
-[429/559] Compiling C object src/vulkan/runtime/libvulkan_lite_runtime.a.p/vk_descriptors.c.o
-[430/559] Compiling C object src/vulkan/runtime/libvulkan_lite_runtime.a.p/vk_descriptor_update_template.c.o
-[431/559] Compiling C object src/vulkan/runtime/libvulkan_lite_runtime.a.p/vk_device_generated_commands.c.o
-[432/559] Compiling C object src/vulkan/runtime/libvulkan_lite_runtime.a.p/vk_device.c.o
-[433/559] Compiling C object src/vulkan/runtime/libvulkan_lite_runtime.a.p/meson-generated_.._vk_cmd_queue.c.o
-[434/559] Compiling C object src/vulkan/runtime/libvulkan_lite_runtime.a.p/vk_device_memory.c.o
-[435/559] Compiling C object src/vulkan/runtime/libvulkan_lite_runtime.a.p/vk_framebuffer.c.o
-[436/559] Compiling C object src/vulkan/runtime/libvulkan_lite_runtime.a.p/vk_fence.c.o
-[437/559] Compiling C object src/vulkan/runtime/libvulkan_lite_runtime.a.p/vk_log.c.o
-[438/559] Compiling C object src/vulkan/runtime/libvulkan_lite_runtime.a.p/vk_meta_object_list.c.o
-[439/559] Compiling C object src/vulkan/runtime/libvulkan_lite_runtime.a.p/vk_image.c.o
-[440/559] Compiling C object src/vulkan/runtime/libvulkan_lite_runtime.a.p/vk_object.c.o
-[441/559] Compiling C object src/vulkan/runtime/libvulkan_lite_runtime.a.p/vk_physical_device.c.o
-[442/559] Compiling C object src/vulkan/runtime/libvulkan_lite_runtime.a.p/vk_pipeline_layout.c.o
-[443/559] Compiling C object src/vulkan/runtime/libvulkan_lite_runtime.a.p/vk_query_pool.c.o
-[444/559] Compiling C object src/vulkan/runtime/libvulkan_lite_runtime.a.p/vk_graphics_state.c.o
-[445/559] Compiling C object src/vulkan/runtime/libvulkan_lite_runtime.a.p/vk_queue.c.o
-[446/559] Compiling C object src/vulkan/runtime/libvulkan_lite_runtime.a.p/vk_sampler.c.o
-[447/559] Compiling C object src/vulkan/runtime/libvulkan_lite_runtime.a.p/vk_standard_sample_locations.c.o
-[448/559] Compiling C object src/vulkan/runtime/libvulkan_lite_runtime.a.p/vk_semaphore.c.o
-[449/559] Compiling C object src/vulkan/runtime/libvulkan_lite_runtime.a.p/vk_sync.c.o
-[450/559] Compiling C object src/vulkan/runtime/libvulkan_lite_runtime.a.p/vk_sync_binary.c.o
-[451/559] Compiling C object src/vulkan/runtime/libvulkan_lite_runtime.a.p/vk_render_pass.c.o
-[452/559] Compiling C object src/vulkan/runtime/libvulkan_lite_runtime.a.p/vk_sync_dummy.c.o
-[453/559] Compiling C object src/vulkan/runtime/libvulkan_lite_runtime.a.p/vk_sync_timeline.c.o
-[454/559] Compiling C object src/vulkan/runtime/libvulkan_lite_runtime.a.p/vk_synchronization.c.o
-[455/559] Compiling C object src/vulkan/runtime/libvulkan_lite_runtime.a.p/vk_ycbcr_conversion.c.o
-[456/559] Compiling C object src/vulkan/runtime/libvulkan_runtime.a.p/vk_meta.c.o
-[457/559] Compiling C object src/compiler/nir/libnir.a.p/meson-generated_.._nir_opt_algebraic.c.o
-[458/559] Compiling C object src/vulkan/runtime/libvulkan_runtime.a.p/vk_meta_blit_resolve.c.o
-[459/559] Compiling C object src/vulkan/runtime/libvulkan_runtime.a.p/vk_meta_clear.c.o
-[460/559] Compiling C object src/vulkan/runtime/libvulkan_runtime.a.p/vk_nir.c.o
-[461/559] Compiling C object src/vulkan/runtime/libvulkan_runtime.a.p/vk_meta_draw_rects.c.o
-[462/559] Compiling C object src/vulkan/runtime/libvulkan_runtime.a.p/vk_nir_convert_ycbcr.c.o
-[463/559] Compiling C object src/vulkan/runtime/libvulkan_runtime.a.p/vk_nir_lower_descriptor_heaps.c.o
-[464/559] Compiling C object src/vulkan/runtime/libvulkan_runtime.a.p/vk_meta_copy_fill_update.c.o
-[465/559] Compiling C object src/vulkan/runtime/libvulkan_runtime.a.p/vk_pipeline_cache.c.o
-[466/559] Compiling C object src/vulkan/runtime/libvulkan_runtime.a.p/vk_shader_module.c.o
-[467/559] Compiling C object src/vulkan/runtime/libvulkan_runtime.a.p/vk_shader.c.o
-[468/559] Compiling C object src/vulkan/runtime/libvulkan_instance.a.p/vk_instance.c.o
-[469/559] Compiling C object src/vulkan/runtime/libvulkan_lite_runtime.a.p/vk_video.c.o
-[470/559] Compiling C object src/vulkan/wsi/libvulkan_wsi.a.p/meson-generated_.._wsi_common_entrypoints.c.o
-[471/559] Compiling C object src/vulkan/wsi/libvulkan_wsi.a.p/wsi_common_headless.c.o
-[472/559] Compiling C object src/vulkan/runtime/libvulkan_runtime.a.p/vk_texcompress_etc2.c.o
-[473/559] Compiling C object src/vulkan/wsi/libvulkan_wsi.a.p/wsi_common_metal.c.o
-[474/559] Compiling C object src/vulkan/runtime/libvulkan_runtime.a.p/vk_pipeline.c.o
-[475/559] Compiling C object src/kosmickrisp/bridge/libmtl_bridge.a.p/vk_to_mtl_map.c.o
-[476/559] Compiling C object src/vulkan/wsi/libvulkan_wsi.a.p/wsi_common.c.o
-[477/559] Compiling Objective-C object src/kosmickrisp/bridge/libmtl_bridge.a.p/mtl_argument_table.m.o
-[478/559] Compiling Objective-C object src/vulkan/wsi/libvulkan_wsi.a.p/wsi_common_metal_layer.m.o
-FAILED: [code=1] src/vulkan/wsi/libvulkan_wsi.a.p/wsi_common_metal_layer.m.o 
-/Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -Isrc/vulkan/wsi/libvulkan_wsi.a.p -Isrc/vulkan/wsi -I../src/vulkan/wsi -Iinclude -I../include -Isrc -I../src -Isrc/vulkan/util -I../src/vulkan/util -Isrc/vulkan/runtime -I../src/vulkan/runtime -I../src/vulkan/runtime/bvh -Isrc/compiler/spirv -Isrc/util -Isrc/util/format -fvisibility=hidden -fdiagnostics-color=always -DNDEBUG -Wall -Winvalid-pch -std=c11 -O3 -D__STDC_CONSTANT_MACROS -D__STDC_FORMAT_MACROS -D__STDC_LIMIT_MACROS '-DPACKAGE_VERSION="26.3.0-devel"' -DHAVE_OPENGL=0 -DHAVE_OPENGL_ES_1=1 -DHAVE_OPENGL_ES_2=1 -DMESA_SYSTEM_HAS_KMS_DRM=0 -DBUILDING_MESA -DVK_ENABLE_BETA_EXTENSIONS -DVIDEO_CODEC_VC1DEC=0 -DVIDEO_CODEC_H264DEC=0 -DVIDEO_CODEC_H264ENC=0 -DVIDEO_CODEC_H265DEC=0 -DVIDEO_CODEC_H265ENC=0 -DVIDEO_CODEC_AV1DEC=1 -DVIDEO_CODEC_AV1ENC=1 -DVIDEO_CODEC_VP9DEC=1 -DVIDEO_CODEC_MPEG12DEC=1 -DVIDEO_CODEC_JPEGDEC=1 -DHAVE_MACOS_PLATFORM -DUSE_LIBGLVND=0 -DHAVE_GFX_COMPUTE -DGLAPI_EXPORT_PROTO_ENTRY_POINTS=1 -DALLOW_KCMP -DMESA_DEBUG=0 -DENABLE_SHADER_CACHE -DHAVE___BUILTIN_BSWAP32 -DHAVE___BUILTIN_BSWAP64 -DHAVE___BUILTIN_CLZ -DHAVE___BUILTIN_CLZLL -DHAVE___BUILTIN_CTZ -DHAVE___BUILTIN_EXPECT -DHAVE___BUILTIN_FFS -DHAVE___BUILTIN_FFSLL -DHAVE___BUILTIN_POPCOUNT -DHAVE___BUILTIN_POPCOUNTLL -DHAVE___BUILTIN_UNREACHABLE -DHAVE___BUILTIN_TYPES_COMPATIBLE_P -DHAVE___BUILTIN_ADD_OVERFLOW -DHAVE_FUNC_ATTRIBUTE_CONST -DHAVE_FUNC_ATTRIBUTE_FLATTEN -DHAVE_FUNC_ATTRIBUTE_MALLOC -DHAVE_FUNC_ATTRIBUTE_PURE -DHAVE_FUNC_ATTRIBUTE_UNUSED -DHAVE_FUNC_ATTRIBUTE_WARN_UNUSED_RESULT -DHAVE_FUNC_ATTRIBUTE_WEAK -DHAVE_FUNC_ATTRIBUTE_FORMAT -DHAVE_FUNC_ATTRIBUTE_PACKED -DHAVE_FUNC_ATTRIBUTE_RETURNS_NONNULL -DHAVE_FUNC_ATTRIBUTE_NORETURN -DHAVE_FUNC_ATTRIBUTE_COLD -DHAVE_FUNC_ATTRIBUTE_VISIBILITY -DHAVE_UINT128 -DHAVE_FMEMOPEN -DUSE_GCC_ATOMIC_BUILTINS -DHAS_SCHED_H -DHAVE_SYS_SYSCTL_H -DHAVE_XLOCALE_H -DHAVE_ENDIAN_H -DHAVE_DLFCN_H -DHAVE_SYS_SHM_H -DHAVE_CET_H -DHAVE_POLL_H -DHAVE_STRTOF -DHAVE_MKOSTEMP -DHAVE_FLOCK -DHAVE_STRTOK_R -DHAVE_SYSCONF -DHAVE_SC_PHYS_PAGES -DHAVE_BSD_QSORT_R -DHAVE_STRUCT_TIMESPEC -DHAVE_POSIX_MEMALIGN -DHAVE_DIRENT_D_TYPE -DHAVE_STRTOD_L -DHAVE_DLADDR -DHAVE_ZLIB -DHAVE_COMPRESSION -DHAVE_PTHREAD -DDRAW_LLVM_AVAILABLE=0 -DAMD_LLVM_AVAILABLE=0 -DGALLIVM_USE_ORCJIT=0 -DTHREAD_SANITIZER=0 -DHAVE_DRI2 -DHAVE_RENDERDOC_INTEGRATION=0 -target arm64-apple-xros26.0 -isysroot /Applications/Xcode_26.6.app/Contents/Developer/Platforms/XROS.platform/Developer/SDKs/XROS26.5.sdk -DXXH_FORCE_ALIGN_CHECK=0 -DXXH_FORCE_MEMORY_ACCESS=0 -DVK_USE_PLATFORM_MACOS_MVK -DVK_USE_PLATFORM_METAL_EXT -MD -MQ src/vulkan/wsi/libvulkan_wsi.a.p/wsi_common_metal_layer.m.o -MF src/vulkan/wsi/libvulkan_wsi.a.p/wsi_common_metal_layer.m.o.d -o src/vulkan/wsi/libvulkan_wsi.a.p/wsi_common_metal_layer.m.o -c ../src/vulkan/wsi/wsi_common_metal_layer.m
-../src/vulkan/wsi/wsi_common_metal_layer.m:142:16: error: 'displaySyncEnabled' is unavailable: not available on visionOS
-  142 |    metal_layer.displaySyncEnabled = !enable_immediate;
-      |                ^
-/Applications/Xcode_26.6.app/Contents/Developer/Platforms/XROS.platform/Developer/SDKs/XROS26.5.sdk/System/Library/Frameworks/QuartzCore.framework/Headers/CAMetalLayer.h:143:16: note: 'displaySyncEnabled' has been explicitly marked unavailable here
-  143 | @property BOOL displaySyncEnabled
-      |                ^
-../src/vulkan/wsi/wsi_common_metal_layer.m:173:19: error: 'displaySyncEnabled' is unavailable: not available on visionOS
-  173 |       metal_layer.displaySyncEnabled = !enable_immediate;
-      |                   ^
-/Applications/Xcode_26.6.app/Contents/Developer/Platforms/XROS.platform/Developer/SDKs/XROS26.5.sdk/System/Library/Frameworks/QuartzCore.framework/Headers/CAMetalLayer.h:143:16: note: 'displaySyncEnabled' has been explicitly marked unavailable here
-  143 | @property BOOL displaySyncEnabled
-      |                ^
-2 errors generated.
-[479/559] Compiling Objective-C object src/kosmickrisp/bridge/libmtl_bridge.a.p/mtl_bridge.m.o
-[480/559] Compiling Objective-C object src/kosmickrisp/bridge/libmtl_bridge.a.p/mtl_buffer.m.o
-[481/559] Compiling Objective-C object src/kosmickrisp/bridge/libmtl_bridge.a.p/mtl_command_buffer.m.o
-[482/559] Compiling C object src/vulkan/runtime/libvulkan_lite_runtime.a.p/meson-generated_.._vk_physical_device_features.c.o
-ninja: build stopped: subcommand failed.
+      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
+  "_wsi_LatencySleepNV", referenced from:
+      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
+  "_wsi_MapMemory", referenced from:
+      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
+  "_wsi_MapMemory2", referenced from:
+      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
+  "_wsi_MapMemory2KHR", referenced from:
+      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
+  "_wsi_MergePipelineCaches", referenced from:
+      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
+  "_wsi_MergeValidationCachesEXT", referenced from:
+      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
+  "_wsi_QueueBeginDebugUtilsLabelEXT", referenced from:
+      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
+  "_wsi_QueueBindSparse", referenced from:
+      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
+  "_wsi_QueueEndDebugUtilsLabelEXT", referenced from:
+      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
+  "_wsi_QueueInsertDebugUtilsLabelEXT", referenced from:
+      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
+  "_wsi_QueueNotifyOutOfBandLegacyNV", referenced from:
+      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
+  "_wsi_QueueNotifyOutOfBandNV", referenced from:
+      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
+  "_wsi_QueueSetPerfHintQCOM", referenced from:
+      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
+  "_wsi_QueueSetPerformanceConfigurationINTEL", referenced from:
+      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
+  "_wsi_QueueSubmit", referenced from:
+      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
+  "_wsi_QueueSubmit2", referenced from:
+      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
+  "_wsi_QueueSubmit2KHR", referenced from:
+      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
+  "_wsi_QueueWaitIdle", referenced from:
+      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
+  "_wsi_RegisterCustomBorderColorEXT", referenced from:
+      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
+  "_wsi_RegisterDeviceEventEXT", referenced from:
+      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
+  "_wsi_RegisterDisplayEventEXT", referenced from:
+      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
+  "_wsi_ReleaseCapturedPipelineDataKHR", referenced from:
+      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
+  "_wsi_ReleaseDisplayEXT", referenced from:
+      _wsi_physical_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
+  "_wsi_ReleasePerformanceConfigurationINTEL", referenced from:
+      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
+  "_wsi_ReleaseProfilingLockKHR", referenced from:
+      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
+  "_wsi_ReleaseSwapchainImagesEXT", referenced from:
+      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
+  "_wsi_ResetCommandBuffer", referenced from:
+      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
+  "_wsi_ResetCommandPool", referenced from:
+      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
+  "_wsi_ResetDescriptorPool", referenced from:
+      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
+  "_wsi_ResetEvent", referenced from:
+      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
+  "_wsi_ResetFences", referenced from:
+      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
+  "_wsi_ResetGpaSessionAMD", referenced from:
+      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
+  "_wsi_ResetQueryPool", referenced from:
+      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
+  "_wsi_ResetQueryPoolEXT", referenced from:
+      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
+  "_wsi_SetDebugUtilsObjectNameEXT", referenced from:
+      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
+  "_wsi_SetDebugUtilsObjectTagEXT", referenced from:
+      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
+  "_wsi_SetDeviceMemoryPriorityEXT", referenced from:
+      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
+  "_wsi_SetEvent", referenced from:
+      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
+  "_wsi_SetGpaDeviceClockModeAMD", referenced from:
+      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
+  "_wsi_SetLatencyMarkerLegacyNV", referenced from:
+      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
+  "_wsi_SetLatencyMarkerNV", referenced from:
+      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
+  "_wsi_SetLatencySleepModeLegacyNV", referenced from:
+      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
+  "_wsi_SetLatencySleepModeNV", referenced from:
+      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
+  "_wsi_SetLocalDimmingAMD", referenced from:
+      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
+  "_wsi_SetPrivateData", referenced from:
+      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
+  "_wsi_SetPrivateDataEXT", referenced from:
+      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
+  "_wsi_ShutdownLatencyDeviceLegacyNV", referenced from:
+      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
+  "_wsi_SignalSemaphore", referenced from:
+      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
+  "_wsi_SignalSemaphoreKHR", referenced from:
+      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
+  "_wsi_SubmitDebugUtilsMessageEXT", referenced from:
+      _wsi_instance_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
+  "_wsi_TransitionImageLayout", referenced from:
+      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
+  "_wsi_TransitionImageLayoutEXT", referenced from:
+      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
+  "_wsi_TrimCommandPool", referenced from:
+      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
+  "_wsi_TrimCommandPoolKHR", referenced from:
+      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
+  "_wsi_UninitializePerformanceApiINTEL", referenced from:
+      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
+  "_wsi_UnmapMemory", referenced from:
+      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
+  "_wsi_UnmapMemory2", referenced from:
+      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
+  "_wsi_UnmapMemory2KHR", referenced from:
+      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
+  "_wsi_UnregisterCustomBorderColorEXT", referenced from:
+      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
+  "_wsi_UpdateDescriptorSetWithTemplate", referenced from:
+      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
+  "_wsi_UpdateDescriptorSetWithTemplateKHR", referenced from:
+      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
+  "_wsi_UpdateDescriptorSets", referenced from:
+      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
+  "_wsi_UpdateIndirectExecutionSetPipelineEXT", referenced from:
+      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
+  "_wsi_UpdateIndirectExecutionSetShaderEXT", referenced from:
+      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
+  "_wsi_UpdateVideoSessionParametersKHR", referenced from:
+      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
+  "_wsi_WaitForFences", referenced from:
+      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
+  "_wsi_WaitSemaphores", referenced from:
+      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
+  "_wsi_WaitSemaphoresKHR", referenced from:
+      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
+  "_wsi_WriteAccelerationStructuresPropertiesKHR", referenced from:
+      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
+  "_wsi_WriteMicromapsPropertiesEXT", referenced from:
+      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
+  "_wsi_WriteResourceDescriptorsEXT", referenced from:
+      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
+  "_wsi_WriteSamplerDescriptorsEXT", referenced from:
+      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
+ld: symbol(s) not found for architecture arm64
+clang++: error: linker command failed with exit code 1 (use -v to see invocation)
+ninja: build stopped: cannot make progress due to previous errors.
 INFO: autodetecting backend as ninja
-INFO: calculating backend command to run: /opt/homebrew/bin/ninja -C /Users/runner/work/AstroVisionPro/AstroVisionPro/build/visionos/kosmickrisp-src/mesa/build-xros src/kosmickrisp/vulkan/libvulkan_kosmickrisp.dylib
+INFO: calculating backend command to run: /opt/homebrew/bin/ninja -C /Users/runner/work/AstroVisionPro/AstroVisionPro/build/visionos/kosmickrisp-src/mesa/build-xros -k0 src/kosmickrisp/vulkan/libvulkan_kosmickrisp.dylib
