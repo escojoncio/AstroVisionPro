@@ -37,6 +37,9 @@
 #include <mach-o/dyld.h>
 #include <mach/mach.h>
 #include <pthread.h>
+#if defined(SHADPS4_VISIONOS)
+#include <os/proc.h>
+#endif
 #endif
 
 namespace Core::GuestCpu {
@@ -406,7 +409,20 @@ void ReportPace(Clock::time_point now) {
     for (size_t i = 0; i < use.size() && i < 8; ++i) {
         text += fmt::format("{}{} {:.0f}%", i == 0 ? "" : ", ", use[i].name, use[i].percent);
     }
-    LOG_INFO(Core, "PACE: {:.1f} guest frames/s; CPU {:.0f}% in all: {}", fps, total, text);
+    // The memory the system counts against the process, and (on the headset) how much more it
+    // allows before it ends the process without a word: what a game that disappears ran out of.
+    std::string memory;
+    task_vm_info_data_t vm_info{};
+    mach_msg_type_number_t vm_count = TASK_VM_INFO_COUNT;
+    if (task_info(mach_task_self(), TASK_VM_INFO, reinterpret_cast<task_info_t>(&vm_info),
+                  &vm_count) == KERN_SUCCESS) {
+        memory = fmt::format("; memory {} MB", vm_info.phys_footprint >> 20);
+#if defined(SHADPS4_VISIONOS)
+        memory += fmt::format(", {} MB left", u64(os_proc_available_memory()) >> 20);
+#endif
+    }
+    LOG_INFO(Core, "PACE: {:.1f} guest frames/s; CPU {:.0f}% in all: {}{}", fps, total, text,
+             memory);
     if (fps < 10.0 && fps > 0.0 && !use.empty() && profiles_taken < 6 &&
         now - last_profile > std::chrono::seconds{20}) {
         ++profiles_taken;
