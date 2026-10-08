@@ -16,6 +16,7 @@
 #include "common/logging/log.h"
 #include "common/path_util.h"
 #include "common/thread.h"
+#include "core/address_space.h"
 
 #if defined(__linux__) && defined(__aarch64__)
 #define WATCHDOG_NATIVE_STACKS 1
@@ -418,7 +419,9 @@ void ReportPace(Clock::time_point now) {
                   &vm_count) == KERN_SUCCESS) {
         memory = fmt::format("; memory {} MB", vm_info.phys_footprint >> 20);
 #if defined(SHADPS4_VISIONOS)
-        memory += fmt::format(", {} MB left", u64(os_proc_available_memory()) >> 20);
+        memory += fmt::format(", {} MB left; the console's memory in RAM {} MB",
+                              u64(os_proc_available_memory()) >> 20,
+                              Core::ResidentConsoleMemory() >> 20);
 #endif
     }
     LOG_INFO(Core, "PACE: {:.1f} guest frames/s; CPU {:.0f}% in all: {}{}", fps, total, text,
