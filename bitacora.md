@@ -5,7 +5,7 @@ Base: shadPS4 ARM64 (`shadps4-arm64-main/`) + FEXCore (x86-64 → ARM64) + Molte
 App visionOS en `visionos/` (SwiftUI + Compositor Services + ARKit + GameController).
 JIT: arena RWX preparada por StikDebug (protocolo `brk #0xf00d` + universal.js); la app hace detach al terminar.
 
-## Estado tras la última build (commit 749ad2e, release `visionos-latest`)
+## Estado tras la última build probada en el dispositivo (commit 749ad2e)
 
 Funciona en el dispositivo:
 - Arranque completo del juego bajo FEX: carga de módulos, main de ASOBI, salas, audio (se oye).
@@ -31,9 +31,19 @@ No funciona / pendiente:
 - `vk_pipeline_cache.cpp` `LogGsBypassShaders` (visionOS): por cada par ES/GS (máx. 6) escribe `GS_INFO` (hashes, tamaños, itemsize ESGS/GSVS, max out, instancias, slices del color target 0, viewports activos) y `GS_CODE <es|gs|copy> <hash> <offset>: <dwords hex>`. Para desensamblar offline con el decoder GCN del repo.
 - `guest_watchdog.cpp` `ReportPace` (Apple): cada 5 s `PACE: <fps> guest frames/s; CPU <total>% in all: <hilo> <%>...` (tiempo de CPU por hilo vía `THREAD_BASIC_INFO`). Si fps < 10: hasta 6 veces por sesión, 12 muestras de pila nativa de los 2 hilos más ocupados (`PACE_SAMPLE`). Simbolizar con `atos -o <binario del IPA> -l 0x100000000`.
 
-### Hallazgo para el GS (decisión pendiente de aplicar)
-- KosmicKrisp (Mesa, el driver Vulkan-sobre-Metal que usa shadPS4 en macOS; submódulo `externals/mesa-kosmickrisp` → `shadexternals/mesa`) declara `geometryShader = true`, `tessellationShader`, `multiViewport`, `shaderOutputLayer/ViewportIndex` (`src/kosmickrisp/vulkan/kk_physical_device.c`), emulando GS por compute (`src/kosmickrisp/libkk/kk_geometry.cl`, `src/poly`). MoltenVK no tiene GS.
-- Para visionOS habría que: compilar Mesa para `xros` (crossfile meson), sustituir `MTLCopyAllDevices` (solo macOS, `bridge/mtl_device.m`) por `MTLCreateSystemDefaultDevice`, revisar `mach_vm_remap` (`vulkan/kk_bo.c`), enlazar estático sin loader (`vk_icdGetInstanceProcAddr`), y cambiar la exportación de texturas del visor de `VK_EXT_metal_objects` a `VK_EXT_external_memory_metal`.
+### KosmicKrisp en visionOS (commit siguiente a e838b6e)
+- Motivo: KosmicKrisp (Mesa; el driver Vulkan-sobre-Metal de shadPS4 en macOS) declara `geometryShader`, `tessellationShader`, `multiViewport`, `shaderOutputLayer/ViewportIndex` (`src/kosmickrisp/vulkan/kk_physical_device.c`); emula GS por compute (`libkk/kk_geometry.cl`, `src/poly`). MoltenVK no tiene GS → con KK desaparece el bypass (`GS_BYPASS` ya no debería salir).
+- `visionos/patches/kosmickrisp-visionos.patch` sobre `shadexternals/mesa` `b628375` (el commit que fija `mesa-kosmickrisp`):
+  - `bridge/mtl_device.m`: fuera de macOS, `MTLCreateSystemDefaultDevice()` (exige `MTLGPUFamilyMetal4`).
+  - `vulkan/kk_bo.c`: fuera de macOS, `mach_vm_*` → `vm_*` (sin `mach_vm.h`).
+  - `vulkan/kk_image.c` + `kk_physical_device.c`: `VK_EXT_metal_objects` mínimo (`kk_ExportMetalObjectsEXT`: `mtlDevice`, `mtlTexture` de imagen o vista). Lo usa `openxr_host_visionos.mm` para entregar fotogramas al visor.
+  - `meson.options` + `vulkan/meson.build`: opción `kosmickrisp-embedded` (enlaza Metal/Foundation/QuartzCore/IOSurface en vez de `-undefined dynamic_lookup`; install name `@rpath/KosmicKrisp.framework/KosmicKrisp`).
+  - Regenerar: aplicar en un clon de Mesa, editar, `git diff > visionos/patches/kosmickrisp-visionos.patch`.
+- `visionos/scripts/build-kosmickrisp.sh`: herramientas nativas (`mesa_clc`, `vtn_bindgen2`, `kk_clc`; brew llvm/spirv-llvm-translator/libclc) → cross a `arm64-apple-xros26.0` (crossfile generado) → `build/visionos/kosmickrisp/KosmicKrisp.framework` (Info.plist binario, id `org.mesa3d.kosmickrisp`). STAMP = commit + sha del patch + deployment target.
+- CI (`visionos-app.yml`): caché `kosmickrisp-visionos-<hash patch+script>`; paso con `continue-on-error` (si falla, la app sale con MoltenVK); el framework se copia a `AstroQuest.app/Frameworks/` antes del zip; log `kosmickrisp.log` publicado en `ci-logs`. La clave de caché del core excluye el patch y el script de KK.
+- `vk_platform.cpp` `LoadKosmicKrisp()` (visionOS): `dlopen(<dir del ejecutable>/Frameworks/KosmicKrisp.framework/KosmicKrisp)`, `vk_icdNegotiateLoaderICDInterfaceVersion(7)`, `vk_icdGetInstanceProcAddr` como entrada del dispatcher; si falta o `SHADPS4_VK_DRIVER=moltenvk`, MoltenVK enlazado. Log: `Vulkan driver: KosmicKrisp|MoltenVK`.
+- App: ajuste `vulkan_driver=kosmickrisp|moltenvk` en `settings.txt` → `SHADPS4_VK_DRIVER`.
+- Sin probar aún: compilación de Mesa para xros, carga del framework firmado por SideStore, creación de instancia sin loader.
 
 ## Cambios por archivo (sesión de depuración en dispositivo)
 
@@ -84,7 +94,7 @@ No funciona / pendiente:
 
 ## Pendiente (orden recomendado)
 1. **Probar build de esta sesión**: ¿pasa la pantalla de calibración? Recoger del log `GS_INFO`/`GS_CODE` y `PACE`/`PACE_SAMPLE`.
-2. **GS → KosmicKrisp en visionOS** (ver "Hallazgo para el GS"). Alternativa si no compila para xros: emulación propia por compute partiendo de `ring_access_elimination.cpp`.
+2. **GS con KosmicKrisp**: revisar `kosmickrisp.log` en `ci-logs` si no compila para xros; en el dispositivo, buscar `Vulkan driver:` y errores de instancia/dispositivo. Alternativa si KK no es viable: emulación propia por compute partiendo de `ring_access_elimination.cpp`.
 3. **Rendimiento**: decidir con `PACE` si los tramos de 3 fps son CPU invitada (Game:*), procesador de comandos (GpuCommandProcessor) o GPU (ningún hilo ocupado). Considerar `Log sync` desactivado y bajar a DEBUG los `Kernel.Fs open/close`.
 4. Texturas BC6H/BC7 con uso Storage que MoltenVK no crea (`image.cpp:247`).
 5. Quitar borde azul; activar caché de pipelines en disco.
