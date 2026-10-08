@@ -496,9 +496,16 @@ public:
         pass_open = true;
     }
 
-    void PassDraw() {
+    void PassDraw(u64 gs_hash) {
         if (pass_open) {
-            ++blocks[current].passes.back().draws;
+            Pass& pass = blocks[current].passes.back();
+            ++pass.draws;
+            if (gs_hash != 0) {
+                ++pass.gs_draws;
+            }
+        }
+        if (gs_hash != 0) {
+            ++gs_draws_by_hash[gs_hash];
         }
     }
 
@@ -583,6 +590,7 @@ public:
                 totals.ms += ms;
                 totals.count += 1;
                 totals.draws += pass.draws;
+                totals.gs_draws += pass.gs_draws;
                 totals.pass = pass;
                 in_passes += ms;
             }
@@ -618,13 +626,13 @@ public:
             for (size_t i = 0; i < sorted.size() && i < 10; ++i) {
                 const Totals& t = sorted[i].second;
                 text += fmt::format("{}{}x{}{} {} colour{}{}: {:.1f} ms/s in {:.0f} passes/s, "
-                                    "{:.0f} draws/s",
+                                    "{:.0f} draws/s ({:.0f} with a GS)",
                                     i == 0 ? "" : "; ", t.pass.width, t.pass.height,
                                     t.pass.layers > 1 ? fmt::format("x{}", t.pass.layers)
                                                       : std::string{},
                                     t.pass.colors, t.pass.colors == 1 ? "" : "s",
                                     t.pass.depth ? " +depth" : "", t.ms / seconds,
-                                    t.count / seconds, t.draws / seconds);
+                                    t.count / seconds, t.draws / seconds, t.gs_draws / seconds);
             }
             LOG_INFO(Render_Vulkan,
                      "GPU_PASSES[{}]: {:.1f} ms/s outside passes (compute, copies), {} kinds of "
@@ -634,6 +642,22 @@ public:
                          ? fmt::format(" ({} passes without a usable time, {} untimed)",
                                        unusable_passes, untimed_passes)
                          : std::string{});
+        }
+        if (!gs_draws_by_hash.empty()) {
+            // Each geometry shader's draws: in KosmicKrisp every one of them ends the Metal render
+            // pass, runs the vertex and geometry shaders as compute work and begins the pass again.
+            std::vector<std::pair<u64, u64>> sorted(gs_draws_by_hash.begin(),
+                                                    gs_draws_by_hash.end());
+            std::ranges::sort(sorted, [](const auto& a, const auto& b) {
+                return a.second > b.second;
+            });
+            std::string text;
+            for (size_t i = 0; i < sorted.size() && i < 8; ++i) {
+                text += fmt::format("{}{:#x} {:.0f}/s", i == 0 ? "" : ", ", sorted[i].first,
+                                    double(sorted[i].second) / seconds);
+            }
+            LOG_INFO(Render_Vulkan, "GS_DRAWS[{}]: {}", id, text);
+            gs_draws_by_hash.clear();
         }
         since = now;
         busy_ms = 0.0;
@@ -659,6 +683,7 @@ private:
         u16 colors;
         bool depth;
         u32 draws;
+        u32 gs_draws;
 
         u64 Key() const {
             return u64(width) | (u64(height) << 16) | (u64(layers & 0xff) << 32) |
@@ -675,6 +700,7 @@ private:
         double ms{};
         double count{};
         double draws{};
+        double gs_draws{};
         Pass pass{};
     };
     static inline std::atomic<u32> next_id{};
@@ -690,6 +716,7 @@ private:
     bool pass_open{};
     std::vector<u32> order;
     std::unordered_map<u64, Totals> pass_totals;
+    std::unordered_map<u64, u64> gs_draws_by_hash;
     std::chrono::steady_clock::time_point since{};
     double busy_ms{};
     double longest_ms{};
@@ -850,10 +877,10 @@ void Scheduler::EndRendering(std::source_location where) {
     }
 }
 
-void Scheduler::NoteDraw() {
+void Scheduler::NoteDraw(u64 gs_hash) {
     ++draws_since_flush;
     if (gpu_timer) {
-        gpu_timer->PassDraw();
+        gpu_timer->PassDraw(gs_hash);
     }
 }
 

@@ -832,6 +832,28 @@ bool PipelineCache::RefreshGraphicsStages() {
         if (!bind_stage(Stage::Geometry, LogicalStage::Geometry)) {
             return false;
         }
+#if defined(SHADPS4_VISIONOS)
+        {
+            // Which console shader each GS_DRAWS hash is, and (the first few) its code.
+            static std::mutex named_mutex;
+            static std::vector<size_t> named;
+            const size_t hash = key.stage_hashes[static_cast<u32>(LogicalStage::Geometry)];
+            bool is_new = false;
+            {
+                std::scoped_lock lock{named_mutex};
+                if (named.size() < 64 && std::ranges::find(named, hash) == named.end()) {
+                    named.push_back(hash);
+                    is_new = true;
+                }
+            }
+            if (is_new) {
+                LOG_INFO(Render_Vulkan, "GS_HASH {:#x}: es {:#x} gs {:#x}", hash,
+                         AmdGpu::GetParams(regs.es_program).hash,
+                         AmdGpu::GetParams(regs.gs_program).hash);
+                LogGsBypassShaders(regs);
+            }
+        }
+#endif
         break;
     case AmdGpu::ShaderStageEnable::VgtStages::LsHs:
         if (!instance.IsTessellationSupported()) {

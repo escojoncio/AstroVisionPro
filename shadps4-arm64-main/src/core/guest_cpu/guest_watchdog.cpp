@@ -659,15 +659,16 @@ void ReportPace(Clock::time_point now) {
     }
     LOG_INFO(Core, "PACE: {:.1f} guest frames/s; CPU {:.0f}% in all: {}{}", fps, total, text,
              memory);
-    // Every 30 s, and whenever the footprint grew by more than 256 MB since the last one (at
-    // most every 10 s): where the memory is.
+    // Every 2 minutes, and whenever the footprint grew by more than 512 MB since the last one
+    // (at most every 30 s): where the memory is. The walk over the regions takes about a
+    // quarter of a second with the game's ~70 000 of them.
     static Clock::time_point last_breakdown{};
     static u64 last_breakdown_footprint{};
     if (vm_count != 0 && vm_info.phys_footprint != 0) {
         const auto since = now - last_breakdown;
-        const bool grew = vm_info.phys_footprint > last_breakdown_footprint + (256ull << 20);
-        if (last_breakdown == Clock::time_point{} || since >= std::chrono::seconds{30} ||
-            (grew && since >= std::chrono::seconds{10})) {
+        const bool grew = vm_info.phys_footprint > last_breakdown_footprint + (512ull << 20);
+        if (last_breakdown == Clock::time_point{} || since >= std::chrono::seconds{120} ||
+            (grew && since >= std::chrono::seconds{30})) {
             last_breakdown = now;
             last_breakdown_footprint = vm_info.phys_footprint;
             LOG_INFO(Core, "MEMORY: {}", DescribeMemory(vm_info, vm_count));
