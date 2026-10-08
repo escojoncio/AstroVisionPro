@@ -5,7 +5,7 @@ Base: shadPS4 ARM64 (`shadps4-arm64-main/`) + FEXCore (x86-64 → ARM64) + Molte
 App visionOS en `visionos/` (SwiftUI + Compositor Services + ARKit + GameController).
 JIT: arena RWX preparada por StikDebug (protocolo `brk #0xf00d` + universal.js); la app hace detach al terminar.
 
-## Build 36ae80d probada (log 2026-10-08 15:41) y arreglos siguientes
+## Build e05ce18 probada (log 2026-10-08 15:41) y arreglos siguientes
 - Pipelines en segundo plano: funcionan (PIPELINE_SLOW 18–96 ms, cientos de draws omitidos, sin tirones).
 - Mando: posición por las manos OK (`PAD: seen`). Giróscopo: el último `Controller motion` de la app es 15:42:20; después el emulador recibe siempre el mismo valor (`heading -1 pitch 16 roll 12`) → visionOS apagó los sensores del DualSense al girar la cabeza.
 - Ajuste activo `resolution=2880` (`SHADPS4_TITLE_EYE_WIDTH=2880`): memoria del juego +1536 MB (gráficos 2186 MB, targets 880 MB), mínimo dinámico 1632x1744, textura al visor 5760x3072; GPU al 99–100 %, 8–19 fps con CPU 15–40 %. Crash al entrar al mundo: el log se corta en una carga (`mup_review_levels.xml`) sin `ASTRO_CRASH` → cierre por memoria (jetsam, SIGKILL no capturable).
@@ -15,7 +15,7 @@ JIT: arena RWX preparada por StikDebug (protocolo `brk #0xf00d` + universal.js);
   - `SettingsView.swift`: resolución con memoria extra indicada (2160 ≈ +0,7 GB, 2880 +1,5 GB) y aviso en el pie; selector nuevo de MSAA (`msaa` = "" / 2 / 1 → `SHADPS4_MAX_MSAA`).
   - `guest_watchdog.cpp` `ReportPace`: añade `; memory <phys_footprint> MB, <os_proc_available_memory> MB left` (lo segundo solo con `SHADPS4_VISIONOS`).
 
-## Build bef2eee probada (log 2026-10-08 16:23) y diagnóstico siguiente (sin build aún)
+## Build 66c0aaa probada (log 2026-10-08 16:23) y diagnóstico siguiente (sin build aún)
 - Giróscopo: arreglado (`Controller motion: reporting again` tras apagarse los sensores). Mando por manos OK.
 - MetalFX: funciona (`each eye enlarged from 1440x1536 to 2160x2304`).
 - GPU saturada de verdad: `GPU_TIME` 85–99 %; CPU 30–77 %. La resolución dinámica baja a 816x870 (a veces 960x1080) por ojo a 30 fps → imagen pixelada. MSAA de la consola (4x) sin limitar (sin `SHADPS4_MAX_MSAA`).
@@ -25,7 +25,7 @@ JIT: arena RWX preparada por StikDebug (protocolo `brk #0xf00d` + universal.js);
   - `vk_scheduler.{h,cpp}` `GpuTimer`: bloques de 256 consultas por command buffer (48 bloques); timestamps `BottomOfPipe` antes de `beginRendering` y tras `endRendering` (`PassBegin`/`PassEnd`, `NoteDraw` → `PassDraw`, ahora no inline). Cada 5 s `GPU_PASSES[n]: X ms/s outside passes…; the heaviest: WxH[xL] N colours [+depth]: ms/s, passes/s, draws/s` (10 más caras, clave = tamaño, capas, nº de colores, profundidad). `GPU_TIME` añade `untimed` y `the GPU's memory N MB` (`Instance::GetDeviceMemoryUsage`).
   - `address_space.{h,cpp}`: `Core::ResidentConsoleMemory()` (visionOS: `mincore` sobre el mapeo completo del objeto de memoria de la consola; `g_console_memory`/`g_console_memory_size`).
   - `guest_watchdog.cpp` `ReportPace`: añade `the console's memory in RAM N MB`.
-- Build ea6b3e4 (dispatch) compilada con lo anterior; el usuario ya había movido el juego a VPS4 → sin probar.
+- Build 6e65d9c (dispatch) compilada con lo anterior; el usuario ya había movido el juego a VPS4 → sin probar.
 - Carpeta VPS4 (commit siguiente, `[build]`):
   - `visionos/App/Core/GameFolder.swift` (nuevo): bookmark del `.fileImporter` en UserDefaults (`vps4FolderBookmark`) y llavero (genérico, servicio `astroquest.vps4`, cuenta `folder-bookmark`, `AfterFirstUnlock`); `url()` resuelve (defaults y luego llavero), `startAccessingSecurityScopedResource` y lo mantiene; crea `Juegos`, `Partidas`, `Cachés`; `choose()` exige nombre `VPS4` (sin distinguir mayúsculas) y copia `Library/Application Support/shadPS4/home/*` a `Partidas` si está vacía. Logs `VPS4: …`.
   - `AppModel.swift`: `gameFolder`, `folderChosen(_:)`; `findGame` busca primero en `VPS4/Juegos/*` y `VPS4/*` (juego = `eboot.bin` o `sce_sys/param.sfo`; prefiere CUSA12392 sin distinguir mayúsculas) y luego en Documents como antes.
@@ -33,7 +33,7 @@ JIT: arena RWX preparada por StikDebug (protocolo `brk #0xf00d` + universal.js);
   - `astro_core.mm`: con `SHADPS4_HOME_DIR`, `create_directories` + `Common::FS::SetUserPath(PathType::HomeDir, …)` antes de arrancar (stderr `Users and saves in …`).
   - `HomeView.swift`: tarjeta Juego con botón "Elegir VPS4" (`.fileImporter` de carpetas) y detalle `VPS4 › <juego>`. `CheckView.swift`: estado de VPS4, botón elegir, y lista de ficheros `sce_sys` (param.sfo obligatorio; resto opcional) — cierra el antiguo pendiente 6.
 
-## Commit tras 5298839: MetalFX, GPU_TIME, recolector de texturas por memoria del proceso
+## Commit tras ba75821: MetalFX, GPU_TIME, recolector de texturas por memoria del proceso
 - `visionos/App/Render/Upscaler.swift` (nuevo): `MTLFXSpatialScaler` por ojo. Blit de cada mitad del frame (ojos lado a lado) a una textura privada propia, escalado a `round(ojo·upscale/2)·2`, formato del frame (rgba8Unorm_srgb), `colorProcessingMode = .perceptual`. Si no hay escalador: log `MetalFX: no spatial scaler…` y se muestra como antes.
 - `GameRenderer.swift`: `upscaleNewFrame` al tomar un frame nuevo (una vez por frame del juego); `bindPicture` liga texturas 0/1 (ojo izq./der.; sin MetalFX, el frame en ambas); `frame_x` = (0,1,½texel,1−½texel) con MetalFX. Log `Headset:` añade `N enlarged to WxH an eye`; log `MetalFX: each eye enlarged from … to …`.
 - `Shaders.metal`: `reprojectFragment` con `left_eye`/`right_eye` según `in.eye`; quitado el borde azul.
@@ -43,7 +43,7 @@ JIT: arena RWX preparada por StikDebug (protocolo `brk #0xf00d` + universal.js);
 - Análisis: ASTRO BOT reserva su memoria en bloques al arrancar (0x38000000, 0x10000000, 0x88a00000 de gráficos) y solo libera 1 vez por sesión → liberar memoria del invitado no sirve; `BufferCache::RunGarbageCollector` de upstream no borra nada (el lambda no se usa), se deja así.
 - Slots al visor siguen en 6 (`openxr_host_visionos.mm`: con menos, el hilo de la GPU se bloqueaba; a 1440 son ~100 MB).
 
-## Build 728aa4e (run 37834549716): OK, sin avisos en los ficheros cambiados; KK en la app; `visionos-latest/AstroQuest.ipa` (sin probar)
+## Build 2ad2afd (run 37834549716): OK, sin avisos en los ficheros cambiados; KK en la app; `visionos-latest/AstroQuest.ipa` (sin probar)
 - `vk_rasterizer.{h,cpp}`: `BeginRendering` marca `has_target` (algún color con imagen o profundidad); si no hay, `width/height = min(actual, AttachmentlessExtent())`. `AttachmentlessExtent()`: mismo scissor combinado que `UpdateViewportScissorState` (pantalla/ventana/genérico + offset de ventana, scissor por viewport si `vport_scissor_enable`); borde = max(br, tl) por si el scissor está invertido (KK lo convierte en [br, tl]); con triángulos rellenos (`PolyMode()==Fill`), clip activo y `stage_enable.raw == Vs`, además ≤ `ceil(offset + |scale|)` del viewport; unión de viewports activos (xscale≠0), `AlignUp(…,32)`, entre 1 y el máximo. `SHADPS4_TIGHT_EMPTY_PASSES=0` vuelve a 16384.
 - `vk_scheduler.cpp`: `IsAttachmentless(state)`; en `BeginRendering(requested)` si la pasada abierta y la pedida son sin adjuntos con mismo nº de colores y capas: si cabe, se sigue en la abierta; si no, nueva pasada con la unión de tamaños.
 - KK (`kk_cmd_draw.c`): sin framebuffer, `renderTargetWidth/Height` = extent del `renderArea` → antes 16384² (262 144 tiles de 32²).
@@ -54,7 +54,7 @@ JIT: arena RWX preparada por StikDebug (protocolo `brk #0xf00d` + universal.js);
 - Qué mirar en el log: `GPU_PASSES` (la fila `16384x16384 0 colours` debe desaparecer y la GPU bajar 6–23 % en el mundo), fallos de efectos que antes salían (partículas/oclusión) → probar `SHADPS4_TIGHT_EMPTY_PASSES=0`; `MEMORY:` → qué crece de 1.2 a 3.4 GB y `code arena most` para fijar el tamaño del JIT (FEX: búferes de 16→128 MB, `CPUBackend.cpp` `INITIAL_CODE_SIZE`/`MAX_CODE_SIZE`; pico teórico ~256 MB + el anterior mientras se suelta); si `walked in` > 50 ms, espaciarlo.
 - Descartado (sin build): devolver páginas de la arena con `madvise(MADV_FREE_REUSABLE)`; una página reutilizada podría no ser ejecutable bajo TXM y el fallo saldría a mitad de partida. Se dimensiona la arena con `code arena most`.
 
-## Build c81c177 probada: tests C1–C4 (logs 2026-10-08 20:18, 20:23, 20:35, 20:41)
+## Build e030f88 probada: tests C1–C4 (logs 2026-10-08 20:18, 20:23, 20:35, 20:41)
 Base común: 1440, dinámica, MetalFX ×1.5, MSAA 1. `GPU_TIME`: 4080 timestamps (10×408) funcionan con KK.
 
 | Test | Driver / ajuste | Resultado |
@@ -80,7 +80,7 @@ Memoria: el "resto" (footprint − consola en RAM − GPU) crece 1.2–1.7 GB �
 5. Audio: petardeo desde el arranque en todas las pruebas, independiente del driver (pendiente de análisis: `sndx_out_thread` 8–17 % CPU).
 6. Antialiasing por defecto en visionOS: 1 (con 4x la GPU no da; con 1, nave a 1440 y 45 fps).
 
-## Build 5f23d03 probada: A (MSAA 4x) y B (MSAA 1), logs 2026-10-08 18:35 y 18:38
+## Build 634efdd probada: A (MSAA 4x) y B (MSAA 1), logs 2026-10-08 18:35 y 18:38
 - VPS4 funciona: carpeta resuelta en `.../File Provider Storage/vPS4` (minúscula v aceptada), `SHADPS4_HOME_DIR` aplicado.
 - `GPU_TIME: no query pool (ErrorOutOfDeviceMemory)`: KK limita el pool de timestamps (Metal: counter sample buffer ≤32 KB = 4096 timestamps); 12288 falla → sin datos por pasada.
 - Memoria: `the console's memory in RAM` 0.9–2.1 GB frente a footprint 4.2–8.0 GB → ~5 GB son del emulador/driver, no del juego. A: cierre al cargar mundo (7.1 GB, 1085 MB libres). B: sobrevivió con 119–170 MB libres (8.0 GB).
@@ -92,11 +92,11 @@ Memoria: el "resto" (footprint − consola en RAM − GPU) crece 1.2–1.7 GB �
   - `AppModel.findGame`: un juego exige `eboot.bin` (param.sfo solo en Comprobación). `CheckView`: `.fileImporter` en el `NavigationStack`, no en un `Section`.
 - Siguiente prueba: C1 KK + MSAA 1, C2 MoltenVK + MSAA 1 (con GS bypass: ojo izq. y partículas mal, fps algo optimista); criterio: MoltenVK ≥1.5× → migrar a MoltenVK + conversión propia de los 2 GS; si no, seguir con KK optimizando pasadas (`GPU_PASSES`) y memoria (copias GPU de la memoria del juego).
 
-## Build ebd968f probada (KosmicKrisp) — el juego es jugable
+## Build f55a7b9 probada (KosmicKrisp) — el juego es jugable
 - Funciona: KK carga y renderiza; GS reales (sin `GS_BYPASS`); ambos ojos; ~25–30 fps en juego (topa en 30 = 3 refrescos a 90 Hz), sin errores de render en el log.
 - Problemas: halos en algunas texturas/efectos; imagen borrosa con aliasing (ajuste del usuario: resolución 1440 = 1440x1536 por ojo, sin `SHADPS4_TITLE_EYE_WIDTH`); tirones de 1–2 s que coinciden con compilaciones de pipelines (5–12 por ventana de 5 s); `PAD` siempre `assumed` (las manos nunca colocan el mando); deriva del rumbo del giróscopo.
 
-## Estado tras la última build probada en el dispositivo (commit 749ad2e; e838b6e probada: pasa la calibración, ojo izq. mal, efectos corruptos, mando girado)
+## Estado tras la última build probada en el dispositivo (commit 9389978; 0b88fc8 probada: pasa la calibración, ojo izq. mal, efectos corruptos, mando girado)
 
 Funciona en el dispositivo:
 - Arranque completo del juego bajo FEX: carga de módulos, main de ASOBI, salas, audio (se oye).
@@ -122,7 +122,7 @@ No funciona / pendiente:
 - `vk_pipeline_cache.cpp` `LogGsBypassShaders` (visionOS): por cada par ES/GS (máx. 6) escribe `GS_INFO` (hashes, tamaños, itemsize ESGS/GSVS, max out, instancias, slices del color target 0, viewports activos) y `GS_CODE <es|gs|copy> <hash> <offset>: <dwords hex>`. Para desensamblar offline con el decoder GCN del repo.
 - `guest_watchdog.cpp` `ReportPace` (Apple): cada 5 s `PACE: <fps> guest frames/s; CPU <total>% in all: <hilo> <%>...` (tiempo de CPU por hilo vía `THREAD_BASIC_INFO`). Si fps < 10: hasta 6 veces por sesión, 12 muestras de pila nativa de los 2 hilos más ocupados (`PACE_SAMPLE`). Simbolizar con `atos -o <binario del IPA> -l 0x100000000`.
 
-### KosmicKrisp en visionOS (commit siguiente a e838b6e)
+### KosmicKrisp en visionOS (commit siguiente a 0b88fc8)
 - Motivo: KosmicKrisp (Mesa; el driver Vulkan-sobre-Metal de shadPS4 en macOS) declara `geometryShader`, `tessellationShader`, `multiViewport`, `shaderOutputLayer/ViewportIndex` (`src/kosmickrisp/vulkan/kk_physical_device.c`); emula GS por compute (`libkk/kk_geometry.cl`, `src/poly`). MoltenVK no tiene GS → con KK desaparece el bypass (`GS_BYPASS` ya no debería salir).
 - `visionos/patches/kosmickrisp-visionos.patch` sobre `shadexternals/mesa` `b628375` (el commit que fija `mesa-kosmickrisp`):
   - `bridge/mtl_device.m`: fuera de macOS, `MTLCreateSystemDefaultDevice()` (exige `MTLGPUFamilyMetal4`).
@@ -132,7 +132,7 @@ No funciona / pendiente:
   - Regenerar: aplicar en un clon de Mesa, editar, `git diff > visionos/patches/kosmickrisp-visionos.patch`.
 - `visionos/scripts/build-kosmickrisp.sh`: herramientas nativas (`mesa_clc`, `vtn_bindgen2`, `kk_clc`; brew llvm/spirv-llvm-translator/libclc) → cross a `arm64-apple-xros26.0` (crossfile generado) → `build/visionos/kosmickrisp/KosmicKrisp.framework` (Info.plist binario, id `org.mesa3d.kosmickrisp`). STAMP = commit + sha del patch + deployment target.
 - CI (`visionos-app.yml`): caché `kosmickrisp-visionos-<hash patch+script>`; paso con `continue-on-error` (si falla, la app sale con MoltenVK); el framework se copia a `AstroQuest.app/Frameworks/` antes del zip; log `kosmickrisp.log` publicado en `ci-logs`. La clave de caché del core excluye el patch y el script de KK.
-- 764653b en el dispositivo: el framework carga (`Vulkan driver: KosmicKrisp`, interfaz de loader 7) y crashea al crear la instancia: sin loader, `vkEnumerateInstanceLayerProperties` es NULL (Mesa no lo implementa; lo da el loader). Arreglo: `KosmicKrispGetInstanceProcAddr` envuelve `vk_icdGetInstanceProcAddr` y devuelve `NoInstanceLayers` (0 capas) para esa función; también se devuelve a sí mismo para `vkGetInstanceProcAddr`.
+- 55f686d en el dispositivo: el framework carga (`Vulkan driver: KosmicKrisp`, interfaz de loader 7) y crashea al crear la instancia: sin loader, `vkEnumerateInstanceLayerProperties` es NULL (Mesa no lo implementa; lo da el loader). Arreglo: `KosmicKrispGetInstanceProcAddr` envuelve `vk_icdGetInstanceProcAddr` y devuelve `NoInstanceLayers` (0 capas) para esa función; también se devuelve a sí mismo para `vkGetInstanceProcAddr`.
 - `vk_platform.cpp` `LoadKosmicKrisp()` (visionOS): `dlopen(<dir del ejecutable>/Frameworks/KosmicKrisp.framework/KosmicKrisp)`, `vk_icdNegotiateLoaderICDInterfaceVersion(7)`, `vk_icdGetInstanceProcAddr` como entrada del dispatcher; si falta o `SHADPS4_VK_DRIVER=moltenvk`, MoltenVK enlazado. Log: `Vulkan driver: KosmicKrisp|MoltenVK`.
 - App: ajuste `vulkan_driver=kosmickrisp|moltenvk` → `SHADPS4_VK_DRIVER`; selector "Driver de Vulkan" en Ajustes > Gráficos (`Views/SettingsView.swift`, escribe `settings.txt` con `AstroSettings.write`; añade la línea si falta).
 - Compila para xros (workflow `kosmickrisp-visionos.yml`, solo dispatch, misma clave de caché que la app): framework de 14 MB, exporta `vk_icdGetInstanceProcAddr`, `vk_icdGetPhysicalDeviceProcAddr`, `vk_icdNegotiateLoaderICDInterfaceVersion`. Arreglos que hicieron falta: `brew spirv-tools` (herramientas de Mesa), `CAMetalLayer.displaySyncEnabled` solo en macOS (`src/vulkan/wsi/wsi_common_metal_layer.m`), enlazar CoreGraphics y mantener `-undefined dynamic_lookup` (puntos de entrada weak de Mesa; ld avisa "deprecated on visionOS", no falla). `meson compile --ninja-args=-k0` para ver todos los errores.
@@ -199,7 +199,7 @@ No funciona / pendiente:
 - Release: `gh api repos/<owner>/AstroVisionPro/releases/tags/visionos-latest` → asset `AstroQuest.ipa`.
 - El remoto `origin` del clon local tiende a apuntar al nombre antiguo del repo: hacer push explícito a la URL de AstroVisionPro.
 
-### Cambios tras ebd968f
+### Cambios tras f55a7b9
 - `HeadsetTracking.swift`: log `Hand tracking: <allowed|not allowed|not asked for>; running`; cada 5 s `Hands (<estado>): both seen N, one N, none N, both but not holding N frames; palms last X m apart`. Palma: si los dedos no se ven (mano cerrada sobre el mando) o no hay esqueleto, se usa el origen del ancla (muñeca). Distancia válida entre palmas 0.04–0.45 m (antes 0.05–0.32). Con una sola mano y sin offset previo: mando a 8 cm hacia el centro según el eje derecho de la cabeza.
 - `vr_runtime.cpp` `UpdatePadGyro`: sesgo del giróscopo aprendido en reposo (acelerómetro ~g y |w−sesgo| < 0.08 rad/s durante >0.5 s, constante 2 s) y restado; sin referencia de rumbo de las manos, tras >1 s quieto el rumbo se lleva hacia el frente del asiento (`view_turn`) con ganancia 0.25/s. Miembros nuevos `pad_gyro_bias`, `pad_still_seconds` en `vr_runtime.h`.
 - `vk_pipeline_cache.cpp`: `PIPELINE_SLOW <hash>: <ms>` para creaciones ≥30 ms (shaders + pipeline en el hilo del procesador de comandos).
