@@ -4,6 +4,11 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
+#include <cstdlib>
+#include <deque>
+#include <functional>
+#include <thread>
 #include <exception>
 #include <mutex>
 #include <string>
@@ -13,6 +18,7 @@
 #include "common/hash.h"
 #include "common/io_file.h"
 #include "common/path_util.h"
+#include "common/thread.h"
 #include "core/debug_state.h"
 #include "core/emulator_settings.h"
 #include "shader_recompiler/backend/spirv/emit_spirv.h"
@@ -307,6 +313,62 @@ const Shader::RuntimeInfo& PipelineCache::BuildRuntimeInfo(Stage stage, LogicalS
     return info;
 }
 
+/// A few threads that make pipelines, in the order they were asked for.
+class PipelineCache::PipelineWorkers {
+public:
+    explicit PipelineWorkers(u32 count) {
+        for (u32 i = 0; i < count; ++i) {
+            threads.emplace_back([this, i] {
+                Common::SetCurrentThreadName(fmt::format("shadPS4:Pipelines{}", i).c_str());
+                Run();
+            });
+        }
+    }
+
+    ~PipelineWorkers() {
+        {
+            std::scoped_lock lock{mutex};
+            stopping = true;
+            jobs.clear();
+        }
+        wake.notify_all();
+        for (auto& thread : threads) {
+            thread.join();
+        }
+    }
+
+    void Push(std::function<void()> job) {
+        {
+            std::scoped_lock lock{mutex};
+            jobs.push_back(std::move(job));
+        }
+        wake.notify_one();
+    }
+
+private:
+    void Run() {
+        while (true) {
+            std::function<void()> job;
+            {
+                std::unique_lock lock{mutex};
+                wake.wait(lock, [this] { return stopping || !jobs.empty(); });
+                if (stopping) {
+                    return;
+                }
+                job = std::move(jobs.front());
+                jobs.pop_front();
+            }
+            job();
+        }
+    }
+
+    std::mutex mutex;
+    std::condition_variable wake;
+    std::deque<std::function<void()>> jobs;
+    bool stopping{};
+    std::vector<std::thread> threads;
+};
+
 PipelineCache::PipelineCache(const Instance& instance_, Scheduler& scheduler_,
                              AmdGpu::Liverpool* liverpool_)
     : instance{instance_}, scheduler{scheduler_}, liverpool{liverpool_},
@@ -386,6 +448,22 @@ PipelineCache::PipelineCache(const Instance& instance_, Scheduler& scheduler_,
     ASSERT_MSG(cache_result == vk::Result::eSuccess, "Failed to create pipeline cache: {}",
                vk::to_string(cache_result));
     pipeline_cache = std::move(cache);
+
+#if defined(SHADPS4_VISIONOS)
+    async_pipelines = true;
+#endif
+    if (const char* value = std::getenv("SHADPS4_ASYNC_PIPELINES")) {
+        async_pipelines = std::string_view{value} != "0";
+    }
+    if (async_pipelines) {
+        const u32 cores = std::max(1u, std::thread::hardware_concurrency());
+        const u32 count = std::clamp(cores / 3, 2u, 4u);
+        workers = std::make_unique<PipelineWorkers>(count);
+        LOG_INFO(Render_Vulkan,
+                 "Graphics pipelines are made on {} threads of their own; a draw whose pipeline "
+                 "is not ready yet is left out",
+                 count);
+    }
 }
 
 PipelineCache::~PipelineCache() = default;
@@ -395,6 +473,66 @@ const GraphicsPipeline* PipelineCache::GetGraphicsPipeline() {
     if (!RefreshGraphicsKey()) {
         return nullptr;
     }
+    if (async_pipelines) {
+        if (const auto ready = graphics_pipelines.find(graphics_key);
+            ready != graphics_pipelines.end()) {
+            fetch_shader.reset();
+            return ready->second.get();
+        }
+        if (const auto pending = pending_graphics_pipelines.find(graphics_key);
+            pending != pending_graphics_pipelines.end()) {
+            fetch_shader.reset();
+            if (!pending->second->done.load(std::memory_order_acquire)) {
+                ++skipped_draws;
+                return nullptr;
+            }
+            const auto job = pending->second;
+            pending_graphics_pipelines.erase(pending);
+            return FinishPendingGraphicsPipeline(*job);
+        }
+        // A new one: what it needs is taken now, it is made on a worker thread.
+        auto job = std::make_shared<PendingGraphicsPipeline>();
+        job->key = graphics_key;
+        job->hash = std::hash<GraphicsPipelineKey>{}(graphics_key);
+        for (u32 stage = 0; stage < MaxShaderStages; ++stage) {
+            job->live_infos[stage] = infos[stage];
+            if (infos[stage] != nullptr) {
+                job->info_copies[stage].emplace(*infos[stage]);
+                job->copy_infos[stage] = &*job->info_copies[stage];
+            }
+        }
+        job->runtime_infos = runtime_infos;
+        job->modules = modules;
+        job->fetch_shader = fetch_shader;
+        job->queued = std::chrono::steady_clock::now();
+        GraphicsPipeline::PrepareSerialization(instance, job->key, job->copy_infos,
+                                               job->runtime_infos, job->fetch_shader,
+                                               job->sdata);
+        pending_graphics_pipelines.emplace(graphics_key, job);
+        LOG_INFO(Render_Vulkan, "Compiling graphics pipeline {:#x} (on a worker)", job->hash);
+        const vk::PipelineCache cache_handle = *pipeline_cache;
+        workers->Push([this, job, cache_handle] {
+            const auto begun = std::chrono::steady_clock::now();
+            try {
+                job->result = std::make_unique<GraphicsPipeline>(
+                    instance, scheduler, desc_heap, profile, job->key, cache_handle,
+                    job->copy_infos, job->runtime_infos, job->fetch_shader, job->modules,
+                    job->sdata, true);
+            } catch (const std::exception& ex) {
+                job->error = ex.what();
+                job->result.reset();
+            }
+            job->compile_ms = static_cast<u32>(
+                std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now() - begun)
+                    .count());
+            job->done.store(true, std::memory_order_release);
+        });
+        fetch_shader.reset();
+        ++skipped_draws;
+        return nullptr;
+    }
+
     const auto [it, is_new] = graphics_pipelines.try_emplace(graphics_key);
     if (is_new) {
         const auto pipeline_hash = std::hash<GraphicsPipelineKey>{}(graphics_key);
@@ -445,6 +583,38 @@ const GraphicsPipeline* PipelineCache::GetGraphicsPipeline() {
         }
         fetch_shader.reset();
     }
+    return it->second.get();
+}
+
+const GraphicsPipeline* PipelineCache::FinishPendingGraphicsPipeline(
+    PendingGraphicsPipeline& job) {
+    const auto waited = std::chrono::duration_cast<std::chrono::milliseconds>(
+                            std::chrono::steady_clock::now() - job.queued)
+                            .count();
+    if (!job.result) {
+        LOG_ERROR(Render_Vulkan, "Graphics pipeline {:#x} compile failed: {}", job.hash,
+                  job.error);
+        graphics_pipelines.emplace(job.key, nullptr);
+        return nullptr;
+    }
+    // From now on the draws bind what the live descriptions say, as for any other pipeline.
+    job.result->UseStages(job.live_infos);
+    RegisterPipelineData(job.key, job.hash, job.sdata);
+    ++num_new_pipelines;
+    if (job.compile_ms >= 30 || waited >= 100) {
+        LOG_INFO(Render_Vulkan,
+                 "PIPELINE_SLOW {:#x}: {} ms to make, ready {} ms after its first draw (pipeline "
+                 "{} of this run; {} draws left out so far)",
+                 job.hash, job.compile_ms, waited, num_new_pipelines, skipped_draws);
+    }
+    if (EmulatorSettings.IsShaderCollect()) {
+        for (auto stage = 0; stage < MaxShaderStages; ++stage) {
+            if (job.live_infos[stage]) {
+                module_related_pipelines[job.modules[stage]].emplace_back(job.key);
+            }
+        }
+    }
+    const auto [it, inserted] = graphics_pipelines.emplace(job.key, std::move(job.result));
     return it->second.get();
 }
 

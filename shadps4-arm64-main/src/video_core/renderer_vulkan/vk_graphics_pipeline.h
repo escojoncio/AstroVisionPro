@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <boost/container/static_vector.hpp>
 #include <xxhash.h>
 
@@ -92,12 +93,29 @@ public:
                      bool preloading);
     ~GraphicsPipeline();
 
+    /// What the constructor reads from the console's state at the time of the draw (the vertex
+    /// formats the fetch shader's buffers have, the sample shading, the tessellation stand-ins
+    /// of rect and quad lists), read now, so that the pipeline can be made later on another
+    /// thread with preloading set, from this data alone.
+    static void PrepareSerialization(
+        const Instance& instance, const GraphicsPipelineKey& key,
+        std::span<const Shader::Info*, MaxShaderStages> infos,
+        std::span<const Shader::RuntimeInfo, MaxShaderStages> runtime_infos,
+        const std::optional<Shader::Gcn::FetchShaderData>& fetch_shader,
+        SerializationSupport& sdata);
+
     const std::optional<const Shader::Gcn::FetchShaderData>& GetFetchShader() const noexcept {
         return fetch_shader;
     }
 
     const GraphicsPipelineKey& GetGraphicsKey() const {
         return key;
+    }
+
+    /// The shaders' live descriptions, for a pipeline made on another thread from copies of
+    /// them: what the draws bind is read through these.
+    void UseStages(std::span<const Shader::Info* const, MaxShaderStages> infos) {
+        std::ranges::copy(infos, stages.begin());
     }
 
     /// Gets the attributes and bindings for vertex inputs.

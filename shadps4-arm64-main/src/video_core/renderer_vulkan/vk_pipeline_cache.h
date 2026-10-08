@@ -3,6 +3,10 @@
 
 #pragma once
 
+#include <atomic>
+#include <chrono>
+#include <memory>
+#include <string>
 #include <variant>
 #include <tsl/robin_map.h>
 #include "shader_recompiler/profile.h"
@@ -145,6 +149,36 @@ private:
     tsl::robin_map<vk::ShaderModule,
                    std::vector<std::variant<GraphicsPipelineKey, ComputePipelineKey>>>
         module_related_pipelines;
+
+    // Graphics pipelines made on other threads (SHADPS4_ASYNC_PIPELINES, on by default on
+    // visionOS): a draw whose pipeline is not ready yet is left out instead of waiting for it,
+    // so that nothing stalls while a driver compiles (Metal compiles slowly).
+    struct PendingGraphicsPipeline {
+        GraphicsPipelineKey key{};
+        u64 hash{};
+        // Copies of the shaders' descriptions as they were at the draw: the live ones change
+        // with every draw while the pipeline is being made.
+        std::array<std::optional<Shader::Info>, MaxShaderStages> info_copies{};
+        std::array<const Shader::Info*, MaxShaderStages> copy_infos{};
+        std::array<const Shader::Info*, MaxShaderStages> live_infos{};
+        std::array<Shader::RuntimeInfo, MaxShaderStages> runtime_infos{};
+        std::array<vk::ShaderModule, MaxShaderStages> modules{};
+        std::optional<Shader::Gcn::FetchShaderData> fetch_shader{};
+        GraphicsPipeline::SerializationSupport sdata{};
+        std::unique_ptr<GraphicsPipeline> result{};
+        std::string error{};
+        std::chrono::steady_clock::time_point queued{};
+        u32 compile_ms{};
+        std::atomic<bool> done{};
+    };
+    class PipelineWorkers;
+    const GraphicsPipeline* FinishPendingGraphicsPipeline(PendingGraphicsPipeline& job);
+    bool async_pipelines{};
+    u32 skipped_draws{};
+    tsl::robin_map<GraphicsPipelineKey, std::shared_ptr<PendingGraphicsPipeline>>
+        pending_graphics_pipelines;
+    // Last: its threads are stopped before anything they use goes away.
+    std::unique_ptr<PipelineWorkers> workers;
 };
 
 } // namespace Vulkan

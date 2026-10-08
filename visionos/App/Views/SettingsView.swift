@@ -60,10 +60,11 @@ struct SettingsView: View {
                         Text(L("KosmicKrisp · con geometry shaders", "KosmicKrisp · with geometry shaders")).tag("kosmickrisp")
                         Text(L("MoltenVK · el anterior", "MoltenVK · the previous one")).tag("moltenvk")
                     }
+                    Toggle(L("Compilar shaders en segundo plano", "Compile shaders in the background"), isOn: flag("async_shaders", \.asyncShaders))
                 } header: {
                     Text(L("Gráficos", "Graphics"))
                 } footer: {
-                    Text(L("KosmicKrisp dibuja los efectos y ambos ojos como en la consola. Si no arranca o va peor, vuelve a MoltenVK.", "KosmicKrisp draws the effects and both eyes as the console does. If it does not start or runs worse, go back to MoltenVK."))
+                    Text(L("KosmicKrisp dibuja los efectos y ambos ojos como en la consola. Si no arranca o va peor, vuelve a MoltenVK. Con los shaders en segundo plano no hay tirones: lo que aparece por primera vez tarda un instante en verse.", "KosmicKrisp draws the effects and both eyes as the console does. If it does not start or runs worse, go back to MoltenVK. With shaders in the background there are no stalls: what appears for the first time shows a moment late."))
                 }
 
                 Section {

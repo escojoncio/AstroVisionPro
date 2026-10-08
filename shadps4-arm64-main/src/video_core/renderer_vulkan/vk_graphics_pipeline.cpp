@@ -391,15 +391,13 @@ GraphicsPipeline::GraphicsPipeline(
 GraphicsPipeline::~GraphicsPipeline() = default;
 
 template <typename Attribute, typename Binding>
-void GraphicsPipeline::GetVertexInputs(
-    VertexInputs<Attribute>& attributes, VertexInputs<Binding>& bindings,
+static void CollectVertexInputs(
+    const Instance& instance, const std::optional<const Shader::Gcn::FetchShaderData>& fetch_shader,
+    const Shader::Info& vs_info, VertexInputs<Attribute>& attributes,
+    VertexInputs<Binding>& bindings,
     VertexInputs<vk::VertexInputBindingDivisorDescriptionEXT>& divisors,
-    VertexInputs<AmdGpu::Buffer>& guest_buffers, u32 step_rate_0, u32 step_rate_1) const {
+    VertexInputs<AmdGpu::Buffer>& guest_buffers, u32 step_rate_0, u32 step_rate_1) {
     using InstanceIdType = Shader::Gcn::VertexAttribute::InstanceIdType;
-    if (!fetch_shader || fetch_shader->attributes.empty()) {
-        return;
-    }
-    const auto& vs_info = GetStage(Shader::LogicalStage::Vertex);
     for (const auto& attrib : fetch_shader->attributes) {
         const auto step_rate = attrib.GetStepRate();
         const auto buffer = attrib.GetSharp(vs_info);
@@ -433,6 +431,56 @@ void GraphicsPipeline::GetVertexInputs(
             }
         }
         guest_buffers.emplace_back(buffer);
+    }
+}
+
+template <typename Attribute, typename Binding>
+void GraphicsPipeline::GetVertexInputs(
+    VertexInputs<Attribute>& attributes, VertexInputs<Binding>& bindings,
+    VertexInputs<vk::VertexInputBindingDivisorDescriptionEXT>& divisors,
+    VertexInputs<AmdGpu::Buffer>& guest_buffers, u32 step_rate_0, u32 step_rate_1) const {
+    if (!fetch_shader || fetch_shader->attributes.empty()) {
+        return;
+    }
+    CollectVertexInputs(instance, fetch_shader, GetStage(Shader::LogicalStage::Vertex), attributes,
+                        bindings, divisors, guest_buffers, step_rate_0, step_rate_1);
+}
+
+void GraphicsPipeline::PrepareSerialization(
+    const Instance& instance, const GraphicsPipelineKey& key,
+    std::span<const Shader::Info*, MaxShaderStages> infos,
+    std::span<const Shader::RuntimeInfo, MaxShaderStages> runtime_infos,
+    const std::optional<Shader::Gcn::FetchShaderData>& fetch_shader,
+    SerializationSupport& sdata) {
+    // As the constructor does when it is not preloading.
+    const auto* vs = infos[u32(Shader::LogicalStage::Vertex)];
+    if (!instance.IsVertexInputDynamicState() && vs != nullptr && fetch_shader &&
+        !fetch_shader->attributes.empty()) {
+        VertexInputs<AmdGpu::Buffer> guest_buffers;
+        const auto& vs_info = runtime_infos[u32(Shader::LogicalStage::Vertex)].vs_info;
+        const std::optional<const Shader::Gcn::FetchShaderData> fetch{fetch_shader};
+        CollectVertexInputs(instance, fetch, *vs, sdata.vertex_attributes, sdata.vertex_bindings,
+                            sdata.divisors, guest_buffers, vs_info.step_rate_0,
+                            vs_info.step_rate_1);
+    }
+    const auto& fs_info = runtime_infos[u32(Shader::LogicalStage::Fragment)].fs_info;
+    sdata.multisampling = {
+        .rasterizationSamples = LiverpoolToVK::NumSamples(
+            key.num_samples, instance.GetColorSampleCounts() & instance.GetDepthSampleCounts()),
+        .sampleShadingEnable =
+            fs_info.addr_flags.persp_sample_ena || fs_info.addr_flags.linear_sample_ena,
+    };
+    const bool is_rect_list = key.prim_type == AmdGpu::PrimitiveType::RectList;
+    const bool is_quad_list = key.prim_type == AmdGpu::PrimitiveType::QuadList;
+    if ((is_rect_list || is_quad_list) &&
+        !infos[u32(Shader::LogicalStage::TessellationControl)]) {
+        const auto type = is_quad_list ? AuxShaderType::QuadListTCS : AuxShaderType::RectListTCS;
+        sdata.tcs = Shader::Backend::SPIRV::EmitAuxilaryTessShader(type, fs_info);
+    }
+    if ((is_rect_list || is_quad_list) &&
+        !infos[u32(Shader::LogicalStage::TessellationEval)]) {
+        sdata.tes = Shader::Backend::SPIRV::EmitAuxilaryTessShader(AuxShaderType::PassthroughTES,
+                                                                   fs_info);
     }
 }
 

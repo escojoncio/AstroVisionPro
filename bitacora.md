@@ -117,6 +117,12 @@ No funciona / pendiente:
 - `vr_runtime.cpp` `UpdatePadGyro`: sesgo del giróscopo aprendido en reposo (acelerómetro ~g y |w−sesgo| < 0.08 rad/s durante >0.5 s, constante 2 s) y restado; sin referencia de rumbo de las manos, tras >1 s quieto el rumbo se lleva hacia el frente del asiento (`view_turn`) con ganancia 0.25/s. Miembros nuevos `pad_gyro_bias`, `pad_still_seconds` en `vr_runtime.h`.
 - `vk_pipeline_cache.cpp`: `PIPELINE_SLOW <hash>: <ms>` para creaciones ≥30 ms (shaders + pipeline en el hilo del procesador de comandos).
 
+### Compilación de pipelines en segundo plano (sin tirones)
+- `vk_pipeline_cache.{h,cpp}`: con `async_pipelines` (por defecto en visionOS; `SHADPS4_ASYNC_PIPELINES=0|1`) los pipelines gráficos nuevos se crean en `PipelineWorkers` (clamp(núcleos/3, 2, 4) hilos `shadPS4:PipelinesN`); mientras no están listos `GetGraphicsPipeline` devuelve nullptr y el rasterizador salta el draw. `PendingGraphicsPipeline` guarda copias de `Shader::Info` (las vivas cambian en cada draw), runtime infos, módulos, fetch shader y `sdata`; al terminar `FinishPendingGraphicsPipeline` llama a `GraphicsPipeline::UseStages(live_infos)`, `RegisterPipelineData` y lo mete en `graphics_pipelines`. Fallo → entrada nullptr (draw omitido siempre, como antes). `PIPELINE_SLOW <hash>: <ms> to make, ready <ms> after its first draw ... draws left out`.
+- `vk_graphics_pipeline.{h,cpp}`: `GetVertexInputs` → función estática `CollectVertexInputs`; `PrepareSerialization` hace en el hilo principal lo que el constructor lee del estado vivo (vértices si no hay vertex input dinámico, multisample, TCS/TES de rect/quad lists) y el worker construye con `preloading=true`. `IsStorage` siempre es true, así que el layout con sharp por defecto es idéntico.
+- Pipelines de compute siguen síncronos.
+- App: interruptor "Compilar shaders en segundo plano" (Ajustes > Gráficos, `async_shaders`) → `SHADPS4_ASYNC_PIPELINES`; `MESA_SHADER_CACHE_DIR=<Library/Caches>/mesa_shader_cache` para la caché de Mesa/KK.
+
 ## Pendiente (orden recomendado)
 1. **Probar 764653b**: en el log buscar `Vulkan driver: KosmicKrisp` (o `KosmicKrisp not loaded`), errores de instancia/dispositivo, que no salga `GS_BYPASS`, líneas `PAD`, `Controller motion:` y `PACE`. Si KK falla: `vulkan_driver=moltenvk` en `settings.txt`.
 2. **Rendimiento**: medir tiempos de GPU (timestamps por fotograma) para separar GPU real de esperas; revisar espera en CPU de `VrExporter::Deliver` (`GetMasterSemaphore()->Wait`) y el seguimiento de páginas de 16 KB.
