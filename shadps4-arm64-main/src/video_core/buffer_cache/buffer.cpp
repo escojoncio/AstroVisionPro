@@ -1,6 +1,9 @@
 // SPDX-FileCopyrightText: Copyright 2024 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <atomic>
+#include <string>
+#include <fmt/format.h>
 #include "common/alignment.h"
 #include "common/assert.h"
 #include "video_core/buffer_cache/buffer.h"
@@ -59,11 +62,55 @@ std::string_view BufferTypeName(MemoryUsage type) {
     return VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
 }
 
+namespace {
+/// What the buffers and images the emulator made hold (VMA allocation sizes), for the pace
+/// reports: whether the GPU's memory goes to copies of the console's memory or to pictures.
+struct AllocationTally {
+    std::atomic<s64> bytes{0};
+    std::atomic<s64> count{0};
+    std::atomic<s64> large_bytes{0};
+    std::atomic<s64> large_count{0};
+
+    void Add(VmaAllocator allocator, VmaAllocation allocation, s64 sign) {
+        if (!allocation) {
+            return;
+        }
+        VmaAllocationInfo info{};
+        vmaGetAllocationInfo(allocator, allocation, &info);
+        const s64 size = static_cast<s64>(info.size);
+        bytes += sign * size;
+        count += sign;
+        if (size >= (s64{64} << 20)) {
+            large_bytes += sign * size;
+            large_count += sign;
+        }
+    }
+};
+AllocationTally buffer_tally;
+AllocationTally image_tally;
+
+std::string DescribeTally(const AllocationTally& tally) {
+    return fmt::format("{} MB in {} ({} MB in {} of 64 MB or more)", tally.bytes.load() >> 20,
+                       tally.count.load(), tally.large_bytes.load() >> 20,
+                       tally.large_count.load());
+}
+} // namespace
+
+void TallyImageAllocation(VmaAllocator allocator, VmaAllocation allocation, bool made) {
+    image_tally.Add(allocator, allocation, made ? 1 : -1);
+}
+
+std::string DescribeGpuAllocations() {
+    return fmt::format("buffers {}, images {}", DescribeTally(buffer_tally),
+                       DescribeTally(image_tally));
+}
+
 UniqueBuffer::UniqueBuffer(vk::Device device_, VmaAllocator allocator_)
     : device{device_}, allocator{allocator_} {}
 
 UniqueBuffer::~UniqueBuffer() {
     if (buffer) {
+        buffer_tally.Add(allocator, allocation, -1);
         vmaDestroyBuffer(allocator, buffer, allocation);
     }
 }
@@ -89,6 +136,7 @@ void UniqueBuffer::Create(const vk::BufferCreateInfo& buffer_ci, MemoryUsage usa
     ASSERT_MSG(result == VK_SUCCESS, "Failed allocating buffer with error {}",
                vk::to_string(vk::Result{result}));
     buffer = vk::Buffer{unsafe_buffer};
+    buffer_tally.Add(allocator, allocation, 1);
 
     if (with_bda) {
         vk::BufferDeviceAddressInfo bda_info{
