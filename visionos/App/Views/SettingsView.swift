@@ -56,6 +56,17 @@ struct SettingsView: View {
                 }
 
                 Section {
+                    Picker(L("Driver de Vulkan", "Vulkan driver"), selection: text("vulkan_driver", \.vulkanDriver)) {
+                        Text(L("KosmicKrisp · con geometry shaders", "KosmicKrisp · with geometry shaders")).tag("kosmickrisp")
+                        Text(L("MoltenVK · el anterior", "MoltenVK · the previous one")).tag("moltenvk")
+                    }
+                } header: {
+                    Text(L("Gráficos", "Graphics"))
+                } footer: {
+                    Text(L("KosmicKrisp dibuja los efectos y ambos ojos como en la consola. Si no arranca o va peor, vuelve a MoltenVK.", "KosmicKrisp draws the effects and both eyes as the console does. If it does not start or runs worse, go back to MoltenVK."))
+                }
+
+                Section {
                     Toggle(L("Renderizado foveado", "Foveated rendering"), isOn: flag("foveation", \.foveation))
                     LabeledContent(L("Calidad de renderizado", "Render quality")) {
                         HStack {
