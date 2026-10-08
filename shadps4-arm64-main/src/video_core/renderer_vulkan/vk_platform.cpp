@@ -47,6 +47,32 @@ extern "C" VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetInstanceProcAddr(VkInst
 namespace Vulkan {
 
 #if defined(SHADPS4_VISIONOS)
+// What a loader answers itself and a driver does not have: with no loader in between, the
+// driver's own vk_icdGetInstanceProcAddr gives nothing for vkEnumerateInstanceLayerProperties
+// (layers are the loader's), and calling that would jump to address zero. No layers, then.
+static PFN_vkGetInstanceProcAddr kosmickrisp_entry = nullptr;
+
+static VKAPI_ATTR VkResult VKAPI_CALL NoInstanceLayers(uint32_t* count, VkLayerProperties*) {
+    *count = 0;
+    return VK_SUCCESS;
+}
+
+static VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL KosmicKrispGetInstanceProcAddr(VkInstance instance,
+                                                                              const char* name) {
+    if (name == nullptr) {
+        return nullptr;
+    }
+    const std::string_view wanted{name};
+    if (wanted == "vkGetInstanceProcAddr") {
+        return reinterpret_cast<PFN_vkVoidFunction>(&KosmicKrispGetInstanceProcAddr);
+    }
+    const PFN_vkVoidFunction function = kosmickrisp_entry(instance, name);
+    if (function == nullptr && wanted == "vkEnumerateInstanceLayerProperties") {
+        return reinterpret_cast<PFN_vkVoidFunction>(&NoInstanceLayers);
+    }
+    return function;
+}
+
 /// KosmicKrisp.framework, next to the app's executable in Frameworks/: its entry point, or null
 /// when it is not there, does not load or is not wanted.
 static PFN_vkGetInstanceProcAddr LoadKosmicKrisp() {
@@ -82,7 +108,8 @@ static PFN_vkGetInstanceProcAddr LoadKosmicKrisp() {
         return nullptr;
     }
     LOG_INFO(Render_Vulkan, "Vulkan driver: KosmicKrisp ({})", path.string());
-    return entry;
+    kosmickrisp_entry = entry;
+    return &KosmicKrispGetInstanceProcAddr;
 }
 #endif
 
