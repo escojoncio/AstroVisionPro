@@ -54,6 +54,11 @@ namespace Vulkan {
 u64 DeviceMemoryUsageForReports();
 } // namespace Vulkan
 
+namespace VideoCore {
+/// What the emulator's buffers and images hold (buffer_cache/buffer.cpp).
+std::string DescribeGpuAllocations();
+} // namespace VideoCore
+
 namespace Core::GuestCpu {
 
 namespace {
@@ -655,6 +660,7 @@ void ReportPace(Clock::time_point now) {
                               u64(os_proc_available_memory()) >> 20,
                               Core::ResidentConsoleMemory() >> 20,
                               Vulkan::DeviceMemoryUsageForReports() >> 20);
+        memory += "; " + VideoCore::DescribeGpuAllocations();
 #endif
     }
     LOG_INFO(Core, "PACE: {:.1f} guest frames/s; CPU {:.0f}% in all: {}{}", fps, total, text,

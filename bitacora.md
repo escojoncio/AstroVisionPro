@@ -5,6 +5,11 @@ Base: shadPS4 ARM64 (`shadps4-arm64-main/`) + FEXCore (x86-64 → ARM64) + Molte
 App visionOS en `visionos/` (SwiftUI + Compositor Services + ARKit + GameController).
 JIT: arena RWX preparada por StikDebug (protocolo `brk #0xf00d` + universal.js); la app hace detach al terminar.
 
+## Build e7d85d8 (run 37855488586): OK, KK recompilado con el parche nuevo (kk_shader.c, kk_cmd_draw.c sin errores); `visionos-latest/AstroQuest.ipa` (sin probar)
+## Commit siguiente: reparto de la memoria GPU
+- `buffer_cache/buffer.cpp`: `AllocationTally` (atómicos: bytes, nº, y los de ≥64 MB) con el tamaño VMA de cada asignación; `UniqueBuffer::Create`/destructor suman/restan; `TallyImageAllocation` (llamado desde `UniqueImage::Create`/`~UniqueImage`/`Destroy` en `texture_cache/image.cpp`); `DescribeGpuAllocations()` → `buffers X MB in N (Y MB in M of 64 MB or more), images …`. Los búferes con BDA (los del caché de búferes) llevan `VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT` → son los bloques dedicados de 256/512 MB de `IOAccelerator`.
+- `guest_watchdog.cpp` `ReportPace` (visionOS): añade ese texto a `PACE`.
+
 ## Test 3 (log 2026-10-09 00:40; 2160 fija, sin AA, build 47cf082): cierre por memoria
 - Mundo 14–18 fps, GPU 99–100 %. Pasada principal `2160x2304 1 colour +depth` ~600 ms/s a ~195 pasadas/s: ~37 ms por frame frente a ~19 a 1440 y ~17 a 816 → por debajo de 1440 domina un coste fijo; por encima, los píxeles sí cuestan (corrige lo dicho en el test 2).
 - Memoria 8.0 GB con 170–210 MB libres → jetsam. `MEMORY`: IOAccelerator 3554 MB (bloques de 512 MB y 5×256 MB, enteros sucios; VMA usa bloques de 32 MB → son asignaciones dedicadas), consola 1369 residente + 1528 comprimida, untagged 152+592, malloc 221+210 (en uso 1137 de 1242 MB), IOSurface 205.

@@ -86,14 +86,18 @@ static vk::FormatFeatureFlags2 FormatFeatureFlags(const vk::ImageUsageFlags usag
     return feature_flags;
 }
 
+void TallyImageAllocation(VmaAllocator allocator, VmaAllocation allocation, bool made);
+
 UniqueImage::~UniqueImage() {
     if (image) {
+        TallyImageAllocation(allocator, allocation, false);
         vmaDestroyImage(allocator, image, allocation);
     }
 }
 
 void UniqueImage::Destroy() {
     if (image) {
+        TallyImageAllocation(allocator, allocation, false);
         vmaDestroyImage(allocator, image, allocation);
         image = vk::Image{};
         allocation = {};
@@ -130,6 +134,7 @@ void UniqueImage::Create(const vk::ImageCreateInfo& image_ci,
     ASSERT_MSG(result == VK_SUCCESS, "Failed allocating image with error {}",
                vk::to_string(vk::Result{result}));
     image = vk::Image{unsafe_image};
+    TallyImageAllocation(allocator, allocation, true);
 }
 
 namespace {
