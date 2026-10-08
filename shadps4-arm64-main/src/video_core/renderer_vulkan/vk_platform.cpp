@@ -34,11 +34,57 @@
 #include <mach-o/dyld.h>
 #endif
 #ifdef SHADPS4_VISIONOS
+#include <cstdlib>
+#include <dlfcn.h>
+#include <filesystem>
+#include <string_view>
+#endif
+#ifdef SHADPS4_VISIONOS
 extern "C" VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetInstanceProcAddr(VkInstance instance,
                                                                        const char* name);
 #endif
 
 namespace Vulkan {
+
+#if defined(SHADPS4_VISIONOS)
+/// KosmicKrisp.framework, next to the app's executable in Frameworks/: its entry point, or null
+/// when it is not there, does not load or is not wanted.
+static PFN_vkGetInstanceProcAddr LoadKosmicKrisp() {
+    const char* wanted = std::getenv("SHADPS4_VK_DRIVER");
+    if (wanted != nullptr && std::string_view{wanted} == "moltenvk") {
+        return nullptr;
+    }
+    const char* executable = _dyld_get_image_name(0);
+    if (executable == nullptr) {
+        return nullptr;
+    }
+    const auto path = std::filesystem::path(executable).parent_path() / "Frameworks" /
+                      "KosmicKrisp.framework" / "KosmicKrisp";
+    void* library = dlopen(path.c_str(), RTLD_NOW | RTLD_LOCAL);
+    if (library == nullptr) {
+        const char* error = dlerror();
+        LOG_WARNING(Render_Vulkan, "KosmicKrisp not loaded ({}): {}", path.string(),
+                    error != nullptr ? error : "?");
+        return nullptr;
+    }
+    using Negotiate = VkResult(VKAPI_PTR*)(uint32_t*);
+    if (const auto negotiate = reinterpret_cast<Negotiate>(
+            dlsym(library, "vk_icdNegotiateLoaderICDInterfaceVersion"))) {
+        // As a loader would: the newest interface, in which the driver makes its surfaces.
+        uint32_t version = 7;
+        negotiate(&version);
+        LOG_INFO(Render_Vulkan, "KosmicKrisp speaks loader interface {}", version);
+    }
+    const auto entry = reinterpret_cast<PFN_vkGetInstanceProcAddr>(
+        dlsym(library, "vk_icdGetInstanceProcAddr"));
+    if (entry == nullptr) {
+        LOG_WARNING(Render_Vulkan, "KosmicKrisp has no vk_icdGetInstanceProcAddr");
+        return nullptr;
+    }
+    LOG_INFO(Render_Vulkan, "Vulkan driver: KosmicKrisp ({})", path.string());
+    return entry;
+}
+#endif
 
 static const char* const VALIDATION_LAYER_NAME = "VK_LAYER_KHRONOS_validation";
 static const char* const CRASH_DIAGNOSTIC_LAYER_NAME = "VK_LAYER_LUNARG_crash_diagnostic";
@@ -286,9 +332,16 @@ vk::UniqueInstance CreateInstance(Frontend::WindowSystemType window_type, bool e
     LOG_INFO(Render_Vulkan, "Creating vulkan instance");
 
 #if defined(SHADPS4_VISIONOS)
-    // visionOS: MoltenVK is linked into the app (no loader, no driver files), and its
-    // vkGetInstanceProcAddr is the entry point.
-    VULKAN_HPP_DEFAULT_DISPATCHER.init(&::vkGetInstanceProcAddr);
+    // visionOS: no loader and no driver files. KosmicKrisp (Mesa's Vulkan on Metal, with
+    // geometry and tessellation shaders) comes with the app as a framework and is loaded here;
+    // MoltenVK is linked into the app and is the driver when KosmicKrisp is not there or not
+    // wanted (SHADPS4_VK_DRIVER=moltenvk).
+    PFN_vkGetInstanceProcAddr entry = LoadKosmicKrisp();
+    if (entry == nullptr) {
+        LOG_INFO(Render_Vulkan, "Vulkan driver: MoltenVK");
+        entry = &::vkGetInstanceProcAddr;
+    }
+    VULKAN_HPP_DEFAULT_DISPATCHER.init(entry);
 #else
 #if defined(__APPLE__)
     // Initialize the environment with the path to the included ICD, so that the loader will

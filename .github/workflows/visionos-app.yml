@@ -43,7 +43,7 @@ jobs:
         id: core
         with:
           path: visionos/build/core
-          key: visionos-core-${{ hashFiles('core-inputs.txt', 'shadps4-arm64-main/src/**', 'shadps4-arm64-main/CMakeLists.txt', 'shadps4-arm64-main/externals/CMakeLists.txt', 'shadps4-arm64-main/cmake/**', 'visionos/patches/**', 'visionos/scripts/build-*.sh') }}
+          key: visionos-core-${{ hashFiles('core-inputs.txt', 'shadps4-arm64-main/src/**', 'shadps4-arm64-main/CMakeLists.txt', 'shadps4-arm64-main/externals/CMakeLists.txt', 'shadps4-arm64-main/cmake/**', 'visionos/patches/**', 'visionos/scripts/build-*.sh', '!visionos/patches/kosmickrisp-*', '!visionos/scripts/build-kosmickrisp.sh') }}
 
       - name: Submodules the visionOS build uses
         if: steps.core.outputs.cache-hit != 'true'
@@ -93,6 +93,23 @@ jobs:
           bash visionos/scripts/build-ffmpeg.sh 2>&1 | tee ffmpeg.log
           bash visionos/scripts/build-core.sh 2>&1 | tee core.log
 
+      # KosmicKrisp, the Vulkan driver with geometry shaders (visionos/scripts/build-kosmickrisp.sh):
+      # built when the Mesa commit, the patch or the script change, kept otherwise. Should it
+      # fail, the app is still built and draws with MoltenVK.
+      - uses: actions/cache@v4
+        id: kosmickrisp
+        with:
+          path: build/visionos/kosmickrisp
+          key: kosmickrisp-visionos-${{ hashFiles('visionos/patches/kosmickrisp-visionos.patch', 'visionos/scripts/build-kosmickrisp.sh') }}
+      - name: KosmicKrisp for visionOS
+        if: steps.kosmickrisp.outputs.cache-hit != 'true'
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          brew install meson pkg-config llvm spirv-llvm-translator libclc || true
+          pip3 install --break-system-packages mako packaging pyyaml
+          bash visionos/scripts/build-kosmickrisp.sh 2>&1 | tee kosmickrisp.log
+
       - name: The app
         run: |
           set -o pipefail
@@ -109,12 +126,20 @@ jobs:
           echo "Symbols the app exports (should be just the Mach-O header):"
           nm -gU "$APP/AstroQuest" | tee -a ../app.log | head -5
           cp -R "$APP" build/ipa/Payload/
+          KK=../build/visionos/kosmickrisp/KosmicKrisp.framework
+          if [[ -f "$KK/KosmicKrisp" ]]; then
+            mkdir -p build/ipa/Payload/AstroQuest.app/Frameworks
+            cp -R "$KK" build/ipa/Payload/AstroQuest.app/Frameworks/
+            echo "KosmicKrisp.framework is in the app" | tee -a ../app.log
+          else
+            echo "No KosmicKrisp.framework: the app draws with MoltenVK" | tee -a ../app.log
+          fi
           (cd build/ipa && zip -qry ../AstroQuest.ipa Payload)
           ls -la build/AstroQuest.ipa
 
       - name: Publish the logs
         if: always()
-        run: bash visionos/scripts/ci-publish-log.sh visionos-app fexcore.log moltenvk.log ffmpeg.log core.log app.log
+        run: bash visionos/scripts/ci-publish-log.sh visionos-app fexcore.log moltenvk.log ffmpeg.log core.log kosmickrisp.log app.log
 
       # A fixed download link: the Releases page, release "visionos-latest", always the newest app.
       - name: Publish the app as a release

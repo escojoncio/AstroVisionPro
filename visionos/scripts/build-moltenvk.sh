@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # MoltenVK (Vulkan on Metal) for visionOS, as the static library the app links: the emulator draws
-# with Vulkan, and on Apple Vision Pro only Metal exists. MoltenVK is the Vulkan driver visionOS
-# apps can carry (KosmicKrisp, which the macOS build uses, is a Mesa driver for macOS only).
+# with Vulkan, and on Apple Vision Pro only Metal exists. The app also carries KosmicKrisp
+# (build-kosmickrisp.sh), which has geometry shaders; MoltenVK is the driver when that one is
+# missing or vulkan_driver=moltenvk is set.
 #
 # Output: build/visionos/moltenvk/libMoltenVK.a
 # The release's prebuilt package is used when it has visionOS in it; otherwise MoltenVK is built.

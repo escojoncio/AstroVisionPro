@@ -11,8 +11,8 @@
 // by the time they are shown - which is what an OpenXR runtime's compositor does with the
 // projection layer openxr_host.cpp hands it.
 //
-// The frames are images of the emulator's Vulkan device (MoltenVK) that are Metal textures as
-// well (VK_EXT_metal_objects): the app samples them without any copy.
+// The frames are images of the emulator's Vulkan device (KosmicKrisp or MoltenVK) that are Metal
+// textures as well (VK_EXT_metal_objects): the app samples them without any copy.
 
 #ifndef VK_USE_PLATFORM_METAL_EXT
 #define VK_USE_PLATFORM_METAL_EXT

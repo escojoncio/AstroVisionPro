@@ -46,6 +46,9 @@ struct AstroSettings {
     var jitArenaMB = 512
     /// Show the hands (and the controller in them) in front of the game.
     var showHands = false
+    /// The Vulkan driver: "kosmickrisp" (Mesa's, with geometry shaders; the default when the app
+    /// carries it) or "moltenvk" (no geometry shaders).
+    var vulkanDriver = "kosmickrisp"
 
     static var documents: URL {
         FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -129,6 +132,7 @@ struct AstroSettings {
         case "render_quality": renderQuality = min(max(Float(value) ?? renderQuality, 0.1), 1.0)
         case "jit_arena_mb": jitArenaMB = min(max(Int(value) ?? jitArenaMB, 64), 2048)
         case "show_hands": showHands = flag
+        case "vulkan_driver": vulkanDriver = value.lowercased()
         default: break
         }
     }
@@ -188,6 +192,7 @@ struct AstroSettings {
         }
         // The headset is the app's: it is there from the start.
         env.append("SHADPS4_XR_WAIT=0")
+        env.append("SHADPS4_VK_DRIVER=\(vulkanDriver)")
         env.append(contentsOf: extraEnvironment)
         return env
     }
@@ -246,6 +251,8 @@ struct AstroSettings {
     jit_arena_mb=512
     # 1: se ven las manos (y el mando en ellas) delante del juego.
     show_hands=0
+    # Driver de Vulkan: kosmickrisp (Mesa, con geometry shaders) o moltenvk (sin ellos).
+    vulkan_driver=kosmickrisp
 
     # Variables de entorno extra para el emulador, tantas líneas como hagan falta.
     #env=NOMBRE=valor
