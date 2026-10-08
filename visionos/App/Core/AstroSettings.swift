@@ -44,6 +44,9 @@ struct AstroSettings {
     var foveation = true
     /// Compositor Services' render quality, 0 to 1 (1: the largest drawables the system offers).
     var renderQuality: Float = 1.0
+    /// How much MetalFX enlarges each eye of the game's picture before it is shown (1: not at
+    /// all, the picture is interpolated as it is).
+    var upscale: Float = 1.5
     /// Executable memory asked of StikDebug, in megabytes.
     var jitArenaMB = 512
     /// Show the hands (and the controller in them) in front of the game.
@@ -134,6 +137,7 @@ struct AstroSettings {
         case "game": game = value
         case "env": extraEnvironment.append(value)
         case "foveation": foveation = flag
+        case "upscale": upscale = min(max(Float(value) ?? upscale, 1.0), 2.0)
         case "render_quality": renderQuality = min(max(Float(value) ?? renderQuality, 0.1), 1.0)
         case "jit_arena_mb": jitArenaMB = min(max(Int(value) ?? jitArenaMB, 64), 2048)
         case "show_hands": showHands = flag
@@ -258,6 +262,8 @@ struct AstroSettings {
 
     # Renderizado foveado: donde miran los ojos se dibuja a la máxima resolución del visor.
     foveation=1
+    # Escalado con MetalFX de la imagen de cada ojo antes de mostrarla: 1 (no), 1.5 o 2.
+    upscale=1.5
     # Calidad de renderizado de Compositor Services, de 0.1 a 1 (1: la máxima que da el sistema).
     render_quality=1.0
     # Memoria ejecutable que se pide a StikDebug, en megabytes.

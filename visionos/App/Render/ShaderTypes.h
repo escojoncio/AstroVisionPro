@@ -16,9 +16,9 @@ typedef struct {
     simd_float4 ray_z;
     /// Tangents of the half angles the game drew this eye with: left, right, up, down.
     simd_float4 tangents;
-    /// Where this eye's picture is in the frame texture, in texture coordinates: the left edge
-    /// and the width (the eyes are side by side), then the same for the half texel at either
-    /// edge that is not to be sampled across.
+    /// Where this eye's picture is in its texture, in texture coordinates: the left edge and the
+    /// width (the game's frame has the eyes side by side; MetalFX's enlarged eyes are a texture
+    /// each), then the same for the half texel at either edge that is not to be sampled across.
     simd_float4 frame_x;
     /// 1 when there is a frame to show at all.
     float has_frame;
