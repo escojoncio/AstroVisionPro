@@ -2,16 +2,18 @@
 //
 // The settings, kept like the PC's (pc-vr/settings.txt): one key=value a line in settings.txt,
 // in the app's Documents folder (reachable from the Files app). They start at what the PC VR
-// build uses, not the Quest's, and become for the emulator exactly the environment variables
-// pc-vr/launch.ps1 makes of them.
+// build uses, not the Quest's (apart from the resolution, which the headset cannot afford),
+// and become for the emulator exactly the environment variables pc-vr/launch.ps1 makes of them.
 
 import Foundation
 
 struct AstroSettings {
     // As on the PC (pc-vr/settings.txt and pc-vr/launch.ps1).
-    /// Width of each eye's picture: 1440 is the console's largest; 2880 = 2880x3072 (the PC's
-    /// default); "game" lets the game choose among the console's sizes.
-    var resolution = "2880"
+    /// Width of each eye's picture: 1440 is the console's largest (the headset's default: larger
+    /// sizes keep its GPU busy all the time and need more memory than the system lets the app
+    /// have in the game's worlds); 2880 = 2880x3072 (the PC's default); "game" lets the game
+    /// choose among the console's sizes.
+    var resolution = "1440"
     /// The game draws a step smaller by itself while the GPU cannot keep up (0: held to the size).
     var dynamic = true
     /// The most frames a second.
@@ -148,7 +150,7 @@ struct AstroSettings {
         if resolution == "game" {
             env.append("SHADPS4_TITLE_RESOLUTION=title")
         } else {
-            var width = Int(resolution) ?? 2880
+            var width = Int(resolution) ?? 1440
             // (The console's other sizes, 816 to 1200, as they were offered before.)
             let smaller = [816: "3", 960: "4", 1200: "5"]
             if let size = smaller[width] {
@@ -210,12 +212,13 @@ struct AstroSettings {
     static let defaultFile = """
     # Ajustes de AstroQuest para Apple Vision Pro, una clave=valor por línea. Las líneas que
     # empiezan por # no cuentan. Son los mismos ajustes que la versión de PC VR
-    # (pc-vr/settings.txt), con sus mismos valores por defecto, y algunos propios del visor.
+    # (pc-vr/settings.txt), con la resolución adaptada al visor, y algunos propios de él.
 
-    # El ancho de la imagen de cada ojo: 1440 es el máximo de la consola; 2880 (= 2880x3072, el
-    # valor de PC VR) hace que el juego dibuje cuatro veces más píxeles. game: los tamaños de la
-    # consola, elegidos por el propio juego.
-    resolution=2880
+    # El ancho de la imagen de cada ojo: 1440 es el máximo de la consola y el valor para el visor;
+    # 2880 (= 2880x3072, el valor de PC VR) hace que el juego dibuje cuatro veces más píxeles y
+    # necesita 1,5 GB más de memoria (en el visor, la GPU no da abasto y el sistema cierra la app
+    # al entrar en los mundos). game: los tamaños de la consola, elegidos por el propio juego.
+    resolution=1440
     # 1: el juego dibuja un paso más pequeño mientras la GPU no da abasto; 0: siempre a ese tamaño.
     dynamic=1
 
