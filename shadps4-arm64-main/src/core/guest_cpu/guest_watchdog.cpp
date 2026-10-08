@@ -11,6 +11,7 @@
 #include <filesystem>
 #include <mutex>
 #include <thread>
+#include <unordered_map>
 
 #include "common/logging/log.h"
 #include "common/path_util.h"
@@ -316,6 +317,117 @@ std::string DescribeNativeThreads(const char* = "") {
 }
 #endif
 
+#ifdef WATCHDOG_MACH_STACKS
+// Where the processor's time goes, thread by thread, between two calls: what tells a slow
+// stretch that waits on the GPU (no thread busy) from one that waits on the guest's code (its
+// threads busy) or on the emulator's own work for the GPU (the command processor busy).
+struct CpuUse {
+    std::string name;
+    double percent;
+};
+
+std::vector<CpuUse> MeasureCpuUse(double seconds) {
+    static std::unordered_map<u64, u64> previous_us;
+    std::unordered_map<u64, u64> current_us;
+    std::vector<CpuUse> use;
+    thread_act_array_t threads = nullptr;
+    mach_msg_type_number_t thread_count = 0;
+    if (task_threads(mach_task_self(), &threads, &thread_count) != KERN_SUCCESS) {
+        return use;
+    }
+    for (mach_msg_type_number_t t = 0; t < thread_count; ++t) {
+        const thread_act_t thread = threads[t];
+        thread_identifier_info_data_t id{};
+        mach_msg_type_number_t id_count = THREAD_IDENTIFIER_INFO_COUNT;
+        thread_basic_info_data_t basic{};
+        mach_msg_type_number_t basic_count = THREAD_BASIC_INFO_COUNT;
+        if (thread_info(thread, THREAD_IDENTIFIER_INFO, reinterpret_cast<thread_info_t>(&id),
+                        &id_count) != KERN_SUCCESS ||
+            thread_info(thread, THREAD_BASIC_INFO, reinterpret_cast<thread_info_t>(&basic),
+                        &basic_count) != KERN_SUCCESS) {
+            continue;
+        }
+        const u64 us = u64(basic.user_time.seconds + basic.system_time.seconds) * 1'000'000 +
+                       u64(basic.user_time.microseconds + basic.system_time.microseconds);
+        current_us[id.thread_id] = us;
+        const auto before = previous_us.find(id.thread_id);
+        if (before == previous_us.end() || us <= before->second || seconds <= 0.0) {
+            continue;
+        }
+        const double percent = double(us - before->second) / (seconds * 10'000.0);
+        if (percent < 3.0) {
+            continue;
+        }
+        thread_extended_info_data_t info{};
+        mach_msg_type_number_t info_count = THREAD_EXTENDED_INFO_COUNT;
+        std::string name = "?";
+        if (thread_info(thread, THREAD_EXTENDED_INFO, reinterpret_cast<thread_info_t>(&info),
+                        &info_count) == KERN_SUCCESS &&
+            info.pth_name[0] != '\0') {
+            name = info.pth_name;
+        }
+        use.push_back({std::move(name), percent});
+    }
+    for (mach_msg_type_number_t t = 0; t < thread_count; ++t) {
+        mach_port_deallocate(mach_task_self(), threads[t]);
+    }
+    vm_deallocate(mach_task_self(), reinterpret_cast<vm_address_t>(threads),
+                  thread_count * sizeof(thread_act_t));
+    previous_us = std::move(current_us);
+    std::ranges::sort(use, [](const CpuUse& a, const CpuUse& b) { return a.percent > b.percent; });
+    return use;
+}
+
+/// Every 5 s: the guest's frame rate and the busiest threads. A stretch below 10 frames a second
+/// also gets a few samples of the busiest thread's native stack (a few times a session), so
+/// that the log says where that thread spends its time.
+void ReportPace(Clock::time_point now) {
+    static Clock::time_point last_time{};
+    static u64 last_frames{};
+    static u32 profiles_taken{};
+    static Clock::time_point last_profile{};
+    const u64 frames = GuestFrameCount();
+    if (last_time == Clock::time_point{}) {
+        last_time = now;
+        last_frames = frames;
+        MeasureCpuUse(0.0);
+        return;
+    }
+    const double seconds = std::chrono::duration<double>(now - last_time).count();
+    const double fps = double(frames - last_frames) / seconds;
+    last_time = now;
+    last_frames = frames;
+    const auto use = MeasureCpuUse(seconds);
+    std::string text;
+    double total = 0.0;
+    for (const auto& thread : use) {
+        total += thread.percent;
+    }
+    for (size_t i = 0; i < use.size() && i < 8; ++i) {
+        text += fmt::format("{}{} {:.0f}%", i == 0 ? "" : ", ", use[i].name, use[i].percent);
+    }
+    LOG_INFO(Core, "PACE: {:.1f} guest frames/s; CPU {:.0f}% in all: {}", fps, total, text);
+    if (fps < 10.0 && fps > 0.0 && !use.empty() && profiles_taken < 6 &&
+        now - last_profile > std::chrono::seconds{20}) {
+        ++profiles_taken;
+        last_profile = now;
+        // The two busiest threads, a dozen samples each.
+        for (size_t i = 0; i < use.size() && i < 2; ++i) {
+            for (int sample = 0; sample < 12; ++sample) {
+                const auto stack = DescribeNativeThreads(use[i].name.c_str());
+                if (stack.empty()) {
+                    break;
+                }
+                LOG_INFO(Core, "PACE_SAMPLE {} {}:\n{}", use[i].name, sample, stack);
+                std::this_thread::sleep_for(std::chrono::microseconds{7300 + sample * 530});
+            }
+        }
+    }
+}
+#else
+void ReportPace(Clock::time_point) {}
+#endif
+
 #ifdef WATCHDOG_NATIVE_STACKS
 /// SHADPS4_THREAD_NICE="<name>=<nice>,<name>=<nice>..." gives the threads whose names begin with
 /// <name> that scheduling priority (lower is more urgent). On a device with fewer processor
@@ -403,9 +515,13 @@ void Watch() {
     u32 round = 0;
     while (true) {
         std::this_thread::sleep_for(std::chrono::milliseconds{250});
-        if (round++ % 8 == 0) {
+        if (round % 8 == 0) {
             ApplyThreadPriorities();
         }
+        if (round % 20 == 0) {
+            ReportPace(Clock::now());
+        }
+        ++round;
 
         const auto idle = Clock::now().time_since_epoch() - Clock::duration{last_progress.load()};
         const bool stalled = idle > StallTime;
