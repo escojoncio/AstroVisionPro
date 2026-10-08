@@ -5,7 +5,9 @@ Base: shadPS4 ARM64 (`shadps4-arm64-main/`) + FEXCore (x86-64 → ARM64) + Molte
 App visionOS en `visionos/` (SwiftUI + Compositor Services + ARKit + GameController).
 JIT: arena RWX preparada por StikDebug (protocolo `brk #0xf00d` + universal.js); la app hace detach al terminar.
 
-## Última build publicada: 764653b (release `visionos-latest`, con KosmicKrisp.framework) — pendiente de probar
+## Build ebd968f probada (KosmicKrisp) — el juego es jugable
+- Funciona: KK carga y renderiza; GS reales (sin `GS_BYPASS`); ambos ojos; ~25–30 fps en juego (topa en 30 = 3 refrescos a 90 Hz), sin errores de render en el log.
+- Problemas: halos en algunas texturas/efectos; imagen borrosa con aliasing (ajuste del usuario: resolución 1440 = 1440x1536 por ojo, sin `SHADPS4_TITLE_EYE_WIDTH`); tirones de 1–2 s que coinciden con compilaciones de pipelines (5–12 por ventana de 5 s); `PAD` siempre `assumed` (las manos nunca colocan el mando); deriva del rumbo del giróscopo.
 
 ## Estado tras la última build probada en el dispositivo (commit 749ad2e; e838b6e probada: pasa la calibración, ojo izq. mal, efectos corruptos, mando girado)
 
@@ -109,6 +111,11 @@ No funciona / pendiente:
 - Logs: el usuario manda `consola-*.txt` (la app los guarda en Documents). Quitar ANSI con `sed 's/\x1b\[[0-9;]*m//g'`.
 - Release: `gh api repos/<owner>/AstroVisionPro/releases/tags/visionos-latest` → asset `AstroQuest.ipa`.
 - El remoto `origin` del clon local tiende a apuntar al nombre antiguo del repo: hacer push explícito a la URL de AstroVisionPro.
+
+### Cambios tras ebd968f
+- `HeadsetTracking.swift`: log `Hand tracking: <allowed|not allowed|not asked for>; running`; cada 5 s `Hands (<estado>): both seen N, one N, none N, both but not holding N frames; palms last X m apart`. Palma: si los dedos no se ven (mano cerrada sobre el mando) o no hay esqueleto, se usa el origen del ancla (muñeca). Distancia válida entre palmas 0.04–0.45 m (antes 0.05–0.32). Con una sola mano y sin offset previo: mando a 8 cm hacia el centro según el eje derecho de la cabeza.
+- `vr_runtime.cpp` `UpdatePadGyro`: sesgo del giróscopo aprendido en reposo (acelerómetro ~g y |w−sesgo| < 0.08 rad/s durante >0.5 s, constante 2 s) y restado; sin referencia de rumbo de las manos, tras >1 s quieto el rumbo se lleva hacia el frente del asiento (`view_turn`) con ganancia 0.25/s. Miembros nuevos `pad_gyro_bias`, `pad_still_seconds` en `vr_runtime.h`.
+- `vk_pipeline_cache.cpp`: `PIPELINE_SLOW <hash>: <ms>` para creaciones ≥30 ms (shaders + pipeline en el hilo del procesador de comandos).
 
 ## Pendiente (orden recomendado)
 1. **Probar 764653b**: en el log buscar `Vulkan driver: KosmicKrisp` (o `KosmicKrisp not loaded`), errores de instancia/dispositivo, que no salga `GS_BYPASS`, líneas `PAD`, `Controller motion:` y `PACE`. Si KK falla: `vulkan_driver=moltenvk` en `settings.txt`.
