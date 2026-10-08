@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <atomic>
 #include <map>
 #include <fstream>
 #include <string>
@@ -25,6 +26,7 @@
 #ifdef SHADPS4_VISIONOS
 #include <mach/mach.h>
 #include <mach/vm_map.h>
+#include <unistd.h>
 #endif
 
 #if defined(__APPLE__) && defined(ARCH_X86_64)
@@ -35,6 +37,36 @@ asm(".zerofill USER_AREA,USER_AREA,__USER_AREA,0x5F9000000000");
 #endif
 
 namespace Core {
+
+namespace {
+/// The whole of the console's memory, mapped once (visionOS), for ResidentConsoleMemory.
+std::atomic<u8*> g_console_memory{};
+std::atomic<u64> g_console_memory_size{};
+} // namespace
+
+u64 ResidentConsoleMemory() {
+#if defined(SHADPS4_VISIONOS)
+    u8* const base = g_console_memory.load(std::memory_order_relaxed);
+    const u64 size = g_console_memory_size.load(std::memory_order_relaxed);
+    if (base == nullptr || size == 0) {
+        return 0;
+    }
+    const u64 page = static_cast<u64>(getpagesize());
+    std::vector<char> pages((size + page - 1) / page);
+    if (mincore(reinterpret_cast<caddr_t>(base), size, pages.data()) != 0) {
+        return 0;
+    }
+    u64 resident = 0;
+    for (const char state : pages) {
+        if ((state & MINCORE_INCORE) != 0) {
+            resident += page;
+        }
+    }
+    return resident;
+#else
+    return 0;
+#endif
+}
 
 #if defined(SHADPS4_VISIONOS)
 // visionOS gives an app 64 GB of address space at most (with the extended virtual addressing
@@ -790,6 +822,8 @@ struct AddressSpace::Impl {
             throw std::bad_alloc{};
         }
         backing_base = reinterpret_cast<u8*>(backing_address);
+        g_console_memory.store(backing_base, std::memory_order_relaxed);
+        g_console_memory_size.store(BackingSize, std::memory_order_relaxed);
         LOG_INFO(Kernel_Vmm, "The console's memory: {} MB at {}", BackingSize >> 20,
                  fmt::ptr(backing_base));
     }
