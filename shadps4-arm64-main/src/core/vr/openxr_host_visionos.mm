@@ -379,6 +379,10 @@ std::string OpenXrHost::AudioInputName() const {
     return {};
 }
 
+void OpenXrHost::AudioDevicesChanged() {
+    // The headset's speakers and microphone are the system's own: nothing to ask again.
+}
+
 // --- what the app calls (platform/visionos/astro_core.h) ------------------------------------
 
 struct VisionOsBridge {

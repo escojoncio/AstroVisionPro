@@ -13,6 +13,7 @@
 #include <hwinfo/hwinfo.h>
 #endif
 
+#include "common/console_language.h"
 #include "common/debug.h"
 #include "common/logging/log.h"
 #include "common/thread.h"
@@ -286,6 +287,21 @@ void Emulator::Run(std::filesystem::path file, std::vector<std::string> args,
     // Switch to configured log
     Common::Log::Switch((!id.empty() && EmulatorSettings.IsLogSeparate()) ? id + ".log"
                                                                           : "shad_log.txt");
+    // SHADPS4_CONSOLE_LANGUAGE: the language the console is set to, which is the one a title
+    // speaks if it has it. As a language tag ("fr-FR", as Windows and Android name theirs) or
+    // as the console's own number. Whatever starts the emulator for a player says theirs here.
+    if (const char* wanted = std::getenv("SHADPS4_CONSOLE_LANGUAGE");
+        wanted != nullptr && wanted[0] != '\0') {
+        if (const auto language = Common::ConsoleLanguageFromTag(wanted)) {
+            EmulatorSettings.SetConsoleLanguage(*language);
+            LOG_INFO(Core, "The console's language: {} (asked for as \"{}\")",
+                     Common::ConsoleLanguageName(*language), wanted);
+        } else {
+            LOG_INFO(Core,
+                     "The console's language: {} (it has none for \"{}\", which was asked for)",
+                     Common::ConsoleLanguageName(EmulatorSettings.GetConsoleLanguage()), wanted);
+        }
+    }
 
     auto guest_eboot_path = "/app0/" + eboot_name.generic_string();
     const auto eboot_path = mnt->GetHostPath(guest_eboot_path);
@@ -377,9 +393,18 @@ void Emulator::Run(std::filesystem::path file, std::vector<std::string> args,
         LOG_INFO(Loader, "PSVR Supported: {}", (bool)psf_attributes.support_ps_vr.Value());
         LOG_INFO(Loader, "PSVR Required: {}", (bool)psf_attributes.require_ps_vr.Value());
     }
+    Core::KnownTitle::Prepare();
+#ifndef ENABLE_BACHATA_RUNTIME
+    // The console's address space is set aside before anything of a headset is looked for.
+    // A title maps its memory at addresses of its own choosing (ASTRO BOT Rescue Mission its
+    // heap at 0x300000000), and what an OpenXR runtime brings into the process when it is
+    // loaded may come to lie right there if it is first: SteamVR's did, and the title stopped
+    // at its start with "Mapping cannot fit inside free region". (After Prepare, which says
+    // how much memory the title is to have.)
+    memory = Core::Memory::Instance();
+#endif
     Core::Vr::Runtime::Instance().Configure(psf_attributes.support_ps_vr.Value() != 0,
                                             psf_attributes.require_ps_vr.Value() != 0);
-    Core::KnownTitle::Prepare();
     if (!args.empty()) {
         const auto argc = std::min<size_t>(args.size(), 32);
         for (auto i = 0; i < argc; i++) {
@@ -403,9 +428,6 @@ void Emulator::Run(std::filesystem::path file, std::vector<std::string> args,
     Common::Singleton<FileSys::HandleTable>::Instance()->CreateStdHandles();
 
     // Initialize components
-#ifndef ENABLE_BACHATA_RUNTIME
-    memory = Core::Memory::Instance();
-#endif
     controllers = Common::Singleton<Input::GameControllers>::Instance();
 #ifndef ENABLE_BACHATA_RUNTIME
     linker = Common::Singleton<Core::Linker>::Instance();
