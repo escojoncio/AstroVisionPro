@@ -14,7 +14,7 @@ OUT=$(mktemp -d)
     echo
     echo "## $(basename "$LOG"): $(wc -l < "$LOG") lines"
     echo "### errors"
-    grep -n -E -B2 -A6 "error:|Error |FAILED|fatal error|undefined symbol|ld: |CMake Error|\*\* BUILD FAILED" "$LOG" | head -1500
+    grep -n -E -B2 -A6 "error:|Error |ERROR:|FAILED|fatal error|undefined symbol|ld: |CMake Error|\*\* BUILD FAILED" "$LOG" | head -1500
     echo "### end"
     tail -n 150 "$LOG"
   done

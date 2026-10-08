@@ -55,6 +55,8 @@ final class PlayStationController: @unchecked Sendable {
     private var highFrequency: RumbleMotor?
     private var appliedFeedback = AstroPadFeedback()
     private var observers: [NSObjectProtocol] = []
+    /// Motion updates so far (a few go to the log).
+    private var motionReports: UInt = 0
     var onStatusChange: ((Status?) -> Void)?
 
     private init() {}
@@ -247,23 +249,34 @@ final class PlayStationController: @unchecked Sendable {
         }
     }
 
-    /// The motion sensors, converted the way SDL's GameController driver converts them
-    /// (src/joystick/apple/SDL_mfijoystick.m) - the convention the emulator was written against:
-    /// rad/s, and m/s² with gravity included.
+    /// The motion sensors, in the frame and units the emulator was written against (SDL's
+    /// sensor convention: x right, y up out of the face buttons, z towards the player; rad/s,
+    /// and m/s² as an accelerometer reads them, +9.8 up at rest).
+    /// GameController's frame for a gamepad is x right, y away from the player, z up out of the
+    /// face buttons, and its acceleration is in G with gravity pointing down. The turn rate is
+    /// mapped as SDL's GameController driver maps it (x, z, -y); the acceleration has to go
+    /// through the same change of axes (SDL's driver leaves it out, which tilts the controller
+    /// a quarter turn: at rest it read as pointing at the player), and is negated to read as an
+    /// accelerometer does.
     private func motionChanged(_ motion: GCMotion) {
         guard motion.sensorsActive else { return }
         var gyro: [Float] = [0, 0, 0]
-        var accel: [Float] = [0, 0, -9.80665]
         if motion.hasRotationRate {
             let rate = motion.rotationRate
             gyro = [Float(rate.x), Float(rate.z), Float(-rate.y)]
         }
-        if motion.hasGravityAndUserAcceleration {
-            let acceleration = motion.acceleration
-            accel = [Float(-acceleration.x) * 9.80665, Float(-acceleration.y) * 9.80665, Float(-acceleration.z) * 9.80665]
-        } else {
-            let acceleration = motion.acceleration
-            accel = [Float(-acceleration.x) * 9.80665, Float(-acceleration.y) * 9.80665, Float(-acceleration.z) * 9.80665]
+        let acceleration = motion.acceleration
+        let standardGravity: Float = 9.80665
+        let accel: [Float] = [Float(-acceleration.x) * standardGravity,
+                              Float(-acceleration.z) * standardGravity,
+                              Float(acceleration.y) * standardGravity]
+        // Now and then, what GameController itself said (its own axes), for the log.
+        motionReports &+= 1
+        if motionReports % 600 == 1 {
+            let rate = motion.hasRotationRate ? motion.rotationRate : GCRotationRate(x: 0, y: 0, z: 0)
+            LogFiles.log(String(format: "Controller motion: turn %.2f %.2f %.2f rad/s, acceleration %.2f %.2f %.2f G (GameController axes; gravity and user apart: %@)",
+                                rate.x, rate.y, rate.z, acceleration.x, acceleration.y,
+                                acceleration.z, motion.hasGravityAndUserAcceleration ? "yes" : "no"))
         }
         gyro.withUnsafeBufferPointer { g in
             accel.withUnsafeBufferPointer { a in

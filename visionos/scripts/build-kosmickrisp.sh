@@ -11,7 +11,7 @@
 #   - VK_EXT_metal_objects for images, which the headset's frames are handed over with;
 #   - -Dkosmickrisp-embedded: frameworks linked directly and an @rpath install name.
 #
-# Needs (Homebrew): meson pkg-config llvm spirv-llvm-translator libclc, and Python's mako,
+# Needs (Homebrew): meson pkg-config llvm spirv-tools spirv-llvm-translator libclc, and Python's mako,
 # packaging and pyyaml; Xcode with the visionOS SDK. Mesa's build tools (mesa_clc and the
 # others that compile its OpenCL C into shaders) are built for this Mac first.
 #
