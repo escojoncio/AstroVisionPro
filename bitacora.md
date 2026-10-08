@@ -25,7 +25,13 @@ JIT: arena RWX preparada por StikDebug (protocolo `brk #0xf00d` + universal.js);
   - `vk_scheduler.{h,cpp}` `GpuTimer`: bloques de 256 consultas por command buffer (48 bloques); timestamps `BottomOfPipe` antes de `beginRendering` y tras `endRendering` (`PassBegin`/`PassEnd`, `NoteDraw` → `PassDraw`, ahora no inline). Cada 5 s `GPU_PASSES[n]: X ms/s outside passes…; the heaviest: WxH[xL] N colours [+depth]: ms/s, passes/s, draws/s` (10 más caras, clave = tamaño, capas, nº de colores, profundidad). `GPU_TIME` añade `untimed` y `the GPU's memory N MB` (`Instance::GetDeviceMemoryUsage`).
   - `address_space.{h,cpp}`: `Core::ResidentConsoleMemory()` (visionOS: `mincore` sobre el mapeo completo del objeto de memoria de la consola; `g_console_memory`/`g_console_memory_size`).
   - `guest_watchdog.cpp` `ReportPace`: añade `the console's memory in RAM N MB`.
-- Pendiente en esta tanda antes de `[build]`: carpeta VPS4 (ver Pendiente 0).
+- Build ea6b3e4 (dispatch) compilada con lo anterior; el usuario ya había movido el juego a VPS4 → sin probar.
+- Carpeta VPS4 (commit siguiente, `[build]`):
+  - `visionos/App/Core/GameFolder.swift` (nuevo): bookmark del `.fileImporter` en UserDefaults (`vps4FolderBookmark`) y llavero (genérico, servicio `astroquest.vps4`, cuenta `folder-bookmark`, `AfterFirstUnlock`); `url()` resuelve (defaults y luego llavero), `startAccessingSecurityScopedResource` y lo mantiene; crea `Juegos`, `Partidas`, `Cachés`; `choose()` exige nombre `VPS4` (sin distinguir mayúsculas) y copia `Library/Application Support/shadPS4/home/*` a `Partidas` si está vacía. Logs `VPS4: …`.
+  - `AppModel.swift`: `gameFolder`, `folderChosen(_:)`; `findGame` busca primero en `VPS4/Juegos/*` y `VPS4/*` (juego = `eboot.bin` o `sce_sys/param.sfo`; prefiere CUSA12392 sin distinguir mayúsculas) y luego en Documents como antes.
+  - `AstroSettings.swift`: `MESA_SHADER_CACHE_DIR` en `VPS4/Cachés/mesa_shader_cache` si hay VPS4; `SHADPS4_HOME_DIR=VPS4/Partidas`.
+  - `astro_core.mm`: con `SHADPS4_HOME_DIR`, `create_directories` + `Common::FS::SetUserPath(PathType::HomeDir, …)` antes de arrancar (stderr `Users and saves in …`).
+  - `HomeView.swift`: tarjeta Juego con botón "Elegir VPS4" (`.fileImporter` de carpetas) y detalle `VPS4 › <juego>`. `CheckView.swift`: estado de VPS4, botón elegir, y lista de ficheros `sce_sys` (param.sfo obligatorio; resto opcional) — cierra el antiguo pendiente 6.
 
 ## Commit tras 5298839: MetalFX, GPU_TIME, recolector de texturas por memoria del proceso
 - `visionos/App/Render/Upscaler.swift` (nuevo): `MTLFXSpatialScaler` por ojo. Blit de cada mitad del frame (ojos lado a lado) a una textura privada propia, escalado a `round(ojo·upscale/2)·2`, formato del frame (rgba8Unorm_srgb), `colorProcessingMode = .perceptual`. Si no hay escalador: log `MetalFX: no spatial scaler…` y se muestra como antes.
@@ -165,5 +171,5 @@ No funciona / pendiente:
 3. **Posición del mando**: si con el acelerómetro corregido sigue mal, Object Tracking (`ObjectTrackingProvider`) con objeto de referencia del DualSense (escaneo + Create ML en macOS) fusionado con giróscopo y manos. Accessory tracking solo vale para Sense de PS VR2 (ya implementado en `SenseTracking.swift`).
 4. Texturas BC6H/BC7 con uso Storage que MoltenVK no crea (`image.cpp:247`).
 5. Activar caché de pipelines en disco.
-6. Comprobación en la app de ficheros `sce_sys` (param.sfo obligatorio; playgo-chunk.dat, npbind.dat, nptitle.dat, icon0.png, pic0.png, pic1.png, trophy/trophy00.trp opcionales) en la pestaña Comprobación y en la tarjeta Juego.
+6. (Hecho) Comprobación en la app de ficheros `sce_sys` (param.sfo obligatorio; playgo-chunk.dat, npbind.dat, nptitle.dat, icon0.png, pic0.png, pic1.png, trophy/trophy00.trp opcionales) en la pestaña Comprobación y en la tarjeta Juego.
 7. Aviso de FEX "Failed to mprotect last page of code buffer" (inofensivo por ahora).

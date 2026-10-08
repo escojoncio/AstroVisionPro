@@ -204,11 +204,16 @@ struct AstroSettings {
         env.append("SHADPS4_XR_WAIT=0")
         env.append("SHADPS4_VK_DRIVER=\(vulkanDriver)")
         env.append("SHADPS4_ASYNC_PIPELINES=\(asyncShaders ? 1 : 0)")
-        // KosmicKrisp keeps what it translated (Mesa's shader cache) where the app may write.
-        let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+        // KosmicKrisp keeps what it translated (Mesa's shader cache) where the app may write:
+        // the VPS4 folder when there is one (it outlives the app), else the app's caches.
+        let caches = (GameFolder.caches ?? FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0])
             .appendingPathComponent("mesa_shader_cache")
         try? FileManager.default.createDirectory(at: caches, withIntermediateDirectories: true)
         env.append("MESA_SHADER_CACHE_DIR=\(caches.path)")
+        // The users and their saves, in the VPS4 folder when there is one.
+        if let saves = GameFolder.saves {
+            env.append("SHADPS4_HOME_DIR=\(saves.path)")
+        }
         env.append(contentsOf: extraEnvironment)
         return env
     }

@@ -5,9 +5,11 @@
 
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
 
 struct CheckView: View {
     @Environment(AppModel.self) private var model
+    @State private var choosingFolder = false
 
     var body: some View {
         NavigationStack {
@@ -37,6 +39,21 @@ struct CheckView: View {
                 }
 
                 Section(L("Juego", "Game")) {
+                    if let folder = model.gameFolder {
+                        Label(L("Carpeta VPS4", "VPS4 folder"), systemImage: "folder.fill")
+                            .foregroundStyle(.green)
+                        Text(folder.path)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Label(L("Sin carpeta VPS4", "No VPS4 folder"), systemImage: "folder.badge.questionmark")
+                            .foregroundStyle(.orange)
+                        Text(L("Crea una carpeta llamada VPS4 en «En mi Apple Vision Pro» con la app Archivos, mete el juego en VPS4 › Juegos y elígela aquí. Sobrevive a borrar la app; si al reinstalarla no la reconoce, vuelve a elegirla.", "Make a folder called VPS4 in “On My Apple Vision Pro” with the Files app, put the game in VPS4 › Juegos and choose it here. It outlives deleting the app; if a reinstalled app does not recognise it, choose it again."))
+                            .font(.callout)
+                    }
+                    Button(model.gameFolder == nil ? L("Elegir carpeta VPS4", "Choose the VPS4 folder") : L("Elegir otra carpeta VPS4", "Choose another VPS4 folder")) {
+                        choosingFolder = true
+                    }
                     if let path = model.gamePath {
                         Label(path.lastPathComponent, systemImage: "checkmark.circle.fill")
                             .foregroundStyle(.green)
@@ -46,12 +63,23 @@ struct CheckView: View {
                     } else {
                         Label(L("No se encuentra el juego", "The game was not found"), systemImage: "xmark.octagon.fill")
                             .foregroundStyle(.red)
-                        Text(L("Copia la carpeta CUSA12392 (la que tiene eboot.bin, sce_sys y sce_module) en «En mi Apple Vision Pro › AstroQuest» con la app Archivos, por ejemplo desde una carpeta compartida de tu PC (Archivos › Conectarse a un servidor).", "Copy the CUSA12392 folder (the one with eboot.bin, sce_sys and sce_module) to “On My Apple Vision Pro › AstroQuest” with the Files app, for example from a shared folder on your PC (Files › Connect to Server)."))
+                        Text(L("Copia la carpeta del juego (la que tiene eboot.bin, sce_sys y sce_module, p. ej. CUSA12392) en VPS4 › Juegos con la app Archivos, por ejemplo desde una carpeta compartida de tu PC (Archivos › Conectarse a un servidor). También sirve «En mi Apple Vision Pro › AstroQuest», pero esa se borra con la app.", "Copy the game's folder (the one with eboot.bin, sce_sys and sce_module, e.g. CUSA12392) to VPS4 › Juegos with the Files app, for example from a shared folder on your PC (Files › Connect to Server). “On My Apple Vision Pro › AstroQuest” works too, but it is deleted with the app."))
                             .font(.callout)
+                    }
+                    if let path = model.gamePath {
+                        ForEach(Self.systemFiles(of: path), id: \.self) { file in
+                            Label(file.name + (file.required ? "" : L(" (opcional)", " (optional)")),
+                                  systemImage: file.present ? "checkmark.circle" : (file.required ? "xmark.octagon.fill" : "minus.circle"))
+                                .font(.callout)
+                                .foregroundStyle(file.present ? .green : (file.required ? .red : .secondary))
+                        }
                     }
                     Button(L("Buscar de nuevo", "Search again")) {
                         model.findGame()
                     }
+                }
+                .fileImporter(isPresented: $choosingFolder, allowedContentTypes: [.folder]) { result in
+                    model.folderChosen(result)
                 }
 
                 Section(L("Mando", "Controller")) {
@@ -103,6 +131,26 @@ struct CheckView: View {
                 }
             }
         }
+    }
+
+    /// One of the files of the game's sce_sys folder (taken from the package it came in).
+    private struct SystemFile: Hashable {
+        let name: String
+        let required: Bool
+        let present: Bool
+    }
+
+    /// param.sfo is what the emulator cannot start the game without; the rest is optional.
+    private static func systemFiles(of game: URL) -> [SystemFile] {
+        let required = ["param.sfo"]
+        let optional = ["playgo-chunk.dat", "npbind.dat", "nptitle.dat", "icon0.png", "pic0.png",
+                        "pic1.png", "trophy/trophy00.trp"]
+        let system = game.appendingPathComponent("sce_sys")
+        func file(_ name: String, required: Bool) -> SystemFile {
+            SystemFile(name: "sce_sys/" + name, required: required,
+                       present: FileManager.default.fileExists(atPath: system.appendingPathComponent(name).path))
+        }
+        return required.map { file($0, required: true) } + optional.map { file($0, required: false) }
     }
 
     @ViewBuilder

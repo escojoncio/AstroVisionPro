@@ -23,6 +23,8 @@ final class AppModel {
     let jit = JITGate()
     var controller: PlayStationController.Status?
     var gamePath: URL?
+    /// The VPS4 folder (GameFolder.swift), once chosen and reachable.
+    var gameFolder: URL?
     var coreState: AstroCoreState = AstroCoreStateIdle
     var message: String?
     var immersiveOpen = false
@@ -74,11 +76,37 @@ final class AppModel {
         diagnostics.canReserveNeeded = astro_diag_can_reserve_gb(Diagnostics.neededAddressSpaceGB)
     }
 
+    /// What the folder picker gave back when asked for the VPS4 folder.
+    func folderChosen(_ result: Result<URL, Error>) {
+        switch result {
+        case .success(let url):
+            switch GameFolder.choose(url) {
+            case .chosen(let folder):
+                gameFolder = folder
+                findGame()
+                message = gamePath != nil
+                    ? L("Carpeta VPS4 lista: \(gamePath!.lastPathComponent).", "VPS4 folder ready: \(gamePath!.lastPathComponent).")
+                    : L("Carpeta VPS4 lista. Mete el juego en VPS4 › Juegos.", "VPS4 folder ready. Put the game in VPS4 › Juegos.")
+            case .wrongName(let name):
+                message = L("Esa carpeta se llama «\(name)»: elige la que se llama VPS4.", "That folder is called “\(name)”: choose the one called VPS4.")
+            case .failed(let reason):
+                message = reason
+            }
+        case .failure(let error):
+            message = L("No se pudo elegir la carpeta: \(error.localizedDescription)", "The folder could not be chosen: \(error.localizedDescription)")
+        }
+    }
+
     func findGame() {
         settings = AstroSettings.load()
+        gameFolder = GameFolder.url()
         let manager = FileManager.default
         func isGame(_ url: URL) -> Bool {
             manager.fileExists(atPath: url.appendingPathComponent("eboot.bin").path)
+                || manager.fileExists(atPath: url.appendingPathComponent("sce_sys/param.sfo").path)
+        }
+        func preferred(_ url: URL) -> Bool {
+            url.lastPathComponent.caseInsensitiveCompare("CUSA12392") == .orderedSame
         }
         if !settings.game.isEmpty {
             var url = URL(fileURLWithPath: settings.game)
@@ -90,6 +118,18 @@ final class AppModel {
                 return
             }
         }
+        // The VPS4 folder first (GameFolder.swift): its Juegos folder, and the folder itself.
+        if let root = GameFolder.url() {
+            var places: [URL] = []
+            for folder in [root.appendingPathComponent("Juegos"), root] {
+                let inside = (try? manager.contentsOfDirectory(at: folder, includingPropertiesForKeys: [.isDirectoryKey])) ?? []
+                places.append(contentsOf: inside.sorted { $0.lastPathComponent < $1.lastPathComponent })
+            }
+            if let found = places.first(where: { preferred($0) && isGame($0) }) ?? places.first(where: isGame) {
+                gamePath = found
+                return
+            }
+        }
         let documents = AstroSettings.documents
         var places = [documents, documents.appendingPathComponent("games")]
         for folder in [documents, documents.appendingPathComponent("games")] {
@@ -97,8 +137,8 @@ final class AppModel {
             places.append(contentsOf: inside.sorted { $0.lastPathComponent < $1.lastPathComponent })
         }
         // The European release the fixes are made for first, as the PC launcher prefers it.
-        if let preferred = places.first(where: { $0.lastPathComponent == "CUSA12392" && isGame($0) }) {
-            gamePath = preferred
+        if let found = places.first(where: { preferred($0) && isGame($0) }) {
+            gamePath = found
             return
         }
         gamePath = places.first(where: isGame)
