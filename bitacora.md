@@ -43,6 +43,32 @@ JIT: arena RWX preparada por StikDebug (protocolo `brk #0xf00d` + universal.js);
 - Análisis: ASTRO BOT reserva su memoria en bloques al arrancar (0x38000000, 0x10000000, 0x88a00000 de gráficos) y solo libera 1 vez por sesión → liberar memoria del invitado no sirve; `BufferCache::RunGarbageCollector` de upstream no borra nada (el lambda no se usa), se deja así.
 - Slots al visor siguen en 6 (`openxr_host_visionos.mm`: con menos, el hilo de la GPU se bloqueaba; a 1440 son ~100 MB).
 
+## Build c81c177 probada: tests C1–C4 (logs 2026-10-08 20:18, 20:23, 20:35, 20:41)
+Base común: 1440, dinámica, MetalFX ×1.5, MSAA 1. `GPU_TIME`: 4080 timestamps (10×408) funcionan con KK.
+
+| Test | Driver / ajuste | Resultado |
+|---|---|---|
+| C1 | KK, FOV 100, JIT 1024 | Cierre por memoria al cargar mundo: 8115 MB, 76 MB libres; consola en RAM 1.4 GB, GPU 3.0 GB, resto 3.7 GB. Mundo 816x870 a ~30 fps, GPU 95–99 %. |
+| C2 | MoltenVK | Peor: mundo 17–25 fps a 816x870, GPU 100 %; pasada principal 65–74 % (~45 µs/draw frente a ~18 µs en KK). Pasadas pequeñas más baratas que en KK. GPU 2.4 GB. **MoltenVK descartado.** |
+| C3 | KK, FOV 85 | Cierre por memoria al cargar nivel 1 (1.3 GB libres antes de cargar). FOV no cambia memoria ni rendimiento. |
+| C4 | KK, FOV 100, JIT 512 | Sin cierre (mínimo 339 MB libres). Resto al arrancar 1.2 GB (frente a 1.7 GB con 1024); al final ~3.4 GB. 25–33 fps, 816–960. |
+
+`GPU_PASSES` en el mundo (KK, 816x870):
+- Escena `816x870 1 colour +depth`: ~50 % de la GPU, ~400 pasadas/s (~13 por frame), 21–31 k draws/s (~18 µs/draw).
+- `16384x16384 0 colours` (pasada sin adjuntos; el emulador usa el área máxima): 6–23 % de la GPU. En GPU por tiles se recorre toda el área.
+- Cadena de pasadas pequeñas (25x27…408x435, 1 draw cada una): ~0.25 ms por pasada, ~15 % en total (coste fijo por pasada en KK).
+- Sombras 2048², composición 1440x1536, compute fuera de pasadas: ~5 % cada uno.
+
+Memoria: el "resto" (footprint − consola en RAM − GPU) crece 1.2–1.7 GB → 2.6–3.7 GB con KK y con MoltenVK, así que no es del driver. Parte es la consola comprimida (mincore no cuenta `MINCORE_PAGED_OUT`; la consola en RAM baja de 2.0 a 1.4 GB cuando la GPU sube 1.1 GB al cargar mundo). JIT 512 en vez de 1024 ahorra ~0.3–0.5 GB. `jit_arena.cpp` `Free` no devuelve páginas al sistema.
+
+## Siguiente build (plan, por este orden)
+1. **Memoria / JIT**: `PACE` con uso real de la arena (`Common::JitArena`: bytes en `used`, máximo histórico) y páginas de consola `MINCORE_PAGED_OUT` (comprimidas); `malloc_zone_statistics` (montón: FEX, Mesa/NIR, shadPS4) en `PACE`. En `JitArena::Free`, devolver páginas: probar `madvise(rw, len, MADV_FREE_REUSABLE)` en el mapeo RW (puede no tener efecto en objeto compartido; verificar con `PACE`). Limitar el búfer de código por hilo de FEX si el uso lo justifica. Después: quitar el ajuste "Memoria ejecutable" y fijar el tamaño en la app.
+2. **Pasada 16384x16384 sin adjuntos**: en `vk_rasterizer.cpp`/`Scheduler::BeginRendering`, cuando no hay color ni profundidad, usar como `renderArea`/ancho×alto el scissor o viewport del draw (redondeado) en lugar de 16384. Esperado: −6…−23 % de GPU en el mundo.
+3. **Coste por pasada en KK**: revisar barreras entre pasadas (`pipelineBarrier2` de transiciones de imagen) en la cadena de bloom; agrupar o evitar barreras redundantes.
+4. **Coste por draw de la escena (~18 µs)**: medir qué cambia entre draws (pipelines, descriptores, buffers subidos dentro de la pasada) con contadores por frame (`SHADPS4_FRAME_STATS=1`) y por pipeline; probar si los draws con GS de KK parten la pasada.
+5. Audio: petardeo desde el arranque en todas las pruebas, independiente del driver (pendiente de análisis: `sndx_out_thread` 8–17 % CPU).
+6. Antialiasing por defecto en visionOS: 1 (con 4x la GPU no da; con 1, nave a 1440 y 45 fps).
+
 ## Build 5f23d03 probada: A (MSAA 4x) y B (MSAA 1), logs 2026-10-08 18:35 y 18:38
 - VPS4 funciona: carpeta resuelta en `.../File Provider Storage/vPS4` (minúscula v aceptada), `SHADPS4_HOME_DIR` aplicado.
 - `GPU_TIME: no query pool (ErrorOutOfDeviceMemory)`: KK limita el pool de timestamps (Metal: counter sample buffer ≤32 KB = 4096 timestamps); 12288 falla → sin datos por pasada.
