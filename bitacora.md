@@ -43,7 +43,22 @@ No funciona / pendiente:
 - CI (`visionos-app.yml`): caché `kosmickrisp-visionos-<hash patch+script>`; paso con `continue-on-error` (si falla, la app sale con MoltenVK); el framework se copia a `AstroQuest.app/Frameworks/` antes del zip; log `kosmickrisp.log` publicado en `ci-logs`. La clave de caché del core excluye el patch y el script de KK.
 - `vk_platform.cpp` `LoadKosmicKrisp()` (visionOS): `dlopen(<dir del ejecutable>/Frameworks/KosmicKrisp.framework/KosmicKrisp)`, `vk_icdNegotiateLoaderICDInterfaceVersion(7)`, `vk_icdGetInstanceProcAddr` como entrada del dispatcher; si falta o `SHADPS4_VK_DRIVER=moltenvk`, MoltenVK enlazado. Log: `Vulkan driver: KosmicKrisp|MoltenVK`.
 - App: ajuste `vulkan_driver=kosmickrisp|moltenvk` en `settings.txt` → `SHADPS4_VK_DRIVER`.
-- Sin probar aún: compilación de Mesa para xros, carga del framework firmado por SideStore, creación de instancia sin loader.
+- Compila para xros (workflow `kosmickrisp-visionos.yml`, solo dispatch, misma clave de caché que la app): framework de 14 MB, exporta `vk_icdGetInstanceProcAddr`, `vk_icdGetPhysicalDeviceProcAddr`, `vk_icdNegotiateLoaderICDInterfaceVersion`. Arreglos que hicieron falta: `brew spirv-tools` (herramientas de Mesa), `CAMetalLayer.displaySyncEnabled` solo en macOS (`src/vulkan/wsi/wsi_common_metal_layer.m`), enlazar CoreGraphics y mantener `-undefined dynamic_lookup` (puntos de entrada weak de Mesa; ld avisa "deprecated on visionOS", no falla). `meson compile --ninja-args=-k0` para ver todos los errores.
+- Sin probar aún en el dispositivo: carga del framework firmado por SideStore y creación de instancia sin loader.
+
+### Análisis de los GS de ASTRO BOT (log 2026-10-08 13:30)
+- Desensamblado con un decodificador hecho con `shader_recompiler/frontend/decode.cpp` (+ format/instruction, magic_enum, spdlog). LLVM 18 no desensambla GFX7.
+- GS `0xf250a6ed` (ES `0x244b118d`, copy 25 dwords): carga 6 dwords por vértice del anillo ESGS, compara `s_buffer_load` de dos constantes (`s[2:5]` dword 99 vs `s[0:3]` dword 24) y solo emite el triángulo (3 vértices, paso directo) si son iguales. El bypass lo dibuja siempre → contenido de otra pasada/ojo en el ojo izquierdo.
+- GS `0x3b88b54e` (3198 dwords; ES `0x3cac3810` solo escribe un índice, posición 0): genera geometría (partículas/efectos, hasta 32 vértices, 48 dwords/vértice). Con el bypass no se dibuja (posición 0) → efectos ausentes/corruptos.
+- `GS_INFO`: un solo slice en el target y solo el viewport 0 (1440x1536) activo: cada ojo es una imagen aparte.
+
+### Rendimiento (`PACE`, mismo log)
+- Tramos de 3–12 fps con CPU total 11–25 % y ningún hilo ocupado → hilos esperando (GPU o sincronización), no FEX. En cargas, `RoomLoad_ATQT` ~60 %. Ojos a 1440x1536.
+
+### Mando
+- `PlayStationController.swift`: la aceleración de GameController se pasaba como `(-x,-y,-z)·g` (copiado de `SDL_mfijoystick.m`, que no cambia ejes en el acelerómetro) → en reposo el emulador veía el mando apuntando al jugador (90° de cabeceo). Ahora `(-x, -z, +y)·g`, mismos ejes que el giróscopo `(x, z, -y)`. Cada 600 lecturas, `Controller motion:` con los valores crudos.
+- `vr_runtime.cpp` `GetPad`: cada 5 s `PAD: <seen|own place|assumed> at x y z from the head; heading/pitch/roll; accelerometer`.
+
 
 ## Cambios por archivo (sesión de depuración en dispositivo)
 
