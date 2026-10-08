@@ -458,7 +458,8 @@ public:
     }
 
     /// Counts a draw towards the next flush (see IsFlushDue).
-    void NoteDraw();
+    /// A draw was recorded; `gs_hash`: its geometry shader's, 0 without one.
+    void NoteDraw(u64 gs_hash = 0);
 
     /// True when enough has been recorded, and a render pass has ended since, for the GPU to be
     /// given it now instead of at the end of the frame. A frame takes the GPU thread about as
