@@ -19,6 +19,11 @@ VK_DEFINE_HANDLE(VmaAllocator)
 
 namespace Vulkan {
 
+class Instance;
+
+/// What the Vulkan driver says the device's memory holds, for the logs; 0 if not known.
+u64 DeviceMemoryUsageForReports();
+
 class Instance {
 public:
     explicit Instance(bool validation = false, bool crash_diagnostic = false);

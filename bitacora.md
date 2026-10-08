@@ -43,6 +43,18 @@ JIT: arena RWX preparada por StikDebug (protocolo `brk #0xf00d` + universal.js);
 - Análisis: ASTRO BOT reserva su memoria en bloques al arrancar (0x38000000, 0x10000000, 0x88a00000 de gráficos) y solo libera 1 vez por sesión → liberar memoria del invitado no sirve; `BufferCache::RunGarbageCollector` de upstream no borra nada (el lambda no se usa), se deja así.
 - Slots al visor siguen en 6 (`openxr_host_visionos.mm`: con menos, el hilo de la GPU se bloqueaba; a 1440 son ~100 MB).
 
+## Build 5f23d03 probada: A (MSAA 4x) y B (MSAA 1), logs 2026-10-08 18:35 y 18:38
+- VPS4 funciona: carpeta resuelta en `.../File Provider Storage/vPS4` (minúscula v aceptada), `SHADPS4_HOME_DIR` aplicado.
+- `GPU_TIME: no query pool (ErrorOutOfDeviceMemory)`: KK limita el pool de timestamps (Metal: counter sample buffer ≤32 KB = 4096 timestamps); 12288 falla → sin datos por pasada.
+- Memoria: `the console's memory in RAM` 0.9–2.1 GB frente a footprint 4.2–8.0 GB → ~5 GB son del emulador/driver, no del juego. A: cierre al cargar mundo (7.1 GB, 1085 MB libres). B: sobrevivió con 119–170 MB libres (8.0 GB).
+- MSAA 1 (B): nave 1440x1536 a 45 fps, GPU 65 %; mundo 816–1200 a 30 fps, GPU 80–96 %. A (MSAA 4x): 816–960 a 30 fps.
+- Usuario: audio petardea desde el arranque en ambas; lejano borroso (explicación: 1440 px sobre ~105° ≈ 14 px/grado frente a ~34 de la pantalla → probar `fov` 85–90 %).
+- Revisión adversarial (subagente) y arreglos (commit siguiente, `[build]`):
+  - `GpuTimer`: tamaños `{10×408, 8×256, 16×64, 4×16}` (≤4096); bloque con tick libre y `eNotReady` >1 s se descarta (`not_ready_since`); memoria GPU vía `DeviceMemoryUsageForReports()` (declarada en `vk_instance.h`), que comprueba `CanReportMemoryUsage`; `g_reported_instance` se publica al final del constructor de `Instance`; `PACE` añade `the GPU's memory N MB`.
+  - `astro_core.mm`: `SetUserPath(HomeDir)` solo si es directorio (stderr `No folder for users and saves…` si no).
+  - `AppModel.findGame`: un juego exige `eboot.bin` (param.sfo solo en Comprobación). `CheckView`: `.fileImporter` en el `NavigationStack`, no en un `Section`.
+- Siguiente prueba: C1 KK + MSAA 1, C2 MoltenVK + MSAA 1 (con GS bypass: ojo izq. y partículas mal, fps algo optimista); criterio: MoltenVK ≥1.5× → migrar a MoltenVK + conversión propia de los 2 GS; si no, seguir con KK optimizando pasadas (`GPU_PASSES`) y memoria (copias GPU de la memoria del juego).
+
 ## Build ebd968f probada (KosmicKrisp) — el juego es jugable
 - Funciona: KK carga y renderiza; GS reales (sin `GS_BYPASS`); ambos ojos; ~25–30 fps en juego (topa en 30 = 3 refrescos a 90 Hz), sin errores de render en el log.
 - Problemas: halos en algunas texturas/efectos; imagen borrosa con aliasing (ajuste del usuario: resolución 1440 = 1440x1536 por ojo, sin `SHADPS4_TITLE_EYE_WIDTH`); tirones de 1–2 s que coinciden con compilaciones de pipelines (5–12 por ventana de 5 s); `PAD` siempre `assumed` (las manos nunca colocan el mando); deriva del rumbo del giróscopo.

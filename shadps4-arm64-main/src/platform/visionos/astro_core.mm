@@ -85,8 +85,12 @@ int astro_core_start(const char* game_path, const char* const* environment, int 
     if (const char* home = std::getenv("SHADPS4_HOME_DIR"); home != nullptr && *home != '\0') {
         std::error_code error;
         std::filesystem::create_directories(home, error);
-        Common::FS::SetUserPath(Common::FS::PathType::HomeDir, home);
-        std::fprintf(stderr, "Users and saves in %s\n", home);
+        if (std::filesystem::is_directory(home, error)) {
+            Common::FS::SetUserPath(Common::FS::PathType::HomeDir, home);
+            std::fprintf(stderr, "Users and saves in %s\n", home);
+        } else {
+            std::fprintf(stderr, "No folder for users and saves at %s: the app's own is used\n", home);
+        }
     }
 
     g_log_path = (Common::FS::GetUserPath(Common::FS::PathType::LogDir) / "shad_log.txt").string();

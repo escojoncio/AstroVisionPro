@@ -43,6 +43,11 @@
 #endif
 #endif
 
+namespace Vulkan {
+/// What the Vulkan driver says the device's memory holds (vk_instance.cpp), 0 if not known.
+u64 DeviceMemoryUsageForReports();
+} // namespace Vulkan
+
 namespace Core::GuestCpu {
 
 namespace {
@@ -419,9 +424,11 @@ void ReportPace(Clock::time_point now) {
                   &vm_count) == KERN_SUCCESS) {
         memory = fmt::format("; memory {} MB", vm_info.phys_footprint >> 20);
 #if defined(SHADPS4_VISIONOS)
-        memory += fmt::format(", {} MB left; the console's memory in RAM {} MB",
+        memory += fmt::format(", {} MB left; the console's memory in RAM {} MB; the GPU's "
+                              "memory {} MB",
                               u64(os_proc_available_memory()) >> 20,
-                              Core::ResidentConsoleMemory() >> 20);
+                              Core::ResidentConsoleMemory() >> 20,
+                              Vulkan::DeviceMemoryUsageForReports() >> 20);
 #endif
     }
     LOG_INFO(Core, "PACE: {:.1f} guest frames/s; CPU {:.0f}% in all: {}{}", fps, total, text,

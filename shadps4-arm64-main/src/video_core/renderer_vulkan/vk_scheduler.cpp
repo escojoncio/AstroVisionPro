@@ -409,16 +409,40 @@ public:
             LOG_INFO(Render_Vulkan, "GPU_TIME: the driver has no timestamps for the queue");
             return nullptr;
         }
-        const vk::QueryPoolCreateInfo pool_info{
-            .queryType = vk::QueryType::eTimestamp,
-            .queryCount = Blocks * BlockQueries,
-        };
-        auto [result, pool] = instance.GetDevice().createQueryPool(pool_info);
-        if (result != vk::Result::eSuccess) {
+        // KosmicKrisp keeps timestamps in a Metal counter sample buffer, which holds at most
+        // 32 KB (4096 timestamps): few command buffers in flight at once, each with room for a
+        // whole frame's passes, from the largest the driver takes down.
+        static constexpr std::array<std::pair<u32, u32>, 4> Sizes{
+            {{10, 408}, {8, 256}, {16, 64}, {4, 16}}};
+        vk::QueryPool pool{};
+        vk::Result result{};
+        u32 blocks = 0;
+        u32 block_queries = 0;
+        for (const auto& [count, queries] : Sizes) {
+            const vk::QueryPoolCreateInfo pool_info{
+                .queryType = vk::QueryType::eTimestamp,
+                .queryCount = count * queries,
+            };
+            auto created = instance.GetDevice().createQueryPool(pool_info);
+            result = created.result;
+            if (result == vk::Result::eSuccess) {
+                pool = created.value;
+                blocks = count;
+                block_queries = queries;
+                break;
+            }
+        }
+        if (!pool) {
             LOG_INFO(Render_Vulkan, "GPU_TIME: no query pool ({})", vk::to_string(result));
             return nullptr;
         }
+        LOG_INFO(Render_Vulkan, "GPU_TIME: {} timestamps ({} command buffers of up to {} passes)",
+                 blocks * block_queries, blocks, (block_queries - 2) / 2);
         auto timer = std::make_unique<GpuTimer>();
+        timer->Blocks = blocks;
+        timer->BlockQueries = block_queries;
+        timer->MaxPasses = (block_queries - 2) / 2;
+        timer->blocks.resize(blocks);
         timer->instance = &instance;
         timer->device = instance.GetDevice();
         timer->pool = pool;
@@ -508,15 +532,29 @@ public:
             const u32 index = order.front();
             Block& block = blocks[index];
             const u32 count = 2 + 2 * u32(block.passes.size());
-            std::array<u64, BlockQueries> stamps{};
+            std::vector<u64> stamps(BlockQueries);
             const auto result = device.getQueryPoolResults(
                 pool, index * BlockQueries, count, count * sizeof(u64), stamps.data(),
                 sizeof(u64), vk::QueryResultFlagBits::e64);
             if (result == vk::Result::eNotReady) {
-                break;
+                // The GPU is past it, yet the driver never says its times are there: given up
+                // after a second, or the timer would stay stuck on it.
+                const auto now = std::chrono::steady_clock::now();
+                if (block.not_ready_since == std::chrono::steady_clock::time_point{}) {
+                    block.not_ready_since = now;
+                }
+                if (now - block.not_ready_since < std::chrono::seconds{1}) {
+                    break;
+                }
+                order.erase(order.begin());
+                block.pending = false;
+                block.not_ready_since = {};
+                ++unusable;
+                continue;
             }
             order.erase(order.begin());
             block.pending = false;
+            block.not_ready_since = {};
             const auto span = [&](u32 first) -> double {
                 if (result != vk::Result::eSuccess || stamps[first + 1] <= stamps[first]) {
                     return -1.0;
@@ -568,7 +606,7 @@ public:
                      "a usable time, {} untimed; the GPU's memory {} MB",
                      id, busy_ms / (seconds * 10.0), seconds, busy_ms, timed, busy_ms / seconds,
                      longest_ms, unusable, untimed_buffers,
-                     instance->GetDeviceMemoryUsage() >> 20);
+                     DeviceMemoryUsageForReports() >> 20);
         }
         if (!pass_totals.empty()) {
             // The passes that took the GPU longest, by their targets.
@@ -610,9 +648,9 @@ public:
     }
 
 private:
-    static constexpr u32 Blocks = 48;
-    static constexpr u32 BlockQueries = 256;
-    static constexpr u32 MaxPasses = (BlockQueries - 2) / 2;
+    u32 Blocks{};
+    u32 BlockQueries{};
+    u32 MaxPasses{};
 
     struct Pass {
         u16 width;
@@ -631,6 +669,7 @@ private:
         std::vector<Pass> passes;
         bool pending{};
         u64 tick{};
+        std::chrono::steady_clock::time_point not_ready_since{};
     };
     struct Totals {
         double ms{};
@@ -645,9 +684,9 @@ private:
     vk::QueryPool pool;
     float period_ns{1.0f};
     u32 id{};
-    std::array<Block, Blocks> blocks;
+    std::vector<Block> blocks;
     u32 next_block{};
-    u32 current{Blocks};
+    u32 current{~0u};
     bool pass_open{};
     std::vector<u32> order;
     std::unordered_map<u64, Totals> pass_totals;

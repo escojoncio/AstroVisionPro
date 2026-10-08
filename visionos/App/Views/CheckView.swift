@@ -78,9 +78,6 @@ struct CheckView: View {
                         model.findGame()
                     }
                 }
-                .fileImporter(isPresented: $choosingFolder, allowedContentTypes: [.folder]) { result in
-                    model.folderChosen(result)
-                }
 
                 Section(L("Mando", "Controller")) {
                     if let controller = model.controller {
@@ -110,6 +107,9 @@ struct CheckView: View {
                 }
             }
             .navigationTitle(L("Comprobación", "Check"))
+            .fileImporter(isPresented: $choosingFolder, allowedContentTypes: [.folder]) { result in
+                model.folderChosen(result)
+            }
             .toolbar {
                 ToolbarItemGroup(placement: .bottomOrnament) {
                     Button {

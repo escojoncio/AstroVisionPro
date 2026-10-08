@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: Copyright 2024 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <atomic>
 #include <algorithm>
 #include <bit>
 #include <cstdlib>
@@ -27,6 +28,12 @@
 #include <vk_mem_alloc.h>
 
 namespace Vulkan {
+
+namespace {
+/// The instance whose device the reports measure (the first one made).
+std::atomic<const Instance*> g_reported_instance{};
+} // namespace
+
 
 namespace {
 
@@ -205,10 +212,15 @@ Instance::Instance(Frontend::WindowSDL& window, s32 physical_device_index,
     CollectImageFormatInfo();
     std::fprintf(stderr, "BACHATA_INSTANCE_FORMATS_READY\n");
     CollectToolingInfo();
+    // Complete now: the reports may ask it how much memory the device holds.
+    const Instance* none = nullptr;
+    g_reported_instance.compare_exchange_strong(none, this, std::memory_order_release);
     std::fprintf(stderr, "BACHATA_INSTANCE_READY\n");
 }
 
 Instance::~Instance() {
+    const Instance* self = this;
+    g_reported_instance.compare_exchange_strong(self, nullptr, std::memory_order_acq_rel);
     ImGui::Core::Shutdown(GetDevice());
     vmaDestroyAllocator(allocator);
 }
@@ -789,6 +801,13 @@ void Instance::CollectDeviceParameters() {
     LOG_INFO(Render_Vulkan, "GPU_Vulkan_Driver: {}", driver_name);
     LOG_INFO(Render_Vulkan, "GPU_Vulkan_Version: {}", api_version);
     LOG_INFO(Render_Vulkan, "GPU_Vulkan_Extensions: {}", extensions);
+}
+
+u64 DeviceMemoryUsageForReports() {
+    const Instance* instance = g_reported_instance.load(std::memory_order_acquire);
+    return instance != nullptr && instance->CanReportMemoryUsage()
+               ? instance->GetDeviceMemoryUsage()
+               : 0;
 }
 
 void Instance::CollectPhysicalMemoryInfo() {
