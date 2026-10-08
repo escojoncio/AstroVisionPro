@@ -366,7 +366,8 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
     pipeline->BindResources(set_writes, buffer_barriers, push_data);
     UpdateDynamicState(pipeline, is_indexed);
     scheduler.BeginRendering(state);
-    scheduler.NoteDraw();
+    scheduler.NoteDraw(
+        pipeline->GetGraphicsKey().stage_hashes[u32(Shader::LogicalStage::Geometry)]);
     FrameStats::Draw();
 
     const auto& vs_info = pipeline->GetStage(Shader::LogicalStage::Vertex);
@@ -520,7 +521,8 @@ void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u3
     pipeline->BindResources(set_writes, buffer_barriers, push_data);
     UpdateDynamicState(pipeline, is_indexed);
     scheduler.BeginRendering(state);
-    scheduler.NoteDraw();
+    scheduler.NoteDraw(
+        pipeline->GetGraphicsKey().stage_hashes[u32(Shader::LogicalStage::Geometry)]);
     FrameStats::Draw();
 
     // We can safely ignore both SGPR UD indices and results of fetch shader parsing, as vertex and
