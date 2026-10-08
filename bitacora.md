@@ -5,6 +5,16 @@ Base: shadPS4 ARM64 (`shadps4-arm64-main/`) + FEXCore (x86-64 → ARM64) + Molte
 App visionOS en `visionos/` (SwiftUI + Compositor Services + ARKit + GameController).
 JIT: arena RWX preparada por StikDebug (protocolo `brk #0xf00d` + universal.js); la app hace detach al terminar.
 
+## Build 36ae80d probada (log 2026-10-08 15:41) y arreglos siguientes
+- Pipelines en segundo plano: funcionan (PIPELINE_SLOW 18–96 ms, cientos de draws omitidos, sin tirones).
+- Mando: posición por las manos OK (`PAD: seen`). Giróscopo: el último `Controller motion` de la app es 15:42:20; después el emulador recibe siempre el mismo valor (`heading -1 pitch 16 roll 12`) → visionOS apagó los sensores del DualSense al girar la cabeza.
+- Ajuste activo `resolution=2880` (`SHADPS4_TITLE_EYE_WIDTH=2880`): memoria del juego +1536 MB (gráficos 2186 MB, targets 880 MB), mínimo dinámico 1632x1744, textura al visor 5760x3072; GPU al 99–100 %, 8–19 fps con CPU 15–40 %. Crash al entrar al mundo: el log se corta en una carga (`mup_review_levels.xml`) sin `ASTRO_CRASH` → cierre por memoria (jetsam, SIGKILL no capturable).
+- Arreglos (commit siguiente):
+  - `PlayStationController.swift`: `lastMotionTime`/`keepMotionOn` (llamado desde `poll()`): si no hay datos de movimiento >0.5 s, en el hilo principal `sensorsActive` off→on y se vuelve a poner `valueChangedHandler` (máx. 1/s). Logs `Controller motion: no reports for X s (sensors active: …); turning them on again (n)` y `Controller motion: reporting again`.
+  - `AstroSettings.swift`: `resolution` por defecto 1440 (también en `defaultFile`); el `settings.txt` existente del usuario no se toca.
+  - `SettingsView.swift`: resolución con memoria extra indicada (2160 ≈ +0,7 GB, 2880 +1,5 GB) y aviso en el pie; selector nuevo de MSAA (`msaa` = "" / 2 / 1 → `SHADPS4_MAX_MSAA`).
+  - `guest_watchdog.cpp` `ReportPace`: añade `; memory <phys_footprint> MB, <os_proc_available_memory> MB left` (lo segundo solo con `SHADPS4_VISIONOS`).
+
 ## Build ebd968f probada (KosmicKrisp) — el juego es jugable
 - Funciona: KK carga y renderiza; GS reales (sin `GS_BYPASS`); ambos ojos; ~25–30 fps en juego (topa en 30 = 3 refrescos a 90 Hz), sin errores de render en el log.
 - Problemas: halos en algunas texturas/efectos; imagen borrosa con aliasing (ajuste del usuario: resolución 1440 = 1440x1536 por ojo, sin `SHADPS4_TITLE_EYE_WIDTH`); tirones de 1–2 s que coinciden con compilaciones de pipelines (5–12 por ventana de 5 s); `PAD` siempre `assumed` (las manos nunca colocan el mando); deriva del rumbo del giróscopo.
@@ -126,7 +136,7 @@ No funciona / pendiente:
 ## Pendiente (orden recomendado)
 0. **Carpeta del juego fuera de la app** (sobrevive a borrar la app): `.fileImporter` de carpetas + bookmark security-scoped (`startAccessingSecurityScopedResource`) guardado en `UserDefaults`; tras reinstalar hay que volver a elegirla (el bookmark muere con la app). Dentro van juego(s), saves (user dir del emulador, hoy en Documents: ver `Common::FS::GetUserPath` en `platform/visionos/astro_core.mm`), `settings.txt`, registros y cachés de shaders. Detectar juegos por `sce_sys/param.sfo` (lista, no solo CUSA12392). Ubicación recomendada: carpeta de una de las apps que siempre quedan instaladas o iCloud Drive (cuidado con archivos no descargados).
 0b. **Hacia un reproductor de PSVR genérico**: separar lo específico de ASTRO BOT (`core/known_title*.{h,cpp}`) de lo genérico (`sceHmd`, `sceVrTracker`, reproyección, mando); selector de juego en la app. PS Move: no implementado; mapear los Sense de PS VR2 (`SenseTracking.swift`, `AccessoryTrackingProvider`: 6DoF) a dispositivos Move del tracker (`ORBIS_VR_TRACKER_DEVICE_MOVE`) + librería `sceMove` (botones, gatillo, giróscopo, vibración, luz).
-1. **Probar 764653b**: en el log buscar `Vulkan driver: KosmicKrisp` (o `KosmicKrisp not loaded`), errores de instancia/dispositivo, que no salga `GS_BYPASS`, líneas `PAD`, `Controller motion:` y `PACE`. Si KK falla: `vulkan_driver=moltenvk` en `settings.txt`.
+1. **Probar la build con el arreglo del giróscopo** (con `resolution=1440` y, si se quiere, MSAA 2): comprobar `Controller motion: no reports…`/`reporting again` al girar la cabeza, y en `PACE` la memoria usada/restante al entrar al mundo. Si sigue cerrándose con 1440, la memoria restante del último `PACE` lo dirá.
 2. **Rendimiento**: medir tiempos de GPU (timestamps por fotograma) para separar GPU real de esperas; revisar espera en CPU de `VrExporter::Deliver` (`GetMasterSemaphore()->Wait`) y el seguimiento de páginas de 16 KB.
 3. **Posición del mando**: si con el acelerómetro corregido sigue mal, Object Tracking (`ObjectTrackingProvider`) con objeto de referencia del DualSense (escaneo + Create ML en macOS) fusionado con giróscopo y manos. Accessory tracking solo vale para Sense de PS VR2 (ya implementado en `SenseTracking.swift`).
 4. Texturas BC6H/BC7 con uso Storage que MoltenVK no crea (`image.cpp:247`).

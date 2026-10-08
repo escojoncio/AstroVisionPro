@@ -26,12 +26,17 @@ struct SettingsView: View {
 
                 Section {
                     Picker(L("Resolución por ojo", "Resolution per eye"), selection: text("resolution", \.resolution)) {
-                        Text("2880 · PC VR").tag("2880")
-                        Text("2160").tag("2160")
-                        Text(L("1440 · consola", "1440 · console")).tag("1440")
+                        Text(L("1440 · consola (recomendada)", "1440 · console (recommended)")).tag("1440")
+                        Text(L("2160 · +0,7 GB de memoria", "2160 · +0.7 GB of memory")).tag("2160")
+                        Text(L("2880 · PC VR · +1,5 GB de memoria", "2880 · PC VR · +1.5 GB of memory")).tag("2880")
                         Text(L("La que elija el juego", "The game's choice")).tag("game")
                     }
                     Toggle(L("Resolución dinámica", "Dynamic resolution"), isOn: flag("dynamic", \.dynamic))
+                    Picker(L("Antialiasing (muestras por píxel)", "Antialiasing (samples per pixel)"), selection: text("msaa", \.msaa)) {
+                        Text(L("Como la consola (4)", "As on the console (4)")).tag("")
+                        Text(L("2 · más rápido", "2 · faster")).tag("2")
+                        Text(L("1 · el más rápido, con dientes de sierra", "1 · fastest, jagged edges")).tag("1")
+                    }
                     Picker(L("Imágenes por segundo", "Frames per second"), selection: number("fps", \.fps)) {
                         Text("60").tag(60)
                         Text("45").tag(45)
@@ -52,7 +57,7 @@ struct SettingsView: View {
                 } header: {
                     Text(L("Imagen", "Picture"))
                 } footer: {
-                    Text(L("Los valores por defecto son los de la versión de PC VR.", "The defaults are those of the PC VR version."))
+                    Text(L("Por encima de 1440 la GPU del visor va al 100 % todo el rato y el juego pide más memoria de la que visionOS deja usar: al entrar en los mundos el sistema cierra la app sin aviso.", "Above 1440 the headset's GPU is busy all the time and the game asks for more memory than visionOS lets it use: on entering the worlds the system closes the app without a word."))
                 }
 
                 Section {

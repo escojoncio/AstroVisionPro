@@ -57,6 +57,12 @@ final class PlayStationController: @unchecked Sendable {
     private var observers: [NSObjectProtocol] = []
     /// Motion updates so far (a few go to the log).
     private var motionReports: UInt = 0
+    /// When the motion sensors last reported (ProcessInfo uptime), and when they were last woken
+    /// up again: visionOS can turn them off (sensorsActive false, no more updates) while the app
+    /// keeps the controller, and then the game's controller stops turning.
+    private var lastMotionTime: TimeInterval = 0
+    private var lastMotionWake: TimeInterval = 0
+    private var motionWakes: UInt = 0
     var onStatusChange: ((Status?) -> Void)?
 
     private init() {}
@@ -229,6 +235,9 @@ final class PlayStationController: @unchecked Sendable {
             button.preferredSystemGestureState = .disabled
         }
         // The motion sensors are what turns and tilts the controller in the game.
+        lock.lock()
+        lastMotionTime = 0
+        lock.unlock()
         if let motion = controller.motion {
             if motion.sensorsRequireManualActivation {
                 motion.sensorsActive = true
@@ -260,6 +269,13 @@ final class PlayStationController: @unchecked Sendable {
     /// accelerometer does.
     private func motionChanged(_ motion: GCMotion) {
         guard motion.sensorsActive else { return }
+        lock.lock()
+        let wasQuiet = lastMotionTime > 0 && ProcessInfo.processInfo.systemUptime - lastMotionTime > 0.5
+        lastMotionTime = ProcessInfo.processInfo.systemUptime
+        lock.unlock()
+        if wasQuiet {
+            LogFiles.log("Controller motion: reporting again")
+        }
         var gyro: [Float] = [0, 0, 0]
         if motion.hasRotationRate {
             let rate = motion.rotationRate
@@ -283,6 +299,51 @@ final class PlayStationController: @unchecked Sendable {
                 astro_core_pad_motion(g.baseAddress, a.baseAddress)
             }
         }
+    }
+
+    /// The motion sensors went quiet for more than half a second while the controller is in use:
+    /// visionOS turned them off (it does when the app's space stops being the one in front for a
+    /// moment). They are turned on again and their handler set again, on the main thread, at most
+    /// once a second.
+    private func keepMotionOn(_ controller: GCController) {
+        guard let motion = controller.motion else { return }
+        let now = ProcessInfo.processInfo.systemUptime
+        lock.lock()
+        let quiet = lastMotionTime > 0 && now - lastMotionTime > 0.5
+        let due = quiet && now - lastMotionWake > 1.0
+        if due {
+            lastMotionWake = now
+            motionWakes &+= 1
+        }
+        let wakes = motionWakes
+        let silence = now - lastMotionTime
+        lock.unlock()
+        guard due else { return }
+        let active = motion.sensorsActive
+        if wakes <= 20 || wakes % 60 == 0 {
+            LogFiles.log(String(format: "Controller motion: no reports for %.1f s (sensors active: %@); turning them on again (%u)",
+                                silence, active ? "yes" : "no", UInt32(truncatingIfNeeded: wakes)))
+        }
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.currentController === controller else { return }
+            if motion.sensorsRequireManualActivation {
+                // Off and on: an "active" flag left on by a system that stopped the sensors
+                // does not start them again by itself.
+                if motion.sensorsActive {
+                    motion.sensorsActive = false
+                }
+                motion.sensorsActive = true
+            }
+            motion.valueChangedHandler = { [weak self] motion in
+                self?.motionChanged(motion)
+            }
+        }
+    }
+
+    private var currentController: GCController? {
+        lock.lock()
+        defer { lock.unlock() }
+        return controller
     }
 
     /// Reads the buttons, sticks, triggers and touchpad, and passes on what the game asks of the
@@ -363,6 +424,7 @@ final class PlayStationController: @unchecked Sendable {
         }
         state.home = gamepad.buttonHome?.isPressed ?? false
         astro_core_pad_state(&state)
+        keepMotionOn(controller)
 
         applyFeedback(controller)
     }
