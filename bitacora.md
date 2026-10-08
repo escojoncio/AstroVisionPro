@@ -6,7 +6,7 @@ App visionOS en `visionos/` (SwiftUI + Compositor Services + ARKit + GameControl
 JIT: arena RWX preparada por StikDebug (protocolo `brk #0xf00d` + universal.js); la app hace detach al terminar.
 
 ## Build e7d85d8 (run 37855488586): OK, KK recompilado con el parche nuevo (kk_shader.c, kk_cmd_draw.c sin errores); `visionos-latest/AstroQuest.ipa` (sin probar)
-## Commit siguiente: reparto de la memoria GPU
+## Build 0f6bcfc (run 37856887775): OK, `visionos-latest/AstroQuest.ipa` (sin probar) — incluye e7d85d8 + reparto de la memoria GPU
 - `buffer_cache/buffer.cpp`: `AllocationTally` (atómicos: bytes, nº, y los de ≥64 MB) con el tamaño VMA de cada asignación; `UniqueBuffer::Create`/destructor suman/restan; `TallyImageAllocation` (llamado desde `UniqueImage::Create`/`~UniqueImage`/`Destroy` en `texture_cache/image.cpp`); `DescribeGpuAllocations()` → `buffers X MB in N (Y MB in M of 64 MB or more), images …`. Los búferes con BDA (los del caché de búferes) llevan `VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT` → son los bloques dedicados de 256/512 MB de `IOAccelerator`.
 - `guest_watchdog.cpp` `ReportPace` (visionOS): añade ese texto a `PACE`.
 
