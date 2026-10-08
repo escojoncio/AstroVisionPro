@@ -335,6 +335,10 @@ private:
     bool pad_acceleration_valid{};
     bool pad_attitude_valid{};
     std::chrono::steady_clock::time_point pad_motion_time;
+    // The gyroscope's own offset (what it reads at rest), learnt while the controller lies
+    // still, and for how long it has been still.
+    Vec3 pad_gyro_bias{};
+    float pad_still_seconds{};
     // Where the host last saw the controller, in tracker space.
     Vec3 pad_seen_position;
     Vec3 pad_seen_velocity;
