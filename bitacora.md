@@ -5,6 +5,13 @@ Base: shadPS4 ARM64 (`shadps4-arm64-main/`) + FEXCore (x86-64 → ARM64) + Molte
 App visionOS en `visionos/` (SwiftUI + Compositor Services + ARKit + GameController).
 JIT: arena RWX preparada por StikDebug (protocolo `brk #0xf00d` + universal.js); la app hace detach al terminar.
 
+## Test 3 (log 2026-10-09 00:40; 2160 fija, sin AA, build 47cf082): cierre por memoria
+- Mundo 14–18 fps, GPU 99–100 %. Pasada principal `2160x2304 1 colour +depth` ~600 ms/s a ~195 pasadas/s: ~37 ms por frame frente a ~19 a 1440 y ~17 a 816 → por debajo de 1440 domina un coste fijo; por encima, los píxeles sí cuestan (corrige lo dicho en el test 2).
+- Memoria 8.0 GB con 170–210 MB libres → jetsam. `MEMORY`: IOAccelerator 3554 MB (bloques de 512 MB y 5×256 MB, enteros sucios; VMA usa bloques de 32 MB → son asignaciones dedicadas), consola 1369 residente + 1528 comprimida, untagged 152+592, malloc 221+210 (en uso 1137 de 1242 MB), IOSurface 205.
+- Visor a 50 Hz desde ~1 min (test 2: desde ~2 min; test 1: nunca). Pruebas seguidas 00:21, 00:28, 00:40 → hipótesis térmica (la build e7d85d8 registra `thermal` en `Headset:`).
+- Plan de memoria: (1) medir en `PACE` cuánto de la memoria GPU es del caché de búferes (copias de la memoria del juego) y cuánto de imágenes; (2) si los búferes pesan: importar la memoria de la consola como búferes de Vulkan (`VK_EXT_external_memory_host` en KK → `newBufferWithBytesNoCopy`) en vez de copiarla (memoria unificada; quita también las subidas).
+- AA por IA (MetalFX temporal) exige vectores de movimiento y profundidad por píxel: el juego solo da el color. Opciones espaciales: FXAA (e7d85d8), SMAA.
+
 ## Test 2 (log 2026-10-09 00:28; resolución 1440 fija, sin MetalFX, MSAA 1) y commit siguiente
 - Pasada principal `1440x1536 1 colour +depth` 420–610 ms/s con 10–27 k draws/s: igual que a 816x870 (test 1) con 3× píxeles → el coste no es por píxel; resolución dinámica y MetalFX no aportan. Memoria igual (7.3–7.6 GB, 600–900 MB libres).
 - Desde 00:30:13 el bucle del visor va a 50 Hz (`Headset: … in 250 refreshes`, también las manos): el juego queda en 25 fps con GPU 78–88 %. Causa desconocida (coincide con vídeo `AvPlayer`/`SocialScreen`); test 1 estuvo a 100 Hz todo el rato.
