@@ -1,0 +1,164 @@
+diff --git a/meson.options b/meson.options
+index 3f437d0..02c8ba3 100644
+--- a/meson.options
++++ b/meson.options
+@@ -915,3 +915,10 @@ option(
+   value : false,
+   description : 'Build panfrost Rust components.'
+ )
++
++option(
++  'kosmickrisp-embedded',
++  type : 'boolean',
++  value : false,
++  description : 'Link KosmicKrisp for embedding in an app (iOS, visionOS): frameworks linked directly, @rpath install name.'
++)
+diff --git a/src/kosmickrisp/bridge/mtl_device.m b/src/kosmickrisp/bridge/mtl_device.m
+index dc580ed..adb6aae 100644
+--- a/src/kosmickrisp/bridge/mtl_device.m
++++ b/src/kosmickrisp/bridge/mtl_device.m
+@@ -13,6 +13,7 @@
+ #include <Metal/MTL4Counters.h>
+ #include <Metal/MTLCaptureManager.h>
+ #include <Metal/MTLDevice.h>
++#include <TargetConditionals.h>
+ 
+ /* Device creation */
+ mtl_device *
+@@ -21,6 +22,7 @@ mtl_device_create()
+    mtl_device *device = nil;
+ 
+    @autoreleasepool {
++#if TARGET_OS_OSX
+       NSArray<id<MTLDevice>> *devs = [MTLCopyAllDevices() autorelease];
+       uint32_t device_count = [devs count];
+       
+@@ -30,6 +32,15 @@ mtl_device_create()
+             break;
+          }
+       }
++#else
++      /* iOS, visionOS: one GPU, the system's (MTLCopyAllDevices is macOS only).
++       * MTLCreateSystemDefaultDevice returns a +1 reference. */
++      id<MTLDevice> dev = MTLCreateSystemDefaultDevice();
++      if (dev != nil && [dev supportsFamily:MTLGPUFamilyMetal4])
++         device = (mtl_device *)dev;
++      else if (dev != nil)
++         [dev release];
++#endif
+    }
+ 
+    return device;
+diff --git a/src/kosmickrisp/vulkan/kk_bo.c b/src/kosmickrisp/vulkan/kk_bo.c
+index 5562b61..0b42b10 100644
+--- a/src/kosmickrisp/vulkan/kk_bo.c
++++ b/src/kosmickrisp/vulkan/kk_bo.c
+@@ -15,7 +15,18 @@
+ 
+ #if DETECT_OS_APPLE
+ #include <mach/mach_init.h>
++#include <TargetConditionals.h>
++#if TARGET_OS_OSX
+ #include <mach/mach_vm.h>
++#else
++/* iOS and visionOS have no mach_vm.h for apps; on 64-bit the vm_* calls are the same
++ * (vm_address_t and vm_size_t are 64 bits wide). */
++#include <mach/mach.h>
++#define mach_vm_address_t vm_address_t
++#define mach_vm_remap vm_remap
++#define mach_vm_map vm_map
++#define mach_vm_deallocate vm_deallocate
++#endif
+ #endif /* DETECT_OS_APPLE */
+ 
+ VkResult
+diff --git a/src/kosmickrisp/vulkan/kk_image.c b/src/kosmickrisp/vulkan/kk_image.c
+index 5cbf34b..aea51d4 100644
+--- a/src/kosmickrisp/vulkan/kk_image.c
++++ b/src/kosmickrisp/vulkan/kk_image.c
+@@ -11,6 +11,7 @@
+ #include "kk_device_memory.h"
+ #include "kk_entrypoints.h"
+ #include "kk_format.h"
++#include "kk_image_view.h"
+ #include "kk_physical_device.h"
+ 
+ #include "kosmickrisp/bridge/mtl_bridge.h"
+@@ -1192,3 +1193,47 @@ kk_image_set_label(struct kk_image *image, const char *label)
+          mtl_resource_set_label(image->planes[i].mtl_handle_array, label);
+    }
+ }
++
++#ifdef VK_USE_PLATFORM_METAL_EXT
++/* VK_EXT_metal_objects, as far as an application that shows images with Metal itself needs it:
++ * the Metal device, and the Metal texture behind a bound image (or image view). Not reference
++ * counted: the objects stay valid for as long as the Vulkan ones they come from. */
++VKAPI_ATTR void VKAPI_CALL
++kk_ExportMetalObjectsEXT(VkDevice _device,
++                         VkExportMetalObjectsInfoEXT *pMetalObjectsInfo)
++{
++   VK_FROM_HANDLE(kk_device, dev, _device);
++
++   vk_foreach_struct(sType, ext, (void *)pMetalObjectsInfo->pNext) {
++      switch (sType) {
++      case VK_STRUCTURE_TYPE_EXPORT_METAL_DEVICE_INFO_EXT: {
++         VkExportMetalDeviceInfoEXT *info = (VkExportMetalDeviceInfoEXT *)ext;
++         info->mtlDevice = (MTLDevice_id)dev->mtl_handle;
++         break;
++      }
++      case VK_STRUCTURE_TYPE_EXPORT_METAL_TEXTURE_INFO_EXT: {
++         VkExportMetalTextureInfoEXT *info = (VkExportMetalTextureInfoEXT *)ext;
++         uint32_t plane = 0;
++         if (info->plane == VK_IMAGE_ASPECT_PLANE_1_BIT)
++            plane = 1;
++         else if (info->plane == VK_IMAGE_ASPECT_PLANE_2_BIT)
++            plane = 2;
++         if (info->image != VK_NULL_HANDLE) {
++            VK_FROM_HANDLE(kk_image, image, info->image);
++            info->mtlTexture = plane < image->plane_count
++               ? (MTLTexture_id)image->planes[plane].mtl_handle : NULL;
++         } else if (info->imageView != VK_NULL_HANDLE) {
++            VK_FROM_HANDLE(kk_image_view, view, info->imageView);
++            info->mtlTexture = plane < view->plane_count
++               ? (MTLTexture_id)view->planes[plane].mtl_handle_sampled : NULL;
++         } else {
++            info->mtlTexture = NULL;
++         }
++         break;
++      }
++      default:
++         break;
++      }
++   }
++}
++#endif
+diff --git a/src/kosmickrisp/vulkan/kk_physical_device.c b/src/kosmickrisp/vulkan/kk_physical_device.c
+index 613977a..193b8d0 100644
+--- a/src/kosmickrisp/vulkan/kk_physical_device.c
++++ b/src/kosmickrisp/vulkan/kk_physical_device.c
+@@ -181,6 +181,9 @@ kk_get_device_extensions(const struct kk_instance *instance,
+       .EXT_depth_clip_enable = true,
+       .EXT_extended_dynamic_state3 = true,
+       .EXT_external_memory_metal = true,
++#ifdef VK_USE_PLATFORM_METAL_EXT
++      .EXT_metal_objects = true,
++#endif
+       .EXT_external_memory_host = true,
+       .EXT_hdr_metadata = true,
+       .EXT_image_2d_view_of_3d = true,
+diff --git a/src/kosmickrisp/vulkan/meson.build b/src/kosmickrisp/vulkan/meson.build
+index f82e80f..04f27b4 100644
+--- a/src/kosmickrisp/vulkan/meson.build
++++ b/src/kosmickrisp/vulkan/meson.build
+@@ -163,7 +163,10 @@ libkk = static_library(
+ libvulkan_kosmickrisp = shared_library(
+   'vulkan_kosmickrisp',
+   link_whole: [libkk],
+-  link_args: [ld_args_build_id, '-Wl,-undefined,dynamic_lookup'],
++  link_args: [ld_args_build_id] + (get_option('kosmickrisp-embedded')
++    ? ['-framework', 'Metal', '-framework', 'Foundation', '-framework', 'QuartzCore',
++       '-framework', 'IOSurface', '-Wl,-install_name,@rpath/KosmicKrisp.framework/KosmicKrisp']
++    : ['-Wl,-undefined,dynamic_lookup']),
+   gnu_symbol_visibility : 'hidden',
+   install : true,
+ )
