@@ -147,17 +147,20 @@ index 613977a..193b8d0 100644
        .EXT_hdr_metadata = true,
        .EXT_image_2d_view_of_3d = true,
 diff --git a/src/kosmickrisp/vulkan/meson.build b/src/kosmickrisp/vulkan/meson.build
-index f82e80f..04f27b4 100644
+index f82e80f..665a9cd 100644
 --- a/src/kosmickrisp/vulkan/meson.build
 +++ b/src/kosmickrisp/vulkan/meson.build
-@@ -163,7 +163,10 @@ libkk = static_library(
+@@ -163,7 +163,13 @@ libkk = static_library(
  libvulkan_kosmickrisp = shared_library(
    'vulkan_kosmickrisp',
    link_whole: [libkk],
 -  link_args: [ld_args_build_id, '-Wl,-undefined,dynamic_lookup'],
 +  link_args: [ld_args_build_id] + (get_option('kosmickrisp-embedded')
 +    ? ['-framework', 'Metal', '-framework', 'Foundation', '-framework', 'QuartzCore',
-+       '-framework', 'IOSurface', '-Wl,-install_name,@rpath/KosmicKrisp.framework/KosmicKrisp']
++       '-framework', 'CoreGraphics', '-framework', 'IOSurface',
++       '-Wl,-install_name,@rpath/KosmicKrisp.framework/KosmicKrisp',
++       # The weak entry points nobody implements stay null (looked up, not found, at load).
++       '-Wl,-undefined,dynamic_lookup']
 +    : ['-Wl,-undefined,dynamic_lookup']),
    gnu_symbol_visibility : 'hidden',
    install : true,
