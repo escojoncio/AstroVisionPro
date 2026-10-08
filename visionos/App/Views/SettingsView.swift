@@ -26,22 +26,17 @@ struct SettingsView: View {
 
                 Section {
                     Picker(L("Resolución por ojo", "Resolution per eye"), selection: text("resolution", \.resolution)) {
-                        Text(L("1440 · consola (recomendada)", "1440 · console (recommended)")).tag("1440")
-                        Text(L("2160 · +0,7 GB de memoria", "2160 · +0.7 GB of memory")).tag("2160")
-                        Text(L("2880 · PC VR · +1,5 GB de memoria", "2880 · PC VR · +1.5 GB of memory")).tag("2880")
+                        Text(L("1440 · consola", "1440 · console")).tag("1440")
+                        Text(L("2160 · más nítida, más memoria", "2160 · sharper, more memory")).tag("2160")
+                        Text(L("2880 · PC VR, la más nítida", "2880 · PC VR, the sharpest")).tag("2880")
                         Text(L("La que elija el juego", "The game's choice")).tag("game")
-                    }
-                    Toggle(L("Resolución dinámica", "Dynamic resolution"), isOn: flag("dynamic", \.dynamic))
-                    Picker(L("Escalado MetalFX", "MetalFX upscaling"), selection: upscale) {
-                        Text(L("No", "Off")).tag(Float(1.0))
-                        Text(L("×1,5 (recomendado)", "×1.5 (recommended)")).tag(Float(1.5))
-                        Text(L("×2", "×2")).tag(Float(2.0))
                     }
                     Picker(L("Antialiasing (muestras por píxel)", "Antialiasing (samples per pixel)"), selection: text("msaa", \.msaa)) {
                         Text(L("Como la consola (4)", "As on the console (4)")).tag("")
                         Text(L("2 · más rápido", "2 · faster")).tag("2")
                         Text(L("1 · el más rápido, con dientes de sierra", "1 · fastest, jagged edges")).tag("1")
                     }
+                    Toggle(L("Suavizar bordes (FXAA)", "Smooth edges (FXAA)"), isOn: flag("edge_smoothing", \.edgeSmoothing))
                     Picker(L("Imágenes por segundo", "Frames per second"), selection: number("fps", \.fps)) {
                         Text("60").tag(60)
                         Text("45").tag(45)
@@ -62,7 +57,7 @@ struct SettingsView: View {
                 } header: {
                     Text(L("Imagen", "Picture"))
                 } footer: {
-                    Text(L("Por encima de 1440 la GPU del visor va al 100 % todo el rato y el juego pide más memoria de la que visionOS deja usar: al entrar en los mundos el sistema cierra la app sin aviso.", "Above 1440 the headset's GPU is busy all the time and the game asks for more memory than visionOS lets it use: on entering the worlds the system closes the app without a word."))
+                    Text(L("Los píxeles cuestan poco al visor: más resolución se ve más nítida y suaviza los bordes casi sin perder rendimiento. El límite es la memoria: si al entrar en un mundo la app se cierra sin aviso, baja un paso.", "Pixels cost the headset little: a larger size looks sharper and smooths the edges at almost no cost in speed. The limit is memory: if the app closes without a word on entering a world, go one step down."))
                 }
 
                 Section {
@@ -71,10 +66,11 @@ struct SettingsView: View {
                         Text(L("MoltenVK · el anterior", "MoltenVK · the previous one")).tag("moltenvk")
                     }
                     Toggle(L("Compilar shaders en segundo plano", "Compile shaders in the background"), isOn: flag("async_shaders", \.asyncShaders))
+                    Toggle(L("Geometry shaders sin cortar la pasada", "Geometry shaders without breaking the pass"), isOn: flag("gs_in_pass", \.gsInPass))
                 } header: {
                     Text(L("Gráficos", "Graphics"))
                 } footer: {
-                    Text(L("KosmicKrisp dibuja los efectos y ambos ojos como en la consola. Si no arranca o va peor, vuelve a MoltenVK. Con los shaders en segundo plano no hay tirones: lo que aparece por primera vez tarda un instante en verse.", "KosmicKrisp draws the effects and both eyes as the console does. If it does not start or runs worse, go back to MoltenVK. With shaders in the background there are no stalls: what appears for the first time shows a moment late."))
+                    Text(L("KosmicKrisp dibuja los efectos y ambos ojos como en la consola. Si no arranca o va peor, vuelve a MoltenVK. Con los shaders en segundo plano no hay tirones: lo que aparece por primera vez tarda un instante en verse. Si los efectos o partículas se ven mal, desactiva «Geometry shaders sin cortar la pasada».", "KosmicKrisp draws the effects and both eyes as the console does. If it does not start or runs worse, go back to MoltenVK. With shaders in the background there are no stalls: what appears for the first time shows a moment late. If effects or particles look wrong, turn off «Geometry shaders without breaking the pass»."))
                 }
 
                 Section {
@@ -141,14 +137,6 @@ struct SettingsView: View {
     private func text(_ key: String, _ path: KeyPath<AstroSettings, String>) -> Binding<String> {
         Binding(get: { model.settings[keyPath: path] },
                 set: { save(key, $0) })
-    }
-
-    private var upscale: Binding<Float> {
-        Binding(get: {
-                    let value = model.settings.upscale
-                    return [Float(1.0), 1.5, 2.0].min(by: { abs($0 - value) < abs($1 - value) }) ?? 1.5
-                },
-                set: { save("upscale", String(format: "%.1f", $0)) })
     }
 
     private var sharpen: Binding<Double> {
