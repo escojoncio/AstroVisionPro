@@ -49,6 +49,9 @@ struct AstroSettings {
     /// The Vulkan driver: "kosmickrisp" (Mesa's, with geometry shaders; the default when the app
     /// carries it) or "moltenvk" (no geometry shaders).
     var vulkanDriver = "kosmickrisp"
+    /// Pipelines are made on threads of their own: no stalls while Metal compiles, at the cost
+    /// of what they draw appearing a moment late the first time.
+    var asyncShaders = true
 
     static var documents: URL {
         FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -133,6 +136,7 @@ struct AstroSettings {
         case "jit_arena_mb": jitArenaMB = min(max(Int(value) ?? jitArenaMB, 64), 2048)
         case "show_hands": showHands = flag
         case "vulkan_driver": vulkanDriver = value.lowercased()
+        case "async_shaders": asyncShaders = flag
         default: break
         }
     }
@@ -193,6 +197,12 @@ struct AstroSettings {
         // The headset is the app's: it is there from the start.
         env.append("SHADPS4_XR_WAIT=0")
         env.append("SHADPS4_VK_DRIVER=\(vulkanDriver)")
+        env.append("SHADPS4_ASYNC_PIPELINES=\(asyncShaders ? 1 : 0)")
+        // KosmicKrisp keeps what it translated (Mesa's shader cache) where the app may write.
+        let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("mesa_shader_cache")
+        try? FileManager.default.createDirectory(at: caches, withIntermediateDirectories: true)
+        env.append("MESA_SHADER_CACHE_DIR=\(caches.path)")
         env.append(contentsOf: extraEnvironment)
         return env
     }
@@ -253,6 +263,8 @@ struct AstroSettings {
     show_hands=0
     # Driver de Vulkan: kosmickrisp (Mesa, con geometry shaders) o moltenvk (sin ellos).
     vulkan_driver=kosmickrisp
+    # 1: los shaders se compilan en segundo plano (sin tirones; lo nuevo aparece un instante tarde).
+    async_shaders=1
 
     # Variables de entorno extra para el emulador, tantas líneas como hagan falta.
     #env=NOMBRE=valor
