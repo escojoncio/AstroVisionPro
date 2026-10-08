@@ -4,6 +4,7 @@
 #pragma once
 
 #include <memory>
+#include <utility>
 #include <boost/icl/separate_interval_set.hpp>
 #include "common/arch.h"
 #include "common/enum.h"
@@ -103,5 +104,8 @@ private:
 /// are mapped from) is in RAM right now, in bytes. 0 where that is not known (only the visionOS
 /// build counts it).
 u64 ResidentConsoleMemory();
+
+/// Where the console's memory is mapped once whole (visionOS): {base, size}, or {0, 0}.
+std::pair<u64, u64> ConsoleMemoryRange();
 
 } // namespace Core

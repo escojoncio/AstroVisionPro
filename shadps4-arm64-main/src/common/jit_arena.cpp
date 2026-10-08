@@ -29,6 +29,9 @@ struct Arena {
     std::map<std::size_t, std::size_t> free_ranges;
     /// What was handed out, by offset, with its size.
     std::map<std::size_t, std::size_t> used;
+    /// Bytes handed out now, and the most there ever were at once.
+    std::size_t used_bytes{};
+    std::size_t most_bytes{};
 
     void Initialize() {
         if (initialized) {
@@ -89,6 +92,8 @@ std::optional<Block> Allocate(std::size_t size) {
             arena.free_ranges.emplace(offset + size, left);
         }
         arena.used.emplace(offset, size);
+        arena.used_bytes += size;
+        arena.most_bytes = std::max(arena.most_bytes, arena.used_bytes);
         return Block{
             .rx = reinterpret_cast<std::uint8_t*>(arena.rx + offset),
             .rw = reinterpret_cast<std::uint8_t*>(arena.rw + offset),
@@ -113,6 +118,7 @@ void Free(const void* rx) {
     std::size_t begin = offset;
     std::size_t length = used->second;
     arena.used.erase(used);
+    arena.used_bytes -= length;
     // Merge with the free ranges on either side.
     auto next = arena.free_ranges.lower_bound(begin);
     if (next != arena.free_ranges.end() && next->first == begin + length) {
@@ -128,6 +134,12 @@ void Free(const void* rx) {
         }
     }
     arena.free_ranges.emplace(begin, length);
+}
+
+Usage GetUsage() {
+    Arena& arena = Instance();
+    std::scoped_lock lock{arena.mutex};
+    return {arena.rx, arena.used_bytes, arena.most_bytes, arena.size};
 }
 
 std::ptrdiff_t WriteOffset() {

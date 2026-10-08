@@ -16,6 +16,7 @@
 #include "common/logging/log.h"
 #include "common/path_util.h"
 #include "common/thread.h"
+#include "common/jit_arena.h"
 #include "core/address_space.h"
 
 #if defined(__linux__) && defined(__aarch64__)
@@ -36,6 +37,11 @@
 #include <cstring>
 #include <dlfcn.h>
 #include <mach-o/dyld.h>
+#include <cstddef>
+#include <malloc/malloc.h>
+#include <map>
+#include <set>
+#include <tuple>
 #include <mach/mach.h>
 #include <pthread.h>
 #if defined(SHADPS4_VISIONOS)
@@ -387,6 +393,224 @@ std::vector<CpuUse> MeasureCpuUse(double seconds) {
     return use;
 }
 
+/// What a region's tag (the kind of memory the system says it is) is called in the MEMORY line.
+std::string MemoryTagName(unsigned tag) {
+    switch (tag) {
+    case 0:
+        return "untagged";
+    case 1:
+    case 2:
+    case 3:
+    case 4:
+    case 6:
+    case 7:
+    case 8:
+    case 9:
+    case 11:
+    case 12:
+    case 13:
+        return "malloc";
+    case 21:
+        return "IOKit";
+    case 30:
+        return "stacks";
+    case 33:
+        return "libraries";
+    case 60:
+    case 61:
+        return "dyld";
+    case 74:
+        return "libdispatch";
+    case 88:
+        return "IOSurface";
+    case 90:
+        return "audio";
+    case 100:
+        return "IOAccelerator";
+    case 107:
+        return "CompositorServices";
+    default:
+        return fmt::format("tag {}", tag);
+    }
+}
+
+/// The memory object a mapped address belongs to (0 if none). The short form of the region's
+/// description: the full one has the system count the region's pages one by one.
+u32 MemoryObjectAt(u64 address) {
+    if (address == 0) {
+        return 0;
+    }
+    vm_address_t region = static_cast<vm_address_t>(address);
+    vm_size_t size = 0;
+    natural_t depth = 0;
+    vm_region_submap_short_info_data_64_t info{};
+    mach_msg_type_number_t count = VM_REGION_SUBMAP_SHORT_INFO_COUNT_64;
+    if (vm_region_recurse_64(mach_task_self(), &region, &size, &depth,
+                             reinterpret_cast<vm_region_recurse_info_t>(&info),
+                             &count) != KERN_SUCCESS ||
+        region > address || info.is_submap) {
+        return 0;
+    }
+    return info.object_id;
+}
+
+/// Where the process's memory is, by kind: the system's own accounting (internal, compressed,
+/// graphics) and a walk over every mapped region, adding up its dirty and compressed pages by
+/// what it is (the console's memory, the code arena, malloc, the GPU's...). Each memory object is
+/// counted once, however many times it is mapped. The six biggest regions that are none of the
+/// first two are listed with their address and tag.
+std::string DescribeMemory(const task_vm_info_data_t& vm, mach_msg_type_number_t vm_count) {
+    const u64 page = static_cast<u64>(vm_page_size);
+    std::string text = fmt::format("footprint {} MB: internal {}, compressed {}",
+                                   vm.phys_footprint >> 20, vm.internal >> 20,
+                                   vm.compressed >> 20);
+    if (u64(vm_count) * sizeof(natural_t) >=
+        offsetof(task_vm_info_data_t, ledger_tag_graphics_footprint_compressed) +
+            sizeof(vm.ledger_tag_graphics_footprint_compressed)) {
+        text += fmt::format(", graphics {} (+{} compressed), purgeable kept {}",
+                            vm.ledger_tag_graphics_footprint >> 20,
+                            vm.ledger_tag_graphics_footprint_compressed >> 20,
+                            vm.ledger_purgeable_nonvolatile >> 20);
+    }
+
+    const auto [console_base, console_size] = Core::ConsoleMemoryRange();
+    const auto arena = Common::JitArena::GetUsage();
+    // Neither moves once it exists.
+    static u32 console_object = 0;
+    static u32 arena_object = 0;
+    if (console_object == 0 && console_size != 0) {
+        console_object = MemoryObjectAt(console_base);
+    }
+    if (arena_object == 0 && arena.size != 0) {
+        arena_object = MemoryObjectAt(arena.begin);
+    }
+    const auto walk_start = std::chrono::steady_clock::now();
+
+    struct Kind {
+        u64 dirty{};
+        u64 compressed{};
+    };
+    struct Region {
+        u64 address;
+        u64 size;
+        u64 dirty;
+        u64 compressed;
+        unsigned tag;
+        unsigned share;
+    };
+    std::map<std::string, Kind> kinds;
+    std::vector<Region> biggest;
+    std::set<std::tuple<u64, u64, u64>> seen;
+    vm_address_t address = 0;
+    u32 regions = 0;
+    for (; regions < 500000; ++regions) {
+        // First the short description (no page counts), to pass over what is not counted
+        // without the system counting its pages; then the full one at the same address.
+        vm_size_t size = 0;
+        natural_t depth = 0;
+        vm_region_submap_short_info_data_64_t brief{};
+        mach_msg_type_number_t brief_count = VM_REGION_SUBMAP_SHORT_INFO_COUNT_64;
+        if (vm_region_recurse_64(mach_task_self(), &address, &size, &depth,
+                                 reinterpret_cast<vm_region_recurse_info_t>(&brief),
+                                 &brief_count) != KERN_SUCCESS ||
+            size == 0) {
+            break;
+        }
+        const u64 begin = address;
+        address += size;
+        if (brief.is_submap) {
+            // The system's shared libraries: clean but for a little.
+            continue;
+        }
+        std::string name;
+        if (console_object != 0 && brief.object_id == console_object) {
+            if (begin < console_base || begin >= console_base + console_size) {
+                continue; // The guest's own mappings of the same memory.
+            }
+            name = "console memory";
+        } else if (arena_object != 0 && brief.object_id == arena_object) {
+            if (begin < arena.begin || begin >= arena.begin + arena.size) {
+                continue; // The writable mapping of the same pages.
+            }
+            name = "code arena";
+        }
+        vm_address_t again = static_cast<vm_address_t>(begin);
+        vm_size_t again_size = 0;
+        natural_t again_depth = 0;
+        vm_region_submap_info_data_64_t info{};
+        mach_msg_type_number_t count = VM_REGION_SUBMAP_INFO_COUNT_64;
+        if (vm_region_recurse_64(mach_task_self(), &again, &again_size, &again_depth,
+                                 reinterpret_cast<vm_region_recurse_info_t>(&info),
+                                 &count) != KERN_SUCCESS ||
+            again != begin || info.is_submap) {
+            continue; // Changed in between.
+        }
+        const u64 dirty = u64(info.pages_dirtied) * page;
+        const u64 compressed = u64(info.pages_swapped_out) * page;
+        if (dirty + compressed == 0) {
+            continue;
+        }
+        if (name.empty()) {
+            const bool shared = info.share_mode == SM_SHARED ||
+                                info.share_mode == SM_TRUESHARED ||
+                                info.share_mode == SM_SHARED_ALIASED ||
+                                info.share_mode == SM_PRIVATE_ALIASED;
+            const u64 object = info.object_id_full != 0 ? u64(info.object_id_full)
+                                                        : u64(info.object_id);
+            if (shared && object != 0 &&
+                !seen.emplace(object, u64(info.offset), u64(again_size)).second) {
+                continue;
+            }
+            name = MemoryTagName(info.user_tag);
+            biggest.push_back({begin, u64(size), dirty, compressed, info.user_tag,
+                               static_cast<unsigned>(info.share_mode)});
+            std::ranges::sort(biggest, [](const Region& a, const Region& b) {
+                return a.dirty + a.compressed > b.dirty + b.compressed;
+            });
+            if (biggest.size() > 6) {
+                biggest.pop_back();
+            }
+        }
+        Kind& kind = kinds[name];
+        kind.dirty += dirty;
+        kind.compressed += compressed;
+    }
+
+    std::vector<std::pair<std::string, Kind>> sorted(kinds.begin(), kinds.end());
+    std::ranges::sort(sorted, [](const auto& a, const auto& b) {
+        return a.second.dirty + a.second.compressed > b.second.dirty + b.second.compressed;
+    });
+    const auto walk_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                             std::chrono::steady_clock::now() - walk_start)
+                             .count();
+    text += fmt::format("; in {} regions, walked in {} ms (MB dirty+compressed):", regions,
+                        walk_ms);
+    for (size_t i = 0; i < sorted.size() && i < 12; ++i) {
+        const auto& [name, kind] = sorted[i];
+        if ((kind.dirty + kind.compressed) >> 20 == 0) {
+            break;
+        }
+        text += fmt::format("{} {} {}+{}", i == 0 ? "" : ",", name, kind.dirty >> 20,
+                            kind.compressed >> 20);
+    }
+    malloc_statistics_t heap{};
+    malloc_zone_statistics(nullptr, &heap);
+    text += fmt::format("; malloc in use {} MB of {} MB", heap.size_in_use >> 20,
+                        heap.size_allocated >> 20);
+    if (arena.size != 0) {
+        text += fmt::format("; code arena used {} MB, most {} MB, of {} MB", arena.used >> 20,
+                            arena.most >> 20, arena.size >> 20);
+    }
+    text += "; biggest:";
+    for (size_t i = 0; i < biggest.size(); ++i) {
+        const Region& region = biggest[i];
+        text += fmt::format("{} {:#x} {} MB {} ({}+{}, share {})", i == 0 ? "" : ",",
+                            region.address, region.size >> 20, MemoryTagName(region.tag),
+                            region.dirty >> 20, region.compressed >> 20, region.share);
+    }
+    return text;
+}
+
 /// Every 5 s: the guest's frame rate and the busiest threads. A stretch below 10 frames a second
 /// also gets a few samples of the busiest thread's native stack (a few times a session), so
 /// that the log says where that thread spends its time.
@@ -421,7 +645,9 @@ void ReportPace(Clock::time_point now) {
     task_vm_info_data_t vm_info{};
     mach_msg_type_number_t vm_count = TASK_VM_INFO_COUNT;
     if (task_info(mach_task_self(), TASK_VM_INFO, reinterpret_cast<task_info_t>(&vm_info),
-                  &vm_count) == KERN_SUCCESS) {
+                  &vm_count) != KERN_SUCCESS) {
+        vm_count = 0;
+    } else {
         memory = fmt::format("; memory {} MB", vm_info.phys_footprint >> 20);
 #if defined(SHADPS4_VISIONOS)
         memory += fmt::format(", {} MB left; the console's memory in RAM {} MB; the GPU's "
@@ -433,6 +659,20 @@ void ReportPace(Clock::time_point now) {
     }
     LOG_INFO(Core, "PACE: {:.1f} guest frames/s; CPU {:.0f}% in all: {}{}", fps, total, text,
              memory);
+    // Every 30 s, and whenever the footprint grew by more than 256 MB since the last one (at
+    // most every 10 s): where the memory is.
+    static Clock::time_point last_breakdown{};
+    static u64 last_breakdown_footprint{};
+    if (vm_count != 0 && vm_info.phys_footprint != 0) {
+        const auto since = now - last_breakdown;
+        const bool grew = vm_info.phys_footprint > last_breakdown_footprint + (256ull << 20);
+        if (last_breakdown == Clock::time_point{} || since >= std::chrono::seconds{30} ||
+            (grew && since >= std::chrono::seconds{10})) {
+            last_breakdown = now;
+            last_breakdown_footprint = vm_info.phys_footprint;
+            LOG_INFO(Core, "MEMORY: {}", DescribeMemory(vm_info, vm_count));
+        }
+    }
     if (fps < 10.0 && fps > 0.0 && !use.empty() && profiles_taken < 6 &&
         now - last_profile > std::chrono::seconds{20}) {
         ++profiles_taken;
