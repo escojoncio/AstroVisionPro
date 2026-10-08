@@ -5,7 +5,9 @@ Base: shadPS4 ARM64 (`shadps4-arm64-main/`) + FEXCore (x86-64 → ARM64) + Molte
 App visionOS en `visionos/` (SwiftUI + Compositor Services + ARKit + GameController).
 JIT: arena RWX preparada por StikDebug (protocolo `brk #0xf00d` + universal.js); la app hace detach al terminar.
 
-## Estado tras la última build probada en el dispositivo (commit 749ad2e)
+## Última build publicada: 764653b (release `visionos-latest`, con KosmicKrisp.framework) — pendiente de probar
+
+## Estado tras la última build probada en el dispositivo (commit 749ad2e; e838b6e probada: pasa la calibración, ojo izq. mal, efectos corruptos, mando girado)
 
 Funciona en el dispositivo:
 - Arranque completo del juego bajo FEX: carga de módulos, main de ASOBI, salas, audio (se oye).
@@ -108,9 +110,9 @@ No funciona / pendiente:
 - El remoto `origin` del clon local tiende a apuntar al nombre antiguo del repo: hacer push explícito a la URL de AstroVisionPro.
 
 ## Pendiente (orden recomendado)
-1. **Probar build de esta sesión**: ¿pasa la pantalla de calibración? Recoger del log `GS_INFO`/`GS_CODE` y `PACE`/`PACE_SAMPLE`.
-2. **GS con KosmicKrisp**: revisar `kosmickrisp.log` en `ci-logs` si no compila para xros; en el dispositivo, buscar `Vulkan driver:` y errores de instancia/dispositivo. Alternativa si KK no es viable: emulación propia por compute partiendo de `ring_access_elimination.cpp`.
-3. **Rendimiento**: decidir con `PACE` si los tramos de 3 fps son CPU invitada (Game:*), procesador de comandos (GpuCommandProcessor) o GPU (ningún hilo ocupado). Considerar `Log sync` desactivado y bajar a DEBUG los `Kernel.Fs open/close`.
+1. **Probar 764653b**: en el log buscar `Vulkan driver: KosmicKrisp` (o `KosmicKrisp not loaded`), errores de instancia/dispositivo, que no salga `GS_BYPASS`, líneas `PAD`, `Controller motion:` y `PACE`. Si KK falla: `vulkan_driver=moltenvk` en `settings.txt`.
+2. **Rendimiento**: medir tiempos de GPU (timestamps por fotograma) para separar GPU real de esperas; revisar espera en CPU de `VrExporter::Deliver` (`GetMasterSemaphore()->Wait`) y el seguimiento de páginas de 16 KB.
+3. **Posición del mando**: si con el acelerómetro corregido sigue mal, Object Tracking (`ObjectTrackingProvider`) con objeto de referencia del DualSense (escaneo + Create ML en macOS) fusionado con giróscopo y manos. Accessory tracking solo vale para Sense de PS VR2 (ya implementado en `SenseTracking.swift`).
 4. Texturas BC6H/BC7 con uso Storage que MoltenVK no crea (`image.cpp:247`).
 5. Quitar borde azul; activar caché de pipelines en disco.
 6. Comprobación en la app de ficheros `sce_sys` (param.sfo obligatorio; playgo-chunk.dat, npbind.dat, nptitle.dat, icon0.png, pic0.png, pic1.png, trophy/trophy00.trp opcionales) en la pestaña Comprobación y en la tarjeta Juego.
