@@ -10,6 +10,8 @@
 #include <cstdlib>
 #include <ctime>
 #include <utility>
+#include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "common/assert.h"
@@ -383,10 +385,11 @@ void FrameStats::EndFrame() {
 
 std::mutex Scheduler::submit_mutex;
 
-/// Timestamps written at the start and the end of each command buffer, read back once the GPU
-/// is done with it: how much of the time the GPU actually spends on the emulator's work, which
-/// "the GPU busy" of the title's report (a submission not finished yet when looked at) cannot
-/// tell from waiting. On by default on visionOS; SHADPS4_GPU_TIMING=0|1 elsewhere.
+/// Timestamps written at the start and the end of each command buffer and around each render
+/// pass, read back once the GPU is done with it: how much of the time the GPU actually spends on
+/// the emulator's work, and on which passes, which "the GPU busy" of the title's report (a
+/// submission not finished yet when looked at) cannot tell from waiting. On by default on
+/// visionOS; SHADPS4_GPU_TIMING=0|1 elsewhere.
 class GpuTimer {
 public:
     static std::unique_ptr<GpuTimer> Create(const Instance& instance) {
@@ -408,7 +411,7 @@ public:
         }
         const vk::QueryPoolCreateInfo pool_info{
             .queryType = vk::QueryType::eTimestamp,
-            .queryCount = Entries * 2,
+            .queryCount = Blocks * BlockQueries,
         };
         auto [result, pool] = instance.GetDevice().createQueryPool(pool_info);
         if (result != vk::Result::eSuccess) {
@@ -416,6 +419,7 @@ public:
             return nullptr;
         }
         auto timer = std::make_unique<GpuTimer>();
+        timer->instance = &instance;
         timer->device = instance.GetDevice();
         timer->pool = pool;
         timer->period_ns = properties.limits.timestampPeriod;
@@ -429,54 +433,124 @@ public:
         }
     }
 
-    /// At the start of a command buffer.
+    /// At the start of a command buffer: a block of queries of its own, unless the GPU has not
+    /// finished with the next one yet (the command buffer then goes untimed).
     void Begin(vk::CommandBuffer cmdbuf) {
-        // An entry still waited for is not overwritten: the command buffer goes untimed.
-        current = Entries;
-        const u32 entry = next_entry;
-        if (std::ranges::any_of(pending, [&](const Pending& p) { return p.entry == entry; })) {
+        current = Blocks;
+        if (blocks[next_block].pending) {
+            ++untimed_buffers;
             return;
         }
-        next_entry = (next_entry + 1) % Entries;
-        cmdbuf.resetQueryPool(pool, entry * 2, 2);
-        cmdbuf.writeTimestamp(vk::PipelineStageFlagBits::eTopOfPipe, pool, entry * 2);
-        current = entry;
+        current = next_block;
+        next_block = (next_block + 1) % Blocks;
+        Block& block = blocks[current];
+        block.passes.clear();
+        cmdbuf.resetQueryPool(pool, current * BlockQueries, BlockQueries);
+        cmdbuf.writeTimestamp(vk::PipelineStageFlagBits::eTopOfPipe, pool, current * BlockQueries);
+    }
+
+    /// A render pass begins with these targets.
+    void PassBegin(vk::CommandBuffer cmdbuf, const RenderState& state) {
+        pass_open = false;
+        if (current >= Blocks) {
+            return;
+        }
+        Block& block = blocks[current];
+        if (block.passes.size() >= MaxPasses) {
+            ++untimed_passes;
+            return;
+        }
+        Pass pass{};
+        pass.width = state.width;
+        pass.height = state.height;
+        pass.layers = state.num_layers;
+        pass.colors = state.num_color_attachments;
+        pass.depth = state.depth_stencil_attachment.has_depth;
+        block.passes.push_back(pass);
+        const u32 query = current * BlockQueries + 2 + 2 * u32(block.passes.size() - 1);
+        cmdbuf.writeTimestamp(vk::PipelineStageFlagBits::eBottomOfPipe, pool, query);
+        pass_open = true;
+    }
+
+    void PassDraw() {
+        if (pass_open) {
+            ++blocks[current].passes.back().draws;
+        }
+    }
+
+    /// The render pass that PassBegin was told of has ended.
+    void PassEnd(vk::CommandBuffer cmdbuf) {
+        if (!pass_open || current >= Blocks) {
+            return;
+        }
+        pass_open = false;
+        const Block& block = blocks[current];
+        const u32 query = current * BlockQueries + 3 + 2 * u32(block.passes.size() - 1);
+        cmdbuf.writeTimestamp(vk::PipelineStageFlagBits::eBottomOfPipe, pool, query);
     }
 
     /// At the end of the command buffer that is submitted as `tick`.
     void End(vk::CommandBuffer cmdbuf, u64 tick) {
-        if (current >= Entries) {
+        if (current >= Blocks) {
             return;
         }
-        cmdbuf.writeTimestamp(vk::PipelineStageFlagBits::eBottomOfPipe, pool, current * 2 + 1);
-        pending.push_back({current, tick});
-        current = Entries;
+        cmdbuf.writeTimestamp(vk::PipelineStageFlagBits::eBottomOfPipe, pool,
+                              current * BlockQueries + 1);
+        blocks[current].pending = true;
+        blocks[current].tick = tick;
+        order.push_back(current);
+        current = Blocks;
     }
 
-    /// Reads what the GPU has finished, and every 5 s writes the report.
+    /// Reads what the GPU has finished, and every 5 s writes the reports.
     void Collect(MasterSemaphore& semaphore) {
-        while (!pending.empty() && semaphore.IsFree(pending.front().tick)) {
-            std::array<u64, 2> stamps{};
+        while (!order.empty() && semaphore.IsFree(blocks[order.front()].tick)) {
+            const u32 index = order.front();
+            Block& block = blocks[index];
+            const u32 count = 2 + 2 * u32(block.passes.size());
+            std::array<u64, BlockQueries> stamps{};
             const auto result = device.getQueryPoolResults(
-                pool, pending.front().entry * 2, 2, sizeof(stamps), stamps.data(), sizeof(u64),
-                vk::QueryResultFlagBits::e64);
+                pool, index * BlockQueries, count, count * sizeof(u64), stamps.data(),
+                sizeof(u64), vk::QueryResultFlagBits::e64);
             if (result == vk::Result::eNotReady) {
                 break;
             }
-            pending.erase(pending.begin());
-            if (result != vk::Result::eSuccess || stamps[1] <= stamps[0]) {
+            order.erase(order.begin());
+            block.pending = false;
+            const auto span = [&](u32 first) -> double {
+                if (result != vk::Result::eSuccess || stamps[first + 1] <= stamps[first]) {
+                    return -1.0;
+                }
+                const double ms = double(stamps[first + 1] - stamps[first]) * period_ns / 1e6;
+                // Several seconds for one command buffer is a clock that is not one.
+                return ms > 5000.0 ? -1.0 : ms;
+            };
+            const double total = span(0);
+            if (total < 0.0) {
                 ++unusable;
-                continue;
+            } else {
+                busy_ms += total;
+                longest_ms = std::max(longest_ms, total);
+                ++timed;
             }
-            const double ms = double(stamps[1] - stamps[0]) * period_ns / 1e6;
-            // Several seconds for one command buffer is a clock that is not one.
-            if (ms > 5000.0) {
-                ++unusable;
-                continue;
+            double in_passes = 0.0;
+            for (u32 i = 0; i < block.passes.size(); ++i) {
+                const double ms = span(2 + 2 * i);
+                if (ms < 0.0) {
+                    ++unusable_passes;
+                    continue;
+                }
+                const Pass& pass = block.passes[i];
+                Totals& totals = pass_totals[pass.Key()];
+                totals.ms += ms;
+                totals.count += 1;
+                totals.draws += pass.draws;
+                totals.pass = pass;
+                in_passes += ms;
             }
-            busy_ms += ms;
-            longest_ms = std::max(longest_ms, ms);
-            ++timed;
+            if (total >= 0.0) {
+                outside_ms += std::max(0.0, total - in_passes);
+            }
         }
         const auto now = std::chrono::steady_clock::now();
         if (since == std::chrono::steady_clock::time_point{}) {
@@ -490,39 +564,102 @@ public:
         if (timed > 0 || unusable > 0) {
             LOG_INFO(Render_Vulkan,
                      "GPU_TIME[{}]: the GPU worked {:.0f}% of the last {:.1f} s ({:.0f} ms over "
-                     "{} command buffers, {:.1f} ms a second; the longest {:.1f} ms){}",
-                     id, busy_ms / (seconds * 10.0), seconds, busy_ms, timed,
-                     busy_ms / seconds, longest_ms,
-                     unusable > 0 ? fmt::format("; {} without a usable time", unusable)
-                                  : std::string{});
+                     "{} command buffers, {:.1f} ms a second; the longest {:.1f} ms); {} without "
+                     "a usable time, {} untimed; the GPU's memory {} MB",
+                     id, busy_ms / (seconds * 10.0), seconds, busy_ms, timed, busy_ms / seconds,
+                     longest_ms, unusable, untimed_buffers,
+                     instance->GetDeviceMemoryUsage() >> 20);
+        }
+        if (!pass_totals.empty()) {
+            // The passes that took the GPU longest, by their targets.
+            std::vector<std::pair<u64, Totals>> sorted(pass_totals.begin(), pass_totals.end());
+            std::ranges::sort(sorted, [](const auto& a, const auto& b) {
+                return a.second.ms > b.second.ms;
+            });
+            std::string text;
+            for (size_t i = 0; i < sorted.size() && i < 10; ++i) {
+                const Totals& t = sorted[i].second;
+                text += fmt::format("{}{}x{}{} {} colour{}{}: {:.1f} ms/s in {:.0f} passes/s, "
+                                    "{:.0f} draws/s",
+                                    i == 0 ? "" : "; ", t.pass.width, t.pass.height,
+                                    t.pass.layers > 1 ? fmt::format("x{}", t.pass.layers)
+                                                      : std::string{},
+                                    t.pass.colors, t.pass.colors == 1 ? "" : "s",
+                                    t.pass.depth ? " +depth" : "", t.ms / seconds,
+                                    t.count / seconds, t.draws / seconds);
+            }
+            LOG_INFO(Render_Vulkan,
+                     "GPU_PASSES[{}]: {:.1f} ms/s outside passes (compute, copies), {} kinds of "
+                     "pass; the heaviest: {}{}",
+                     id, outside_ms / seconds, pass_totals.size(), text,
+                     unusable_passes + untimed_passes > 0
+                         ? fmt::format(" ({} passes without a usable time, {} untimed)",
+                                       unusable_passes, untimed_passes)
+                         : std::string{});
         }
         since = now;
         busy_ms = 0.0;
         longest_ms = 0.0;
+        outside_ms = 0.0;
         timed = 0;
         unusable = 0;
+        untimed_buffers = 0;
+        unusable_passes = 0;
+        untimed_passes = 0;
+        pass_totals.clear();
     }
 
 private:
-    static constexpr u32 Entries = 512;
-    struct Pending {
-        u32 entry;
-        u64 tick;
+    static constexpr u32 Blocks = 48;
+    static constexpr u32 BlockQueries = 256;
+    static constexpr u32 MaxPasses = (BlockQueries - 2) / 2;
+
+    struct Pass {
+        u16 width;
+        u16 height;
+        u16 layers;
+        u16 colors;
+        bool depth;
+        u32 draws;
+
+        u64 Key() const {
+            return u64(width) | (u64(height) << 16) | (u64(layers & 0xff) << 32) |
+                   (u64(colors & 0xff) << 40) | (u64(depth) << 48);
+        }
+    };
+    struct Block {
+        std::vector<Pass> passes;
+        bool pending{};
+        u64 tick{};
+    };
+    struct Totals {
+        double ms{};
+        double count{};
+        double draws{};
+        Pass pass{};
     };
     static inline std::atomic<u32> next_id{};
 
+    const Instance* instance{};
     vk::Device device;
     vk::QueryPool pool;
     float period_ns{1.0f};
     u32 id{};
-    u32 next_entry{};
-    u32 current{Entries};
-    std::vector<Pending> pending;
+    std::array<Block, Blocks> blocks;
+    u32 next_block{};
+    u32 current{Blocks};
+    bool pass_open{};
+    std::vector<u32> order;
+    std::unordered_map<u64, Totals> pass_totals;
     std::chrono::steady_clock::time_point since{};
     double busy_ms{};
     double longest_ms{};
+    double outside_ms{};
     u32 timed{};
     u32 unusable{};
+    u32 untimed_buffers{};
+    u32 unusable_passes{};
+    u32 untimed_passes{};
 };
 
 Scheduler::Scheduler(const Instance& instance)
@@ -626,6 +763,9 @@ void Scheduler::BeginRendering(const RenderState& new_state) {
         .pStencilAttachment = db.has_stencil ? &stencil_attachment : nullptr,
     };
 
+    if (gpu_timer) {
+        gpu_timer->PassBegin(current_cmdbuf, render_state);
+    }
     current_cmdbuf.beginRendering(rendering_info);
 
     FrameStats::RenderPass(render_state);
@@ -642,6 +782,16 @@ void Scheduler::EndRendering(std::source_location where) {
         flush_due = true;
     }
     current_cmdbuf.endRendering();
+    if (gpu_timer) {
+        gpu_timer->PassEnd(current_cmdbuf);
+    }
+}
+
+void Scheduler::NoteDraw() {
+    ++draws_since_flush;
+    if (gpu_timer) {
+        gpu_timer->PassDraw();
+    }
 }
 
 void Scheduler::Flush(SubmitInfo& info) {

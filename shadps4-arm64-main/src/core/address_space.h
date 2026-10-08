@@ -99,4 +99,9 @@ private:
     u64 user_size{};
 };
 
+/// How much of the console's memory (the memory object the game's direct and flexible memory
+/// are mapped from) is in RAM right now, in bytes. 0 where that is not known (only the visionOS
+/// build counts it).
+u64 ResidentConsoleMemory();
+
 } // namespace Core
