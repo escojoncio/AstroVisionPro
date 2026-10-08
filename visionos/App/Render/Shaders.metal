@@ -77,3 +77,60 @@ fragment half4 reprojectFragment(ViewOut in [[stage_in]],
                                     : right_eye.sample(linear_sampler, at).rgb;
     return half4(color, 1.0h);
 }
+
+// Edge smoothing (FXAA, after Timothy Lottes' FXAA): once per frame of the game's, its picture
+// (both eyes side by side) is redrawn into a texture of the same size with the stair steps of
+// its edges blended along each edge. A sample never crosses into the other eye.
+
+struct EdgeOut {
+    float4 position [[position]];
+    float2 uv;
+};
+
+vertex EdgeOut edgeVertex(uint vertex_id [[vertex_id]]) {
+    const float2 ndc = float2(vertex_id == 1 ? 3.0f : -1.0f, vertex_id == 2 ? 3.0f : -1.0f);
+    EdgeOut out;
+    out.position = float4(ndc, 0.0f, 1.0f);
+    out.uv = float2(ndc.x * 0.5f + 0.5f, 0.5f - ndc.y * 0.5f);
+    return out;
+}
+
+static float3 edgeAt(texture2d<float> picture, float2 uv, float lo, float hi) {
+    constexpr sampler s(filter::linear, address::clamp_to_edge);
+    return picture.sample(s, float2(clamp(uv.x, lo, hi), uv.y)).rgb;
+}
+
+static float edgeLuma(float3 linear_rgb) {
+    return dot(sqrt(max(linear_rgb, 0.0f)), float3(0.299f, 0.587f, 0.114f));
+}
+
+fragment float4 edgeFragment(EdgeOut in [[stage_in]],
+                             texture2d<float> picture [[texture(0)]],
+                             constant float2& texel [[buffer(0)]]) {
+    const float lo = (in.uv.x < 0.5f ? 0.0f : 0.5f) + texel.x * 0.5f;
+    const float hi = lo + 0.5f - texel.x;
+
+    const float3 rgbM = edgeAt(picture, in.uv, lo, hi);
+    const float lumaM = edgeLuma(rgbM);
+    const float lumaNW = edgeLuma(edgeAt(picture, in.uv + float2(-1.0f, -1.0f) * texel, lo, hi));
+    const float lumaNE = edgeLuma(edgeAt(picture, in.uv + float2(1.0f, -1.0f) * texel, lo, hi));
+    const float lumaSW = edgeLuma(edgeAt(picture, in.uv + float2(-1.0f, 1.0f) * texel, lo, hi));
+    const float lumaSE = edgeLuma(edgeAt(picture, in.uv + float2(1.0f, 1.0f) * texel, lo, hi));
+    const float lumaMin = min(lumaM, min(min(lumaNW, lumaNE), min(lumaSW, lumaSE)));
+    const float lumaMax = max(lumaM, max(max(lumaNW, lumaNE), max(lumaSW, lumaSE)));
+    if (lumaMax - lumaMin < max(0.0312f, lumaMax * 0.125f)) {
+        return float4(rgbM, 1.0f);
+    }
+
+    float2 dir = float2(-((lumaNW + lumaNE) - (lumaSW + lumaSE)),
+                        (lumaNW + lumaSW) - (lumaNE + lumaSE));
+    const float reduce = max((lumaNW + lumaNE + lumaSW + lumaSE) * (0.25f / 8.0f), 1.0f / 128.0f);
+    const float scale = 1.0f / (min(abs(dir.x), abs(dir.y)) + reduce);
+    dir = clamp(dir * scale, float2(-8.0f), float2(8.0f)) * texel;
+
+    const float3 rgbA = 0.5f * (edgeAt(picture, in.uv + dir * (1.0f / 3.0f - 0.5f), lo, hi) +
+                               edgeAt(picture, in.uv + dir * (2.0f / 3.0f - 0.5f), lo, hi));
+    const float3 rgbB = rgbA * 0.5f + 0.25f * (edgeAt(picture, in.uv - dir * 0.5f, lo, hi) + edgeAt(picture, in.uv + dir * 0.5f, lo, hi));
+    const float lumaB = edgeLuma(rgbB);
+    return float4((lumaB < lumaMin || lumaB > lumaMax) ? rgbA : rgbB, 1.0f);
+}

@@ -72,6 +72,12 @@ final class GameRenderer: @unchecked Sendable {
     /// MetalFX could not be set up: not tried again for frames of the same kind.
     private var upscalerFailedFor: (Int, Int, MTLPixelFormat)?
     private var upscaleFrames = 0
+    /// The game's picture with its edges smoothed (EdgeSmoother.swift), when the settings ask.
+    private let library: MTLLibrary
+    private var edgeSmoother: EdgeSmoother?
+    private var smoothed = false
+    private var smootherFailedFor: MTLPixelFormat?
+    private var smoothFrames = 0
 
     private var lastPresentation: TimeInterval = 0
     private var refreshPeriod: TimeInterval = 1.0 / 90.0
@@ -113,6 +119,7 @@ final class GameRenderer: @unchecked Sendable {
             return nil
         }
         commandQueue = queue
+        self.library = library
         let configuration = layerRenderer.configuration
         layered = configuration.layout == .layered
 
@@ -181,6 +188,8 @@ final class GameRenderer: @unchecked Sendable {
         frameTexture = nil
         upscaler = nil
         upscaled = false
+        edgeSmoother = nil
+        smoothed = false
         onEnd?()
         onEnd = nil
     }
@@ -233,6 +242,7 @@ final class GameRenderer: @unchecked Sendable {
             frameTexture = Unmanaged<AnyObject>.fromOpaque(pointer).takeUnretainedValue() as? MTLTexture
             framesTaken += 1
             upscaleNewFrame(commandBuffer: commandBuffer)
+            smoothNewFrame(commandBuffer: commandBuffer)
         }
         refreshes += 1
         reportNow(at: presentation)
@@ -281,6 +291,26 @@ final class GameRenderer: @unchecked Sendable {
         upscaleFrames += 1
     }
 
+    /// Smooths the edges of the frame just taken, when the settings ask for it and MetalFX did not
+    /// enlarge it.
+    private func smoothNewFrame(commandBuffer: MTLCommandBuffer) {
+        smoothed = false
+        guard settings.edgeSmoothing, !upscaled, let texture = frameTexture else { return }
+        let format = texture.pixelFormat
+        if smootherFailedFor == format { return }
+        if edgeSmoother?.pixelFormat != format {
+            edgeSmoother = EdgeSmoother(device: device, library: library, pixelFormat: format)
+            if edgeSmoother == nil {
+                smootherFailedFor = format
+                LogFiles.log("Edge smoothing: not available for format \(format.rawValue)")
+                return
+            }
+            LogFiles.log("Edge smoothing (FXAA): on, \(texture.width)x\(texture.height)")
+        }
+        smoothed = edgeSmoother?.encode(frame: texture, commandBuffer: commandBuffer) ?? false
+        if smoothed { smoothFrames += 1 }
+    }
+
     /// Every few seconds, for the console log: whether the game's frames reach the headset, and
     /// what they are.
     private func reportNow(at now: TimeInterval) {
@@ -291,12 +321,24 @@ final class GameRenderer: @unchecked Sendable {
         guard now - lastReport >= 5 else { return }
         var text = "Headset: \(framesTaken) game frames taken in \(refreshes) refreshes, "
             + "\(astro_core_frames_delivered()) delivered in all"
+        let thermal: String
+        switch ProcessInfo.processInfo.thermalState {
+        case .nominal: thermal = "nominal"
+        case .fair: thermal = "fair"
+        case .serious: thermal = "serious"
+        case .critical: thermal = "critical"
+        @unknown default: thermal = "unknown"
+        }
+        text += String(format: "; display %.0f Hz, thermal %@", 1.0 / refreshPeriod, thermal)
         if let frame {
             if let texture = frameTexture {
                 text += "; texture \(texture.width)x\(texture.height) format \(texture.pixelFormat.rawValue)"
                     + " same device \(texture.device === device)"
             } else {
                 text += "; the frame's texture is not a Metal texture"
+            }
+            if smoothFrames > 0 {
+                text += "; \(smoothFrames) with edges smoothed"
             }
             if upscaleFrames > 0, let upscaler {
                 text += "; \(upscaleFrames) enlarged to \(upscaler.outputWidth)x\(upscaler.outputHeight) an eye"
@@ -312,6 +354,7 @@ final class GameRenderer: @unchecked Sendable {
         framesTaken = 0
         refreshes = 0
         upscaleFrames = 0
+        smoothFrames = 0
         lastReport = now
     }
 
@@ -407,11 +450,14 @@ final class GameRenderer: @unchecked Sendable {
     }
 
     /// The picture of each eye: textures 0 and 1 (the left and the right eye), the two halves of
-    /// the game's frame or the eyes MetalFX enlarged.
+    /// the game's frame (or of its edge-smoothed copy) or the eyes MetalFX enlarged.
     private func bindPicture(_ encoder: MTLRenderCommandEncoder) {
         if upscaled, let upscaler {
             encoder.setFragmentTexture(upscaler.outputs[0], index: 0)
             encoder.setFragmentTexture(upscaler.outputs[1], index: 1)
+        } else if smoothed, let output = edgeSmoother?.output {
+            encoder.setFragmentTexture(output, index: 0)
+            encoder.setFragmentTexture(output, index: 1)
         } else {
             encoder.setFragmentTexture(frameTexture, index: 0)
             encoder.setFragmentTexture(frameTexture, index: 1)

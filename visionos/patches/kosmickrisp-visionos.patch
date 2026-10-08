@@ -1,5 +1,5 @@
 diff --git a/meson.options b/meson.options
-index 3f437d0..02c8ba3 100644
+index 3f437d04956..02c8ba35e54 100644
 --- a/meson.options
 +++ b/meson.options
 @@ -915,3 +915,10 @@ option(
@@ -14,7 +14,7 @@ index 3f437d0..02c8ba3 100644
 +  description : 'Link KosmicKrisp for embedding in an app (iOS, visionOS): frameworks linked directly, @rpath install name.'
 +)
 diff --git a/src/kosmickrisp/bridge/mtl_device.m b/src/kosmickrisp/bridge/mtl_device.m
-index dc580ed..adb6aae 100644
+index dc580ed0ea7..adb6aae468e 100644
 --- a/src/kosmickrisp/bridge/mtl_device.m
 +++ b/src/kosmickrisp/bridge/mtl_device.m
 @@ -13,6 +13,7 @@
@@ -50,7 +50,7 @@ index dc580ed..adb6aae 100644
  
     return device;
 diff --git a/src/kosmickrisp/vulkan/kk_bo.c b/src/kosmickrisp/vulkan/kk_bo.c
-index 5562b61..0b42b10 100644
+index 5562b61f1ec..0b42b105e1e 100644
 --- a/src/kosmickrisp/vulkan/kk_bo.c
 +++ b/src/kosmickrisp/vulkan/kk_bo.c
 @@ -15,7 +15,18 @@
@@ -72,8 +72,87 @@ index 5562b61..0b42b10 100644
  #endif /* DETECT_OS_APPLE */
  
  VkResult
+diff --git a/src/kosmickrisp/vulkan/kk_cmd_draw.c b/src/kosmickrisp/vulkan/kk_cmd_draw.c
+index 24f05def80d..11951011ff2 100644
+--- a/src/kosmickrisp/vulkan/kk_cmd_draw.c
++++ b/src/kosmickrisp/vulkan/kk_cmd_draw.c
+@@ -9,6 +9,10 @@
+ 
+ #include "kk_entrypoints.h"
+ 
++#include <stdio.h>
++
++#include "util/u_atomic.h"
++
+ #include "kk_buffer.h"
+ #include "kk_cmd_buffer.h"
+ #include "kk_format.h"
+@@ -2255,19 +2259,51 @@ kk_launch_gs_prerast(struct kk_cmd_buffer *cmd,
+     * two pre-render pipelines */
+    uint32_t pre_render_count = vs->pipeline.gfx.pre_render_count;
+    struct mtl_size local_size = {KK_POLY_WG_SIZE, 1, 1};
+-   mtl_compute_encoder *enc = cs_get_compute(cmd);
+ 
+-   mtl_barrier_after_encoder_stages(enc, MTL_STAGE_DISPATCH,
+-                                    MTL_STAGE_DISPATCH);
+-   mtl_compute_set_pipeline_state(
+-      enc, vs->pipeline.gfx.pre_render[pre_render_count - 2u]);
+-   kk_dispatch_compute(enc, grid_vs, local_size);
+-
+-   mtl_barrier_after_encoder_stages(enc, MTL_STAGE_DISPATCH,
+-                                    MTL_STAGE_DISPATCH);
+-   mtl_compute_set_pipeline_state(
+-      enc, vs->pipeline.gfx.pre_render[pre_render_count - 1u]);
+-   kk_dispatch_compute(enc, grid_gs, local_size);
++   static uint32_t in_pass_draws = 0u, split_draws = 0u;
++   uint32_t counted;
++   mtl_render_pipeline_state *const *vtx = vs->pipeline.gfx.pre_render_vertex;
++   if (pre_render_count == 2u && vtx[0] && vtx[1] && cmd->metal.render &&
++       !cmd->state.gfx.need_to_start_render_pass &&
++       !kk_grid_is_indirect(draw.grid) && grid_vs.size.z == 1u &&
++       grid_gs.size.z == 1u && grid_vs.size.x && grid_vs.size.y &&
++       grid_gs.size.y) {
++      mtl_render_encoder *renc = cmd->metal.render;
++      mtl_barrier_after_encoder_stages(renc, MTL_STAGE_VERTEX,
++                                       MTL_STAGE_VERTEX);
++      mtl_render_set_pipeline_state(renc, vtx[0]);
++      mtl_draw_primitives(renc, MTL_PRIMITIVE_TYPE_POINT, 0u, grid_vs.size.x,
++                          grid_vs.size.y, 0u);
++      mtl_barrier_after_encoder_stages(renc, MTL_STAGE_VERTEX,
++                                       MTL_STAGE_VERTEX);
++      mtl_render_set_pipeline_state(renc, vtx[1]);
++      mtl_draw_primitives(renc, MTL_PRIMITIVE_TYPE_POINT, 0u, grid_gs.size.x,
++                          grid_gs.size.y, 0u);
++      mtl_barrier_after_encoder_stages(renc, MTL_STAGE_VERTEX,
++                                       MTL_STAGE_VERTEX);
++      mtl_render_set_pipeline_state(renc, vs->pipeline.gfx.render);
++      counted = p_atomic_inc_return(&in_pass_draws);
++   } else {
++      mtl_compute_encoder *enc = cs_get_compute(cmd);
++
++      mtl_barrier_after_encoder_stages(enc, MTL_STAGE_DISPATCH,
++                                       MTL_STAGE_DISPATCH);
++      mtl_compute_set_pipeline_state(
++         enc, vs->pipeline.gfx.pre_render[pre_render_count - 2u]);
++      kk_dispatch_compute(enc, grid_vs, local_size);
++
++      mtl_barrier_after_encoder_stages(enc, MTL_STAGE_DISPATCH,
++                                       MTL_STAGE_DISPATCH);
++      mtl_compute_set_pipeline_state(
++         enc, vs->pipeline.gfx.pre_render[pre_render_count - 1u]);
++      kk_dispatch_compute(enc, grid_gs, local_size);
++      counted = p_atomic_inc_return(&split_draws);
++   }
++
++   if ((counted & 4095u) == 1u)
++      fprintf(stderr, "KK_GS_IN_PASS: %u geometry shader draws in the pass, "
++                      "%u split it\n",
++              p_atomic_read(&in_pass_draws), p_atomic_read(&split_draws));
+ 
+    struct kk_draw_data rast = {
+       .primitive_type = mesa_prim_to_mtl_primitive_type(gs->info.gs.mode),
 diff --git a/src/kosmickrisp/vulkan/kk_image.c b/src/kosmickrisp/vulkan/kk_image.c
-index 5cbf34b..aea51d4 100644
+index 5cbf34b9804..aea51d4c848 100644
 --- a/src/kosmickrisp/vulkan/kk_image.c
 +++ b/src/kosmickrisp/vulkan/kk_image.c
 @@ -11,6 +11,7 @@
@@ -133,7 +212,7 @@ index 5cbf34b..aea51d4 100644
 +}
 +#endif
 diff --git a/src/kosmickrisp/vulkan/kk_physical_device.c b/src/kosmickrisp/vulkan/kk_physical_device.c
-index 613977a..193b8d0 100644
+index 613977ac036..193b8d0d5d6 100644
 --- a/src/kosmickrisp/vulkan/kk_physical_device.c
 +++ b/src/kosmickrisp/vulkan/kk_physical_device.c
 @@ -181,6 +181,9 @@ kk_get_device_extensions(const struct kk_instance *instance,
@@ -146,8 +225,215 @@ index 613977a..193b8d0 100644
        .EXT_external_memory_host = true,
        .EXT_hdr_metadata = true,
        .EXT_image_2d_view_of_3d = true,
+diff --git a/src/kosmickrisp/vulkan/kk_shader.c b/src/kosmickrisp/vulkan/kk_shader.c
+index 362739cd398..438d0c253b1 100644
+--- a/src/kosmickrisp/vulkan/kk_shader.c
++++ b/src/kosmickrisp/vulkan/kk_shader.c
+@@ -8,6 +8,10 @@
+ #include "kk_shader.h"
+ 
+ #include "kk_cmd_buffer.h"
++
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
+ #include "kk_debug.h"
+ #include "kk_descriptor_set_layout.h"
+ #include "kk_device.h"
+@@ -839,6 +843,8 @@ kk_shader_destroy(struct vk_device *vk_dev, struct kk_shader *shader,
+       for (uint32_t i = 0u; i < pipe->gfx.pre_render_count; ++i) {
+          mtl_release(pipe->gfx.pre_render[i]);
+          pipe->gfx.pre_render[i] = NULL;
++         mtl_release(pipe->gfx.pre_render_vertex[i]);
++         pipe->gfx.pre_render_vertex[i] = NULL;
+       }
+       pipe->gfx.pre_render_count = 0u;
+ 
+@@ -1486,6 +1492,139 @@ gather_graphics_pipeline_create_info(
+       vk_primitive_topology_to_mtl_primitive_topology_class(topology);
+ }
+ 
++bool
++kk_gs_in_pass_enabled(void)
++{
++   static int enabled = -1;
++   if (enabled < 0) {
++      const char *env = getenv("KK_GS_IN_PASS");
++      enabled = !(env && env[0] == '0');
++   }
++   return enabled;
++}
++
++static char *
++kk_kernel_as_vertex(const char *code, const char **reason)
++{
++   static const char *const blocked[] = {
++      "threadgroup", "simd", "quad_", "gl_LocalInvocation", "gl_WorkGroupID",
++      "gl_NumWorkGroups", "gl_SubGroup", "gl_NumSubGroups", "atomic",
++   };
++   for (unsigned i = 0; i < ARRAY_SIZE(blocked); ++i) {
++      if (strstr(code, blocked[i])) {
++         *reason = blocked[i];
++         return NULL;
++      }
++   }
++
++   static const char kernel[] = "kernel void ";
++   static const char gid[] =
++      "uint3 gl_GlobalInvocationID [[thread_position_in_grid]]";
++   static const char ids[] = "uint kk_vertex_id [[vertex_id]],\n"
++                             "   uint kk_instance_id [[instance_id]]";
++   static const char def[] = "   uint3 gl_GlobalInvocationID = "
++                             "uint3(kk_vertex_id, kk_instance_id, 0u);\n";
++
++   const char *k = strstr(code, kernel);
++   if (!k || strstr(k + 1, kernel)) {
++      *reason = "entry point";
++      return NULL;
++   }
++   const char *body = strstr(k, ")\n{\n");
++   if (!body) {
++      *reason = "signature";
++      return NULL;
++   }
++   body += 4;
++   const char *g = strstr(k, gid);
++   if (g && g > body)
++      g = NULL;
++
++   size_t len = strlen(code) + sizeof(ids) + sizeof(def) + 16;
++   char *out = malloc(len);
++   if (!out) {
++      *reason = "memory";
++      return NULL;
++   }
++   char *o = out;
++   memcpy(o, code, k - code);
++   o += k - code;
++   o += sprintf(o, "vertex void ");
++   const char *rest = k + strlen(kernel);
++   if (g) {
++      memcpy(o, rest, g - rest);
++      o += g - rest;
++      memcpy(o, ids, strlen(ids));
++      o += strlen(ids);
++      rest = g + strlen(gid);
++   }
++   memcpy(o, rest, body - rest);
++   o += body - rest;
++   if (g) {
++      memcpy(o, def, strlen(def));
++      o += strlen(def);
++   }
++   strcpy(o, body);
++   return out;
++}
++
++static mtl_render_pipeline_state *
++kk_compile_vertex_only_pipeline(struct kk_device *device,
++                                const struct msl_compile_data *data,
++                                const struct kk_shader_info *info)
++{
++   struct kk_physical_device *pdev = kk_device_physical(device);
++   static uint32_t reports = 0u;
++
++   const char *reason = NULL;
++   char *code = kk_kernel_as_vertex(data->code, &reason);
++   if (!code) {
++      if (reports++ < 16u)
++         fprintf(stderr, "KK_GS_IN_PASS: %s stays a compute pass (%s)\n",
++                 data->entrypoint_name, reason);
++      return NULL;
++   }
++
++   mtl_library *library = mtl_new_library(
++      device->mtl_compiler_handle, code, pdev->info.msl_version,
++      MTL_MATH_MODE_FAST, MTL_MATH_FLOATING_POINT_FUNCTIONS_FAST);
++   free(code);
++   if (library == NULL) {
++      if (reports++ < 16u)
++         fprintf(stderr, "KK_GS_IN_PASS: %s did not compile as a vertex "
++                         "function\n", data->entrypoint_name);
++      return NULL;
++   }
++
++   mtl_function_descriptor *function =
++      mtl_new_library_function_descriptor(library, data->entrypoint_name);
++   mtl_render_pipeline_descriptor *descriptor =
++      mtl_new_render_pipeline_descriptor();
++   mtl_render_pipeline_descriptor_set_vertex_shader(descriptor, function);
++   mtl_render_pipeline_descriptor_set_rasterization_enabled(descriptor, false);
++   mtl_render_pipeline_descriptor_set_input_primitive_topology(
++      descriptor, MTL_PRIMITIVE_TOPOLOGY_CLASS_POINT);
++   for (uint8_t i = 0; i < MAX_DRAW_BUFFERS; ++i) {
++      if (info->vs.rt_formats[i] != MTL_PIXEL_FORMAT_INVALID)
++         mtl_render_pipeline_descriptor_set_color_attachment_format(
++            descriptor, i, info->vs.rt_formats[i]);
++   }
++   if (info->vs.has_ms)
++      mtl_render_pipeline_descriptor_set_raster_sample_count(
++         descriptor, info->vs.sample_count);
++
++   mtl_render_pipeline_state *pipeline =
++      mtl_new_render_pipeline(device->mtl_compiler_handle, descriptor);
++   mtl_release(descriptor);
++   mtl_release(function);
++   mtl_release(library);
++
++   if (pipeline == NULL && reports++ < 16u)
++      fprintf(stderr, "KK_GS_IN_PASS: no vertex-only pipeline for %s\n",
++              data->entrypoint_name);
++   return pipeline;
++}
++
+ static VkResult
+ kk_compile_graphics_pipeline(struct kk_device *device, struct kk_shader *vs)
+ {
+@@ -1523,6 +1662,21 @@ kk_compile_graphics_pipeline(struct kk_device *device, struct kk_shader *vs)
+          &pipe->gfx.pre_render[pipe->gfx.pre_render_count++]);
+       if (result != VK_SUCCESS)
+          return VK_ERROR_INVALID_SHADER_NV;
++
++      uint32_t bits = vs->info.vs.additional_stages_bits;
++      if (kk_gs_in_pass_enabled() && !vs->info.vs.view_mask &&
++          !(bits & BITFIELD_BIT(MESA_SHADER_TESS_CTRL)) &&
++          pipe->gfx.pre_render_count == 2u) {
++         pipe->gfx.pre_render_vertex[0] = kk_compile_vertex_only_pipeline(
++            device, &vs->msl_data[MESA_SHADER_VERTEX], &vs->info);
++         if (pipe->gfx.pre_render_vertex[0])
++            pipe->gfx.pre_render_vertex[1] = kk_compile_vertex_only_pipeline(
++               device, &vs->gs_main, &vs->info);
++         if (!pipe->gfx.pre_render_vertex[1]) {
++            mtl_release(pipe->gfx.pre_render_vertex[0]);
++            pipe->gfx.pre_render_vertex[0] = NULL;
++         }
++      }
+    }
+ 
+    const struct msl_compile_data *vs_data = &vs->msl_data[vs_stage];
+diff --git a/src/kosmickrisp/vulkan/kk_shader.h b/src/kosmickrisp/vulkan/kk_shader.h
+index 296f9ffcd13..2ccb8f17afc 100644
+--- a/src/kosmickrisp/vulkan/kk_shader.h
++++ b/src/kosmickrisp/vulkan/kk_shader.h
+@@ -126,6 +126,7 @@ struct kk_pipeline_handles {
+          /* Vertex, tess ctrl, tess eval and the geometry shader compute pass
+           * at most run before the render pipeline. */
+          mtl_compute_pipeline_state *pre_render[4];
++         mtl_render_pipeline_state *pre_render_vertex[4];
+          mtl_depth_stencil_state *ds_handle;
+          uint32_t pre_render_count;
+       } gfx;
+@@ -154,6 +155,8 @@ VK_DEFINE_NONDISP_HANDLE_CASTS(kk_shader, vk.base, VkShaderEXT,
+ 
+ extern const struct vk_device_shader_ops kk_device_shader_ops;
+ 
++bool kk_gs_in_pass_enabled(void);
++
+ static inline nir_address_format
+ kk_buffer_addr_format(VkPipelineRobustnessBufferBehaviorEXT robustness)
+ {
 diff --git a/src/kosmickrisp/vulkan/meson.build b/src/kosmickrisp/vulkan/meson.build
-index f82e80f..665a9cd 100644
+index f82e80fd87e..665a9cdc53d 100644
 --- a/src/kosmickrisp/vulkan/meson.build
 +++ b/src/kosmickrisp/vulkan/meson.build
 @@ -163,7 +163,13 @@ libkk = static_library(
@@ -166,7 +452,7 @@ index f82e80f..665a9cd 100644
    install : true,
  )
 diff --git a/src/vulkan/wsi/wsi_common_metal_layer.m b/src/vulkan/wsi/wsi_common_metal_layer.m
-index 6308d70..2c99e40 100644
+index 6308d70da11..2c99e40ac7c 100644
 --- a/src/vulkan/wsi/wsi_common_metal_layer.m
 +++ b/src/vulkan/wsi/wsi_common_metal_layer.m
 @@ -10,6 +10,7 @@
