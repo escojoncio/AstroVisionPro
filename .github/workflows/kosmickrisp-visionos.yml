@@ -1,0 +1,39 @@
+# KosmicKrisp for visionOS on its own (visionos/scripts/build-kosmickrisp.sh), to work on its build
+# without building the app. Only by hand (Actions > kosmickrisp-visionos > Run workflow). What it
+# builds is kept in the same cache the app's workflow (visionos-app.yml) takes it from, so the next
+# app build finds it. Its log goes to the ci-logs branch (kosmickrisp-visionos.txt).
+name: kosmickrisp-visionos
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: kosmickrisp-visionos
+  cancel-in-progress: true
+jobs:
+  kosmickrisp:
+    runs-on: macos-26
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          submodules: false
+
+      - uses: actions/cache@v4
+        id: kosmickrisp
+        with:
+          path: build/visionos/kosmickrisp
+          key: kosmickrisp-visionos-${{ hashFiles('visionos/patches/kosmickrisp-visionos.patch', 'visionos/scripts/build-kosmickrisp.sh') }}
+
+      - name: KosmicKrisp for visionOS
+        if: steps.kosmickrisp.outputs.cache-hit != 'true'
+        run: |
+          set -o pipefail
+          brew install meson pkg-config llvm spirv-tools spirv-llvm-translator libclc || true
+          pip3 install --break-system-packages mako packaging pyyaml
+          bash visionos/scripts/build-kosmickrisp.sh 2>&1 | tee kosmickrisp.log
+
+      - name: Publish the log
+        if: always()
+        run: bash visionos/scripts/ci-publish-log.sh kosmickrisp-visionos kosmickrisp.log

@@ -1018,6 +1018,29 @@ DeviceState Runtime::GetPad() {
     }
     state.sequence = pad.sequence;
     state.tracked = true;
+
+    // Every 5 s: where the title is told the controller is, from the head, and how it is
+    // turned, with what the accelerometer said last (PAD lines in the log).
+    static std::chrono::steady_clock::time_point last_report{};
+    if (now - last_report > std::chrono::seconds{5}) {
+        last_report = now;
+        static constexpr float Degrees = 57.29578f;
+        const Quat q = state.pose.orientation;
+        const Vec3 forward = Rotate(q, {0.0f, 0.0f, -1.0f});
+        const Vec3 right = Rotate(q, {1.0f, 0.0f, 0.0f});
+        const Vec3 up = Rotate(q, {0.0f, 1.0f, 0.0f});
+        LOG_INFO(Core_Vr,
+                 "PAD: {} at {:.2f} {:.2f} {:.2f} from the head (right, up, back); heading {:.0f} "
+                 "pitch {:.0f} roll {:.0f} degrees; accelerometer {:.1f} {:.1f} {:.1f}{}",
+                 seen ? "seen" : (own_pad_place ? "own place" : "assumed"),
+                 state.pose.position.x - current_head.pose.position.x,
+                 state.pose.position.y - current_head.pose.position.y,
+                 state.pose.position.z - current_head.pose.position.z,
+                 std::atan2(-forward.x, -forward.z) * Degrees,
+                 std::asin(std::clamp(forward.y, -1.0f, 1.0f)) * Degrees,
+                 std::atan2(-right.y, up.y) * Degrees, pad_acceleration.x, pad_acceleration.y,
+                 pad_acceleration.z, pad_acceleration_valid ? "" : " (none)");
+    }
     return state;
 }
 
