@@ -85,7 +85,7 @@ No funciona / pendiente:
 - `visionos/project.yml`: `-Wl,-exported_symbol,__mh_execute_header` (solo exporta eso; arregló glifos rotos por interposición de FreeType/zlib/operator new).
 - `.github/workflows/visionos-app.yml`: compila solo con `[build]` o dispatch; timeout 150 min; publica `visionos-latest` (`AstroQuest.ipa`).
 - `.github/workflows/stikdebug-visionos.yml` + `.github/stikdebug/autoquit.patch`: StikDebug-visionOS (rama release, 8a7fc130) con `autoQuitAfterEnablingJIT = true`, ID `com.stik.stikdebug`; release `stikdebug-visionos`.
-- Instalación de prueba: el IPA se reempaqueta con `CFBundleIdentifier=com.kdt.livecontainer` (plistlib conservando formato binario; `zip -qry -X`) y se instala con SideStoreRAM.
+- Bundle ID: `visionos/project.yml` `PRODUCT_BUNDLE_IDENTIFIER: com.kdt.livecontainer` (el App ID ya registrado en la cuenta de firma; SideStore añade el sufijo del equipo). El IPA de la release sale ya con él; se instala con SideStoreRAM. Para reempaquetar a mano un IPA antiguo: plistlib conservando formato binario + `zip -qry -X`.
 
 ## Flujo de trabajo
 - Logs: el usuario manda `consola-*.txt` (la app los guarda en Documents). Quitar ANSI con `sed 's/\x1b\[[0-9;]*m//g'`.

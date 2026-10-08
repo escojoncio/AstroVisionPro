@@ -27,7 +27,9 @@ targets:
     settings:
       base:
         PRODUCT_NAME: AstroQuest
-        PRODUCT_BUNDLE_IDENTIFIER: com.astroquest.visionpro
+        # The App ID the test installs are signed for (a free account can only register a few
+        # App IDs a week; SideStore adds the team's suffix). The IPA comes out with it already.
+        PRODUCT_BUNDLE_IDENTIFIER: com.kdt.livecontainer
         INFOPLIST_FILE: App/Info.plist
         CODE_SIGN_ENTITLEMENTS: App/AstroQuest.entitlements
         CODE_SIGN_STYLE: Automatic
