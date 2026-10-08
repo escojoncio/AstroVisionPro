@@ -743,9 +743,33 @@ static bool ContinuesPass(const RenderState& current, const RenderState& next) {
            !theirs.depth_clear && !theirs.stencil_clear;
 }
 
-void Scheduler::BeginRendering(const RenderState& new_state) {
-    if (is_rendering && render_state == new_state) {
+/// A pass with neither colour nor depth targets: the draws in it only write to buffers and
+/// images through their shaders.
+static bool IsAttachmentless(const RenderState& state) {
+    for (u32 i = 0; i < state.num_color_attachments; ++i) {
+        if (state.color_attachments[i].image_view) {
+            return false;
+        }
+    }
+    return !state.depth_stencil_attachment.image_view;
+}
+
+void Scheduler::BeginRendering(const RenderState& requested) {
+    if (is_rendering && render_state == requested) {
         return;
+    }
+    // Such passes are as large as their draws reach (Rasterizer::AttachmentlessExtent), which
+    // changes from draw to draw: a draw that fits the open one stays in it, and one that does not
+    // begins one large enough for both.
+    RenderState new_state = requested;
+    if (is_rendering && IsAttachmentless(render_state) && IsAttachmentless(requested) &&
+        render_state.num_color_attachments == requested.num_color_attachments &&
+        render_state.num_layers == requested.num_layers) {
+        if (requested.width <= render_state.width && requested.height <= render_state.height) {
+            return;
+        }
+        new_state.width = std::max(requested.width, render_state.width);
+        new_state.height = std::max(requested.height, render_state.height);
     }
     if (is_rendering && ContinuesPass(render_state, new_state)) {
         // From here on the pass is one without clears: a draw that asks for a clear again

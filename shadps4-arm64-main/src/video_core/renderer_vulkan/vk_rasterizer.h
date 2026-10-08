@@ -4,6 +4,7 @@
 #pragma once
 
 #include <memory>
+#include <utility>
 #include <vector>
 
 #include <boost/container/small_vector.hpp>
@@ -97,6 +98,9 @@ public:
 private:
     void PrepareRenderState(const GraphicsPipeline* pipeline);
     RenderState BeginRendering(const GraphicsPipeline* pipeline);
+    /// For a pass with no colour or depth target: how far the draws' scissors (and, for plain
+    /// triangles, their viewports) reach, rounded up to whole 32-pixel tiles.
+    std::pair<u32, u32> AttachmentlessExtent() const;
     void Resolve();
     void DepthStencilCopy(bool is_depth, bool is_stencil);
     void EliminateFastClear();

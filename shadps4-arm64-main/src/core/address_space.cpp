@@ -44,6 +44,11 @@ std::atomic<u8*> g_console_memory{};
 std::atomic<u64> g_console_memory_size{};
 } // namespace
 
+std::pair<u64, u64> ConsoleMemoryRange() {
+    return {reinterpret_cast<u64>(g_console_memory.load(std::memory_order_relaxed)),
+            g_console_memory_size.load(std::memory_order_relaxed)};
+}
+
 u64 ResidentConsoleMemory() {
 #if defined(SHADPS4_VISIONOS)
     u8* const base = g_console_memory.load(std::memory_order_relaxed);

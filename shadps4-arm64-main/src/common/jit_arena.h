@@ -32,6 +32,15 @@ std::optional<Block> Allocate(std::size_t size);
 /// Gives back what Allocate handed out, by its executable address.
 void Free(const void* rx);
 
+/// How much of it is handed out now, the most that ever was at once, and its size, in bytes.
+struct Usage {
+    std::uintptr_t begin{}; ///< The executable mapping's start (0 before it is known).
+    std::size_t used{};
+    std::size_t most{};
+    std::size_t size{};
+};
+Usage GetUsage();
+
 /// The executable mapping: [begin, end).
 std::pair<std::uintptr_t, std::uintptr_t> Range();
 
