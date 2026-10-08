@@ -106,7 +106,7 @@ jobs:
         continue-on-error: true
         run: |
           set -o pipefail
-          brew install meson pkg-config llvm spirv-llvm-translator libclc || true
+          brew install meson pkg-config llvm spirv-tools spirv-llvm-translator libclc || true
           pip3 install --break-system-packages mako packaging pyyaml
           bash visionos/scripts/build-kosmickrisp.sh 2>&1 | tee kosmickrisp.log
 
