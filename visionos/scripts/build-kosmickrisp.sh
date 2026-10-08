@@ -103,7 +103,8 @@ if [[ ! -f "$XROS/build.ninja" ]]; then
      -Dmesa-clc=system -Dprecomp-compiler=system -Dspirv-tools=disabled -Dllvm=disabled \
      -Dxmlconfig=disabled -Dexpat=disabled -Dkosmickrisp-embedded=true "${COMMON[@]}")
 fi
-meson compile -C "$XROS" vulkan_kosmickrisp
+# Every error at once (-k0), not only the first one.
+meson compile -C "$XROS" --ninja-args=-k0 vulkan_kosmickrisp
 
 LIBRARY="$XROS/src/kosmickrisp/vulkan/libvulkan_kosmickrisp.dylib"
 [[ -f "$LIBRARY" ]] || { echo "No $LIBRARY"; exit 1; }
