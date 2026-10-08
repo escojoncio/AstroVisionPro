@@ -521,6 +521,26 @@ void Runtime::UpdatePadGyro(const Vec3& angular_velocity) {
                                     : Quat{};
         pad_attitude_valid = true;
     } else {
+        // A gyroscope at rest does not read zero, and what it reads instead turns the estimate
+        // a little every second (the drift). While the controller lies still, that offset is
+        // learnt and taken out.
+        static constexpr float StillRate = 0.08f; // rad/s
+        const Vec3 raw = angular_velocity;
+        const Vec3 unbiased{raw.x - pad_gyro_bias.x, raw.y - pad_gyro_bias.y,
+                            raw.z - pad_gyro_bias.z};
+        if (steady && Length(unbiased) < StillRate) {
+            pad_still_seconds += elapsed;
+            if (pad_still_seconds > 0.5f) {
+                const float learn = std::min(elapsed / 2.0f, 1.0f);
+                pad_gyro_bias.x += (raw.x - pad_gyro_bias.x) * learn;
+                pad_gyro_bias.y += (raw.y - pad_gyro_bias.y) * learn;
+                pad_gyro_bias.z += (raw.z - pad_gyro_bias.z) * learn;
+            }
+        } else {
+            pad_still_seconds = 0.0f;
+        }
+        const Vec3 angular_velocity{raw.x - pad_gyro_bias.x, raw.y - pad_gyro_bias.y,
+                                    raw.z - pad_gyro_bias.z};
         // The gyroscope reports the turn in the controller's own frame.
         const float rate = Length(angular_velocity);
         if (rate > 1e-6f) {
@@ -553,6 +573,20 @@ void Runtime::UpdatePadGyro(const Vec3& angular_velocity) {
                 pad_attitude = Multiply(
                     FromAxisAngle(Up, error * std::min(YawGain * elapsed, 1.0f)), pad_attitude);
             }
+        } else if (pad_still_seconds > 1.0f) {
+            // Nothing sees which way it points: while it is held still, it is taken to point
+            // where the player faces (the seat's straight ahead, turned as TurnView has it),
+            // slowly - a few seconds of stillness bring a drifted heading back.
+            const Vec3 forward = Rotate(pad_attitude, {0.0f, 0.0f, -1.0f});
+            if (std::abs(forward.y) < 0.9f) {
+                static constexpr float HeadingGain = 0.25f;
+                static constexpr float Pi = 3.14159265f;
+                float error = view_turn - std::atan2(-forward.x, -forward.z);
+                error -= 2.0f * Pi * std::round(error / (2.0f * Pi));
+                pad_attitude = Multiply(
+                    FromAxisAngle(Up, error * std::min(HeadingGain * elapsed, 1.0f)),
+                    pad_attitude);
+            }
         }
         pad_attitude = Normalize(pad_attitude);
     }
@@ -564,7 +598,10 @@ void Runtime::UpdatePadGyro(const Vec3& angular_velocity) {
         return;
     }
     pad.pose.orientation = pad_attitude;
-    pad.angular_velocity = Rotate(pad_attitude, angular_velocity);
+    pad.angular_velocity =
+        Rotate(pad_attitude, {angular_velocity.x - pad_gyro_bias.x,
+                              angular_velocity.y - pad_gyro_bias.y,
+                              angular_velocity.z - pad_gyro_bias.z});
     ++pad.sequence;
     pad.tracked = true;
     pad_position_tracked = false;

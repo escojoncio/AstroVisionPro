@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <exception>
 #include <mutex>
 #include <string>
@@ -390,6 +391,7 @@ PipelineCache::PipelineCache(const Instance& instance_, Scheduler& scheduler_,
 PipelineCache::~PipelineCache() = default;
 
 const GraphicsPipeline* PipelineCache::GetGraphicsPipeline() {
+    const auto started = std::chrono::steady_clock::now();
     if (!RefreshGraphicsKey()) {
         return nullptr;
     }
@@ -424,6 +426,14 @@ const GraphicsPipeline* PipelineCache::GetGraphicsPipeline() {
 
         RegisterPipelineData(graphics_key, pipeline_hash, sdata);
         ++num_new_pipelines;
+        // How long the draw waited for its shaders and pipeline (all of it on this thread).
+        const auto took = std::chrono::duration_cast<std::chrono::milliseconds>(
+                              std::chrono::steady_clock::now() - started)
+                              .count();
+        if (took >= 30) {
+            LOG_INFO(Render_Vulkan, "PIPELINE_SLOW {:#x}: {} ms (pipeline {} of this run)",
+                     pipeline_hash, took, num_new_pipelines);
+        }
 
         if (EmulatorSettings.IsShaderCollect()) {
             for (auto stage = 0; stage < MaxShaderStages; ++stage) {

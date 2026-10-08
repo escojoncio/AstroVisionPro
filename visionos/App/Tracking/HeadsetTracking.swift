@@ -27,11 +27,17 @@ final class HeadsetTracking: @unchecked Sendable {
     /// Starts world tracking, and hand tracking when it is allowed and wanted.
     func start(trackHands: Bool) async {
         var providers: [any DataProvider] = [world]
+        var handsNote = "not asked for (hands=0)"
         if trackHands && HandTrackingProvider.isSupported {
             let authorization = await session.requestAuthorization(for: [.handTracking])
             if authorization[.handTracking] == .allowed {
                 providers.append(hands)
+                handsNote = "allowed"
+            } else {
+                handsNote = "not allowed (\(String(describing: authorization[.handTracking])))"
             }
+        } else if trackHands {
+            handsNote = "not supported"
         }
         do {
             try await session.run(providers)
@@ -39,8 +45,10 @@ final class HeadsetTracking: @unchecked Sendable {
         } catch {
             // Without hands the controller is placed by its motion sensors alone.
             handsRunning = false
+            handsNote += ", the session failed: \(error)"
             try? await session.run([world])
         }
+        LogFiles.log("Hand tracking: \(handsNote); running \(handsRunning)")
     }
 
     func stop() {
@@ -72,17 +80,20 @@ final class HeadsetTracking: @unchecked Sendable {
     /// Where the palm of a hand is: the middle of its middle finger's metacarpal (where OpenXR
     /// puts XR_HAND_JOINT_PALM_EXT), between that bone's base and the knuckle.
     private static func palm(_ anchor: HandAnchor?) -> SIMD3<Float>? {
-        guard let anchor, anchor.isTracked, let skeleton = anchor.handSkeleton else {
-            return nil
-        }
-        let base = skeleton.joint(.middleFingerMetacarpal)
-        let knuckle = skeleton.joint(.middleFingerKnuckle)
-        guard base.isTracked, knuckle.isTracked else {
+        guard let anchor, anchor.isTracked else {
             return nil
         }
         let origin = anchor.originFromAnchorTransform
-        let a = origin * base.anchorFromJointTransform.columns.3
-        let b = origin * knuckle.anchorFromJointTransform.columns.3
+        guard let skeleton = anchor.handSkeleton,
+              skeleton.joint(.middleFingerMetacarpal).isTracked,
+              skeleton.joint(.middleFingerKnuckle).isTracked else {
+            // Fingers wrapped round a controller are often not made out; the hand itself still
+            // is: its origin (the wrist) stands in, a few centimetres short of the palm.
+            let wrist = origin.columns.3
+            return SIMD3<Float>(wrist.x, wrist.y, wrist.z)
+        }
+        let a = origin * skeleton.joint(.middleFingerMetacarpal).anchorFromJointTransform.columns.3
+        let b = origin * skeleton.joint(.middleFingerKnuckle).anchorFromJointTransform.columns.3
         return (SIMD3<Float>(a.x, a.y, a.z) + SIMD3<Float>(b.x, b.y, b.z)) * 0.5
     }
 
@@ -110,7 +121,30 @@ final class HeadsetTracking: @unchecked Sendable {
         updatePadFromHands(at: time)
     }
 
+    // What the hands did since the last report (every 5 s, to the log).
+    private var reportTime: TimeInterval = 0
+    private var framesBoth = 0
+    private var framesOne = 0
+    private var framesNone = 0
+    private var framesApart = 0
+    private var lastDistance: Float = 0
+
+    private func report(at time: TimeInterval) {
+        guard time - reportTime >= 5 else { return }
+        if reportTime > 0 {
+            let state = handsRunning ? "\(hands.state)" : "off"
+            LogFiles.log(String(format: "Hands (%@): both seen %ld, one %ld, none %ld, both but not holding %ld frames; palms last %.2f m apart",
+                                state, framesBoth, framesOne, framesNone, framesApart, lastDistance))
+        }
+        reportTime = time
+        framesBoth = 0
+        framesOne = 0
+        framesNone = 0
+        framesApart = 0
+    }
+
     private func updatePadFromHands(at time: TimeInterval) {
+        report(at: time)
         guard handsRunning, hands.state == .running else {
             if padSeen {
                 astro_core_pad_lost()
@@ -126,8 +160,10 @@ final class HeadsetTracking: @unchecked Sendable {
         if let left = leftPalm, let right = rightPalm {
             let across = right - left
             let distance = simd_length(across)
-            // Hands further apart, or closer together, are not holding a controller.
-            if distance > 0.05 && distance < 0.32 {
+            lastDistance = distance
+            // Hands much further apart, or on top of each other, are not holding a controller.
+            if distance > 0.04 && distance < 0.45 {
+                framesBoth += 1
                 var centre = (left + right) * 0.5
                 let level = (across.x * across.x + across.z * across.z).squareRoot()
                 if level > 0.6 * distance {
@@ -145,34 +181,46 @@ final class HeadsetTracking: @unchecked Sendable {
                 offsetFromRight = centre - right
                 bothSeenTime = time
                 placed = centre
+            } else {
+                framesApart += 1
             }
-        } else if time - bothSeenTime < Self.oneHandSeconds {
-            // One hand out of sight: the other one still holds the controller where it was.
-            if let left = leftPalm, let offset = offsetFromLeft {
-                placed = left + offset
-            } else if let right = rightPalm, let offset = offsetFromRight {
-                placed = right + offset
+        } else if leftPalm != nil || rightPalm != nil {
+            framesOne += 1
+            if time - bothSeenTime < Self.oneHandSeconds,
+               let offset = leftPalm != nil ? offsetFromLeft : offsetFromRight {
+                // One hand out of sight: the other one still holds the controller where it was.
+                placed = (leftPalm ?? rightPalm!) + offset
+            } else if let palm = leftPalm ?? rightPalm, let head = deviceAnchor(at: CACurrentMediaTime()) {
+                // Only one hand ever seen: the controller is between the hands, half a
+                // controller's width towards the other one (sideways as the head is turned).
+                let right = head.originFromAnchorTransform.columns.0
+                var sideways = SIMD3<Float>(right.x, 0, right.z)
+                let length = simd_length(sideways)
+                if length > 1e-3 {
+                    sideways /= length
+                    placed = palm + sideways * (leftPalm != nil ? 0.08 : -0.08) + SIMD3<Float>(0, 0.015, 0)
+                }
             }
+        } else {
+            framesNone += 1
         }
         if let centre = placed {
-            do {
-                if padSeen && time > padTime {
-                    let elapsed = Float(time - padTime)
-                    if elapsed < 0.1 {
-                        let blend: Float = 0.4
-                        padVelocity += ((centre - padPosition) / elapsed - padVelocity) * blend
-                    }
-                } else {
-                    padVelocity = .zero
+            if padSeen && time > padTime {
+                let elapsed = Float(time - padTime)
+                if elapsed < 0.1 {
+                    let blend: Float = 0.4
+                    padVelocity += ((centre - padPosition) / elapsed - padVelocity) * blend
                 }
-                padPosition = centre
-                padTime = time
-
-                var position = [centre.x, centre.y, centre.z]
-                var velocity = [padVelocity.x, padVelocity.y, padVelocity.z]
-                astro_core_pad_position(&position, &velocity)
-                seen = true
+            } else {
+                padVelocity = .zero
             }
+            padPosition = centre
+            padTime = time
+
+            var position = [centre.x, centre.y, centre.z]
+            var velocity = [padVelocity.x, padVelocity.y, padVelocity.z]
+            astro_core_pad_position(&position, &velocity)
+            seen = true
         }
         // Once more when the hands are lost, so that the last position is no longer trusted.
         if !seen && padSeen {
