@@ -9,13 +9,14 @@ import Foundation
 
 struct AstroSettings {
     // As on the PC (pc-vr/settings.txt and pc-vr/launch.ps1).
-    /// Width of each eye's picture: 1440 is the console's largest (the headset's default: larger
-    /// sizes keep its GPU busy all the time and need more memory than the system lets the app
-    /// have in the game's worlds); 2880 = 2880x3072 (the PC's default); "game" lets the game
-    /// choose among the console's sizes.
+    /// Width of each eye's picture: 1440 is the console's largest; 2880 = 2880x3072 (the PC's
+    /// default); "game" lets the game choose among the console's sizes. Pixels cost the headset
+    /// little (log 2026-10-09: the scene took the same GPU time at 1440x1536 as at 816x870);
+    /// what limits larger sizes is memory.
     var resolution = "1440"
-    /// The game draws a step smaller by itself while the GPU cannot keep up (0: held to the size).
-    var dynamic = true
+    /// The emulator's dynamic resolution is never used: the GPU's time goes to draws and passes,
+    /// not to pixels, so drawing smaller only blurs the picture.
+    let dynamic = false
     /// The most frames a second.
     var fps = 60
     /// How much of the headset's field of view the game draws, in percent.
@@ -44,9 +45,9 @@ struct AstroSettings {
     var foveation = true
     /// Compositor Services' render quality, 0 to 1 (1: the largest drawables the system offers).
     var renderQuality: Float = 1.0
-    /// How much MetalFX enlarges each eye of the game's picture before it is shown (1: not at
-    /// all, the picture is interpolated as it is).
-    var upscale: Float = 1.5
+    /// How much MetalFX enlarges each eye of the game's picture before it is shown: always 1 (not
+    /// at all); it did not make the picture better.
+    let upscale: Float = 1.0
     /// Executable memory asked of StikDebug, in megabytes.
     var jitArenaMB = 512
     /// Show the hands (and the controller in them) in front of the game.
@@ -57,6 +58,11 @@ struct AstroSettings {
     /// Pipelines are made on threads of their own: no stalls while Metal compiles, at the cost
     /// of what they draw appearing a moment late the first time.
     var asyncShaders = true
+    /// KosmicKrisp runs the geometry shaders' work inside the render pass (as vertex-only draws)
+    /// instead of breaking the pass for a compute pass on every such draw.
+    var gsInPass = true
+    /// The edges of the game's picture smoothed (FXAA) before it is shown.
+    var edgeSmoothing = false
 
     static var documents: URL {
         FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -121,7 +127,6 @@ struct AstroSettings {
         let flag = value != "0"
         switch key {
         case "resolution": resolution = value
-        case "dynamic": dynamic = flag
         case "fps": fps = Int(value) ?? fps
         case "fov": fov = Int(value) ?? fov
         case "fov_of": fovOf = value
@@ -137,12 +142,13 @@ struct AstroSettings {
         case "game": game = value
         case "env": extraEnvironment.append(value)
         case "foveation": foveation = flag
-        case "upscale": upscale = min(max(Float(value) ?? upscale, 1.0), 2.0)
         case "render_quality": renderQuality = min(max(Float(value) ?? renderQuality, 0.1), 1.0)
         case "jit_arena_mb": jitArenaMB = min(max(Int(value) ?? jitArenaMB, 64), 2048)
         case "show_hands": showHands = flag
         case "vulkan_driver": vulkanDriver = value.lowercased()
         case "async_shaders": asyncShaders = flag
+        case "gs_in_pass": gsInPass = flag
+        case "edge_smoothing": edgeSmoothing = flag
         default: break
         }
     }
@@ -204,6 +210,7 @@ struct AstroSettings {
         env.append("SHADPS4_XR_WAIT=0")
         env.append("SHADPS4_VK_DRIVER=\(vulkanDriver)")
         env.append("SHADPS4_ASYNC_PIPELINES=\(asyncShaders ? 1 : 0)")
+        env.append("KK_GS_IN_PASS=\(gsInPass ? 1 : 0)")
         // KosmicKrisp keeps what it translated (Mesa's shader cache) where the app may write:
         // the VPS4 folder when there is one (it outlives the app), else the app's caches.
         let caches = (GameFolder.caches ?? FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0])
@@ -223,13 +230,10 @@ struct AstroSettings {
     # empiezan por # no cuentan. Son los mismos ajustes que la versión de PC VR
     # (pc-vr/settings.txt), con la resolución adaptada al visor, y algunos propios de él.
 
-    # El ancho de la imagen de cada ojo: 1440 es el máximo de la consola y el valor para el visor;
-    # 2880 (= 2880x3072, el valor de PC VR) hace que el juego dibuje cuatro veces más píxeles y
-    # necesita 1,5 GB más de memoria (en el visor, la GPU no da abasto y el sistema cierra la app
-    # al entrar en los mundos). game: los tamaños de la consola, elegidos por el propio juego.
+    # El ancho de la imagen de cada ojo: 1440 es el máximo de la consola; 2160 y 2880 (= 2880x3072,
+    # el valor de PC VR) se ven más nítidos y piden más memoria al juego. game: los tamaños de la
+    # consola, elegidos por el propio juego.
     resolution=1440
-    # 1: el juego dibuja un paso más pequeño mientras la GPU no da abasto; 0: siempre a ese tamaño.
-    dynamic=1
 
     # Imágenes por segundo como máximo. Una imagen dura un número entero de refrescos de la
     # pantalla del visor (90 Hz: 45 o 30; 120 Hz: 60).
@@ -267,8 +271,8 @@ struct AstroSettings {
 
     # Renderizado foveado: donde miran los ojos se dibuja a la máxima resolución del visor.
     foveation=1
-    # Escalado con MetalFX de la imagen de cada ojo antes de mostrarla: 1 (no), 1.5 o 2.
-    upscale=1.5
+    # 1: se suavizan los bordes de la imagen del juego (FXAA) antes de mostrarla.
+    edge_smoothing=0
     # Calidad de renderizado de Compositor Services, de 0.1 a 1 (1: la máxima que da el sistema).
     render_quality=1.0
     # Memoria ejecutable que se pide a StikDebug, en megabytes.
@@ -279,6 +283,8 @@ struct AstroSettings {
     vulkan_driver=kosmickrisp
     # 1: los shaders se compilan en segundo plano (sin tirones; lo nuevo aparece un instante tarde).
     async_shaders=1
+    # 1: KosmicKrisp hace el trabajo de los geometry shaders dentro de la pasada de render.
+    gs_in_pass=1
 
     # Variables de entorno extra para el emulador, tantas líneas como hagan falta.
     #env=NOMBRE=valor
