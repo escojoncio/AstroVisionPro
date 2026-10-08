@@ -15,7 +15,10 @@
 #include "video_core/renderer_vulkan/vk_shader_hle.h"
 
 #include <array>
+#include <algorithm>
 #include <bit>
+#include <cmath>
+#include <cstdlib>
 
 #include <vk_mem_alloc.h>
 #include "video_core/texture_cache/image_view.h"
@@ -1252,12 +1255,14 @@ RenderState Rasterizer::BeginRendering(const GraphicsPipeline* pipeline) {
     state.height = instance.GetMaxFramebufferHeight();
     state.num_layers = std::numeric_limits<u16>::max();
     state.num_color_attachments = std::bit_width(key.mrt_mask);
+    bool has_target = false;
     for (auto cb = 0u; cb < state.num_color_attachments; ++cb) {
         auto& [image_id, desc] = cb_descs[cb];
         if (!image_id) {
             state.color_attachments[cb] = {};
             continue;
         }
+        has_target = true;
         auto* image = &texture_cache.GetImage(image_id);
         if (image->binding.needs_rebind) {
             image_id = bound_images.emplace_back(texture_cache.FindImage(desc));
@@ -1307,6 +1312,7 @@ RenderState Rasterizer::BeginRendering(const GraphicsPipeline* pipeline) {
     }
 
     if (auto image_id = db_desc.first; image_id) {
+        has_target = true;
         auto& desc = db_desc.second;
         const auto htile_address = regs.depth_htile_data_base.GetAddress();
         const auto& image_view = texture_cache.FindDepthTarget(image_id, desc);
@@ -1351,7 +1357,122 @@ RenderState Rasterizer::BeginRendering(const GraphicsPipeline* pipeline) {
         state.num_layers = 1;
     }
 
+    if (!has_target) {
+        // Nothing to size the pass by: it would cover the largest framebuffer there is
+        // (16384x16384), and a GPU that renders in tiles walks every tile of it, drawn on or not.
+        // The draws cannot reach past their scissor (or, for plain triangles, their viewport).
+        const auto [width, height] = AttachmentlessExtent();
+        state.width = static_cast<u16>(std::min<u32>(state.width, width));
+        state.height = static_cast<u16>(std::min<u32>(state.height, height));
+    }
+
     return state;
+}
+
+std::pair<u32, u32> Rasterizer::AttachmentlessExtent() const {
+    const u32 max_width = instance.GetMaxFramebufferWidth();
+    const u32 max_height = instance.GetMaxFramebufferHeight();
+    // SHADPS4_TIGHT_EMPTY_PASSES=0 leaves such passes as large as the largest framebuffer.
+    static const bool enabled = [] {
+        const char* value = std::getenv("SHADPS4_TIGHT_EMPTY_PASSES");
+        return value == nullptr || value[0] != '0';
+    }();
+    if (!enabled) {
+        return {max_width, max_height};
+    }
+    const auto& regs = liverpool->regs;
+
+    // The same scissor as UpdateViewportScissorState's. One whose corners are the wrong way round
+    // (bottom right before top left) reaches as far as its top left corner in the driver.
+    const auto combined_scissor_value_tl = [](s16 scr, s16 win, s16 gen, s16 win_offset) {
+        return std::max({scr, s16(win + win_offset), s16(gen + win_offset)});
+    };
+    const auto combined_scissor_value_br = [](s16 scr, s16 win, s16 gen, s16 win_offset) {
+        return std::min({scr, s16(win + win_offset), s16(gen + win_offset)});
+    };
+    const bool enable_offset = !regs.window_scissor.window_offset_disable;
+    const s16 left = combined_scissor_value_tl(
+        regs.screen_scissor.top_left_x, s16(regs.window_scissor.top_left_x),
+        s16(regs.generic_scissor.top_left_x),
+        enable_offset ? regs.window_offset.window_x_offset : 0);
+    const s16 top = combined_scissor_value_tl(
+        regs.screen_scissor.top_left_y, s16(regs.window_scissor.top_left_y),
+        s16(regs.generic_scissor.top_left_y),
+        enable_offset ? regs.window_offset.window_y_offset : 0);
+    const s16 right = combined_scissor_value_br(
+        regs.screen_scissor.bottom_right_x, regs.window_scissor.bottom_right_x,
+        regs.generic_scissor.bottom_right_x,
+        enable_offset ? regs.window_offset.window_x_offset : 0);
+    const s16 bottom = combined_scissor_value_br(
+        regs.screen_scissor.bottom_right_y, regs.window_scissor.bottom_right_y,
+        regs.generic_scissor.bottom_right_y,
+        enable_offset ? regs.window_offset.window_y_offset : 0);
+
+    // Triangles are clipped to the viewport; points and lines can reach past it, and a geometry
+    // or tessellation stage can make either.
+    bool triangles = false;
+    switch (regs.primitive_type) {
+    case AmdGpu::PrimitiveType::TriangleList:
+    case AmdGpu::PrimitiveType::TriangleFan:
+    case AmdGpu::PrimitiveType::TriangleStrip:
+    case AmdGpu::PrimitiveType::AdjTriangleList:
+    case AmdGpu::PrimitiveType::AdjTriangleStrip:
+    case AmdGpu::PrimitiveType::QuadList:
+    case AmdGpu::PrimitiveType::QuadStrip:
+    case AmdGpu::PrimitiveType::Polygon:
+        triangles = true;
+        break;
+    default:
+        break;
+    }
+    const bool viewport_bounds = triangles && !regs.IsClipDisabled() &&
+                                 regs.polygon_control.PolyMode() == AmdGpu::PolygonMode::Fill &&
+                                 regs.stage_enable.raw == AmdGpu::ShaderStageEnable::Vs;
+
+    const auto& vp_ctl = regs.viewport_control;
+    u32 viewport_count = 1;
+    for (u32 i = 0; i < AmdGpu::NUM_VIEWPORTS; i++) {
+        if (regs.viewports[i].xscale != 0.f) {
+            viewport_count = i + 1;
+        }
+    }
+    u32 width = 0;
+    u32 height = 0;
+    for (u32 i = 0; i < viewport_count; i++) {
+        const auto& vp = regs.viewports[i];
+        if (vp.xscale == 0) {
+            continue; // Its scissor is empty.
+        }
+        s16 vp_left = left;
+        s16 vp_top = top;
+        u32 vp_right = AmdGpu::Scissor::Clamp(right);
+        u32 vp_bottom = AmdGpu::Scissor::Clamp(bottom);
+        if (regs.mode_control.vport_scissor_enable) {
+            vp_left = std::max(vp_left, s16(regs.viewport_scissors[i].top_left_x));
+            vp_top = std::max(vp_top, s16(regs.viewport_scissors[i].top_left_y));
+            vp_right = std::min<u32>(vp_right, regs.viewport_scissors[i].bottom_right_x);
+            vp_bottom = std::min<u32>(vp_bottom, regs.viewport_scissors[i].bottom_right_y);
+        }
+        vp_right = std::max<u32>(vp_right, AmdGpu::Scissor::Clamp(vp_left));
+        vp_bottom = std::max<u32>(vp_bottom, AmdGpu::Scissor::Clamp(vp_top));
+        if (viewport_bounds) {
+            const float xoffset = vp_ctl.xoffset_enable ? vp.xoffset : 0.f;
+            const float xscale = vp_ctl.xscale_enable ? vp.xscale : 1.f;
+            const float yoffset = vp_ctl.yoffset_enable ? vp.yoffset : 0.f;
+            const float yscale = vp_ctl.yscale_enable ? vp.yscale : 1.f;
+            const float x_end = std::ceil(xoffset + std::abs(xscale));
+            const float y_end = std::ceil(yoffset + std::abs(yscale));
+            if (std::isfinite(x_end) && std::isfinite(y_end)) {
+                vp_right = std::min<u32>(vp_right, u32(std::clamp(x_end, 0.f, 65535.f)));
+                vp_bottom = std::min<u32>(vp_bottom, u32(std::clamp(y_end, 0.f, 65535.f)));
+            }
+        }
+        width = std::max(width, vp_right);
+        height = std::max(height, vp_bottom);
+    }
+    width = std::clamp<u32>(Common::AlignUp(width, 32), 1u, max_width);
+    height = std::clamp<u32>(Common::AlignUp(height, 32), 1u, max_height);
+    return {width, height};
 }
 
 void Rasterizer::Resolve() {
