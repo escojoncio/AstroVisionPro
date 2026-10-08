@@ -1,6 +1,6 @@
-# kosmickrisp-visionos - 7715f7f639dc4b5c52e1de4242b59eba574f532f - 2026-10-08T11:54:55Z
+# kosmickrisp-visionos - 6124e7f747b9cc9f463c8d829ac3ca4e5c1f98ab - 2026-10-08T12:04:12Z
 
-## kosmickrisp.log:     7759 lines
+## kosmickrisp.log:     1701 lines
 ### errors
 59-Compiler for C supports function attribute noreturn: YES 
 60-Compiler for C supports function attribute optimize: NO 
@@ -59,173 +59,164 @@
 1032-Program kk_clc found: YES (/Users/runner/work/AstroVisionPro/AstroVisionPro/build/visionos/kosmickrisp-src/mesa/build-tools/src/kosmickrisp/clc/kk_clc)
 1033-Program sphinx-build skipped: feature html-docs disabled
 --
-1675-[558/559] Linking static target src/kosmickrisp/vulkan/libkk.a
+1675-[558/559] Linking static target src/util/libxmlconfig.a
 1676-[559/559] Linking target src/kosmickrisp/vulkan/libvulkan_kosmickrisp.dylib
-1677:FAILED: [code=1] src/kosmickrisp/vulkan/libvulkan_kosmickrisp.dylib 
-1678-/Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang++  -o src/kosmickrisp/vulkan/libvulkan_kosmickrisp.dylib  -Wl,-dead_strip_dylibs -Wl,-headerpad_max_install_names -shared -Wl,-install_name,@rpath/libvulkan_kosmickrisp.dylib -Wl,-force_load src/kosmickrisp/vulkan/libkk.a -target arm64-apple-xros26.0 -isysroot /Applications/Xcode_26.6.app/Contents/Developer/Platforms/XROS.platform/Developer/SDKs/XROS26.5.sdk src/compiler/nir/libnir.a src/compiler/libcompiler.a src/util/libmesa_util.a src/util/libmesa_util_simd.a src/util/blake3/libblake3.a src/c11/impl/libmesa_util_c11.a src/vulkan/util/libvulkan_util.a src/compiler/spirv/libvtn.a src/kosmickrisp/compiler/libmsl_compiler.a src/kosmickrisp/bridge/libmtl_bridge.a src/kosmickrisp/libkk/liblibkk_shaders.a src/poly/nir/liblibpoly_nir.a src/util/libxmlconfig.a -framework Metal -framework Foundation -framework QuartzCore -framework IOSurface -Wl,-install_name,@rpath/KosmicKrisp.framework/KosmicKrisp -lz -lm -framework QuartzCore -framework Metal -lz -lz -framework QuartzCore -framework Metal -lz -lz -lz -framework QuartzCore -framework Metal -lz -framework Foundation -lz -lz -lz
-1679:ld: warning: ignoring duplicate libraries: '-lz'
-1680-Undefined symbols for architecture arm64:
-1681-  "_CGColorSpaceCreateWithName", referenced from:
-1682-      _wsi_metal_layer_configure in libkk.a[70](wsi_common_metal_layer.m.o)
-1683-  "_CGColorSpaceRelease", referenced from:
-1684-      _wsi_metal_layer_configure in libkk.a[70](wsi_common_metal_layer.m.o)
-1685-  "_kCGColorSpaceAdobeRGB1998", referenced from:
---
-7753-  "_wsi_WriteSamplerDescriptorsEXT", referenced from:
-7754-      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
-7755:ld: symbol(s) not found for architecture arm64
-7756:clang++: error: linker command failed with exit code 1 (use -v to see invocation)
-7757-ninja: build stopped: cannot make progress due to previous errors.
-7758-INFO: autodetecting backend as ninja
-7759-INFO: calculating backend command to run: /opt/homebrew/bin/ninja -C /Users/runner/work/AstroVisionPro/AstroVisionPro/build/visionos/kosmickrisp-src/mesa/build-xros -k0 src/kosmickrisp/vulkan/libvulkan_kosmickrisp.dylib
+1677:ld: warning: -undefined dynamic_lookup is deprecated on visionOS
+1678:ld: warning: ignoring duplicate libraries: '-lz'
+1679-INFO: autodetecting backend as ninja
+1680-INFO: calculating backend command to run: /opt/homebrew/bin/ninja -C /Users/runner/work/AstroVisionPro/AstroVisionPro/build/visionos/kosmickrisp-src/mesa/build-xros -k0 src/kosmickrisp/vulkan/libvulkan_kosmickrisp.dylib
+1681-What KosmicKrisp needs from the system:
+1682-/Users/runner/work/AstroVisionPro/AstroVisionPro/build/visionos/kosmickrisp/KosmicKrisp.framework/KosmicKrisp:
+1683-	@rpath/KosmicKrisp.framework/KosmicKrisp (compatibility version 0.0.0, current version 0.0.0)
+1684-	/System/Library/Frameworks/Metal.framework/Metal (compatibility version 1.0.0, current version 373.2.0)
 ### end
-      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
-  "_wsi_LatencySleepNV", referenced from:
-      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
-  "_wsi_MapMemory", referenced from:
-      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
-  "_wsi_MapMemory2", referenced from:
-      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
-  "_wsi_MapMemory2KHR", referenced from:
-      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
-  "_wsi_MergePipelineCaches", referenced from:
-      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
-  "_wsi_MergeValidationCachesEXT", referenced from:
-      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
-  "_wsi_QueueBeginDebugUtilsLabelEXT", referenced from:
-      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
-  "_wsi_QueueBindSparse", referenced from:
-      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
-  "_wsi_QueueEndDebugUtilsLabelEXT", referenced from:
-      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
-  "_wsi_QueueInsertDebugUtilsLabelEXT", referenced from:
-      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
-  "_wsi_QueueNotifyOutOfBandLegacyNV", referenced from:
-      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
-  "_wsi_QueueNotifyOutOfBandNV", referenced from:
-      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
-  "_wsi_QueueSetPerfHintQCOM", referenced from:
-      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
-  "_wsi_QueueSetPerformanceConfigurationINTEL", referenced from:
-      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
-  "_wsi_QueueSubmit", referenced from:
-      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
-  "_wsi_QueueSubmit2", referenced from:
-      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
-  "_wsi_QueueSubmit2KHR", referenced from:
-      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
-  "_wsi_QueueWaitIdle", referenced from:
-      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
-  "_wsi_RegisterCustomBorderColorEXT", referenced from:
-      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
-  "_wsi_RegisterDeviceEventEXT", referenced from:
-      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
-  "_wsi_RegisterDisplayEventEXT", referenced from:
-      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
-  "_wsi_ReleaseCapturedPipelineDataKHR", referenced from:
-      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
-  "_wsi_ReleaseDisplayEXT", referenced from:
-      _wsi_physical_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
-  "_wsi_ReleasePerformanceConfigurationINTEL", referenced from:
-      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
-  "_wsi_ReleaseProfilingLockKHR", referenced from:
-      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
-  "_wsi_ReleaseSwapchainImagesEXT", referenced from:
-      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
-  "_wsi_ResetCommandBuffer", referenced from:
-      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
-  "_wsi_ResetCommandPool", referenced from:
-      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
-  "_wsi_ResetDescriptorPool", referenced from:
-      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
-  "_wsi_ResetEvent", referenced from:
-      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
-  "_wsi_ResetFences", referenced from:
-      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
-  "_wsi_ResetGpaSessionAMD", referenced from:
-      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
-  "_wsi_ResetQueryPool", referenced from:
-      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
-  "_wsi_ResetQueryPoolEXT", referenced from:
-      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
-  "_wsi_SetDebugUtilsObjectNameEXT", referenced from:
-      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
-  "_wsi_SetDebugUtilsObjectTagEXT", referenced from:
-      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
-  "_wsi_SetDeviceMemoryPriorityEXT", referenced from:
-      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
-  "_wsi_SetEvent", referenced from:
-      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
-  "_wsi_SetGpaDeviceClockModeAMD", referenced from:
-      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
-  "_wsi_SetLatencyMarkerLegacyNV", referenced from:
-      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
-  "_wsi_SetLatencyMarkerNV", referenced from:
-      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
-  "_wsi_SetLatencySleepModeLegacyNV", referenced from:
-      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
-  "_wsi_SetLatencySleepModeNV", referenced from:
-      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
-  "_wsi_SetLocalDimmingAMD", referenced from:
-      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
-  "_wsi_SetPrivateData", referenced from:
-      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
-  "_wsi_SetPrivateDataEXT", referenced from:
-      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
-  "_wsi_ShutdownLatencyDeviceLegacyNV", referenced from:
-      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
-  "_wsi_SignalSemaphore", referenced from:
-      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
-  "_wsi_SignalSemaphoreKHR", referenced from:
-      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
-  "_wsi_SubmitDebugUtilsMessageEXT", referenced from:
-      _wsi_instance_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
-  "_wsi_TransitionImageLayout", referenced from:
-      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
-  "_wsi_TransitionImageLayoutEXT", referenced from:
-      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
-  "_wsi_TrimCommandPool", referenced from:
-      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
-  "_wsi_TrimCommandPoolKHR", referenced from:
-      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
-  "_wsi_UninitializePerformanceApiINTEL", referenced from:
-      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
-  "_wsi_UnmapMemory", referenced from:
-      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
-  "_wsi_UnmapMemory2", referenced from:
-      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
-  "_wsi_UnmapMemory2KHR", referenced from:
-      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
-  "_wsi_UnregisterCustomBorderColorEXT", referenced from:
-      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
-  "_wsi_UpdateDescriptorSetWithTemplate", referenced from:
-      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
-  "_wsi_UpdateDescriptorSetWithTemplateKHR", referenced from:
-      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
-  "_wsi_UpdateDescriptorSets", referenced from:
-      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
-  "_wsi_UpdateIndirectExecutionSetPipelineEXT", referenced from:
-      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
-  "_wsi_UpdateIndirectExecutionSetShaderEXT", referenced from:
-      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
-  "_wsi_UpdateVideoSessionParametersKHR", referenced from:
-      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
-  "_wsi_WaitForFences", referenced from:
-      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
-  "_wsi_WaitSemaphores", referenced from:
-      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
-  "_wsi_WaitSemaphoresKHR", referenced from:
-      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
-  "_wsi_WriteAccelerationStructuresPropertiesKHR", referenced from:
-      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
-  "_wsi_WriteMicromapsPropertiesEXT", referenced from:
-      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
-  "_wsi_WriteResourceDescriptorsEXT", referenced from:
-      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
-  "_wsi_WriteSamplerDescriptorsEXT", referenced from:
-      _wsi_device_entrypoints in libkk.a[71](meson-generated_.._wsi_common_entrypoints.c.o)
-ld: symbol(s) not found for architecture arm64
-clang++: error: linker command failed with exit code 1 (use -v to see invocation)
-ninja: build stopped: cannot make progress due to previous errors.
+[435/559] Compiling C object src/vulkan/runtime/libvulkan_lite_runtime.a.p/vk_fence.c.o
+[436/559] Compiling C object src/vulkan/runtime/libvulkan_lite_runtime.a.p/meson-generated_.._vk_cmd_queue.c.o
+[437/559] Compiling C object src/vulkan/runtime/libvulkan_lite_runtime.a.p/vk_image.c.o
+[438/559] Compiling C object src/vulkan/runtime/libvulkan_lite_runtime.a.p/vk_log.c.o
+[439/559] Compiling C object src/vulkan/runtime/libvulkan_lite_runtime.a.p/vk_meta_object_list.c.o
+[440/559] Compiling C object src/vulkan/runtime/libvulkan_lite_runtime.a.p/vk_object.c.o
+[441/559] Compiling C object src/vulkan/runtime/libvulkan_lite_runtime.a.p/vk_physical_device.c.o
+[442/559] Compiling C object src/vulkan/runtime/libvulkan_lite_runtime.a.p/vk_pipeline_layout.c.o
+[443/559] Compiling C object src/vulkan/runtime/libvulkan_lite_runtime.a.p/vk_query_pool.c.o
+[444/559] Compiling C object src/vulkan/runtime/libvulkan_lite_runtime.a.p/vk_graphics_state.c.o
+[445/559] Compiling C object src/vulkan/runtime/libvulkan_lite_runtime.a.p/vk_queue.c.o
+[446/559] Compiling C object src/vulkan/runtime/libvulkan_lite_runtime.a.p/vk_sampler.c.o
+[447/559] Compiling C object src/vulkan/runtime/libvulkan_lite_runtime.a.p/vk_standard_sample_locations.c.o
+[448/559] Compiling C object src/vulkan/runtime/libvulkan_lite_runtime.a.p/vk_semaphore.c.o
+[449/559] Compiling C object src/vulkan/runtime/libvulkan_lite_runtime.a.p/vk_sync_binary.c.o
+[450/559] Compiling C object src/vulkan/runtime/libvulkan_lite_runtime.a.p/vk_sync_dummy.c.o
+[451/559] Compiling C object src/vulkan/runtime/libvulkan_lite_runtime.a.p/vk_sync.c.o
+[452/559] Compiling C object src/vulkan/runtime/libvulkan_lite_runtime.a.p/vk_render_pass.c.o
+[453/559] Compiling C object src/vulkan/runtime/libvulkan_lite_runtime.a.p/vk_sync_timeline.c.o
+[454/559] Compiling C object src/vulkan/runtime/libvulkan_lite_runtime.a.p/vk_ycbcr_conversion.c.o
+[455/559] Compiling C object src/vulkan/runtime/libvulkan_lite_runtime.a.p/vk_synchronization.c.o
+[456/559] Compiling C object src/vulkan/runtime/libvulkan_runtime.a.p/vk_meta.c.o
+[457/559] Compiling C object src/vulkan/runtime/libvulkan_runtime.a.p/vk_meta_blit_resolve.c.o
+[458/559] Compiling C object src/vulkan/runtime/libvulkan_runtime.a.p/vk_meta_clear.c.o
+[459/559] Compiling C object src/vulkan/runtime/libvulkan_runtime.a.p/vk_meta_draw_rects.c.o
+[460/559] Compiling C object src/vulkan/runtime/libvulkan_runtime.a.p/vk_nir.c.o
+[461/559] Compiling C object src/vulkan/runtime/libvulkan_runtime.a.p/vk_nir_convert_ycbcr.c.o
+[462/559] Compiling C object src/vulkan/runtime/libvulkan_runtime.a.p/vk_meta_copy_fill_update.c.o
+[463/559] Compiling C object src/vulkan/runtime/libvulkan_runtime.a.p/vk_nir_lower_descriptor_heaps.c.o
+[464/559] Compiling C object src/vulkan/runtime/libvulkan_lite_runtime.a.p/vk_video.c.o
+[465/559] Compiling C object src/vulkan/runtime/libvulkan_runtime.a.p/vk_pipeline_cache.c.o
+[466/559] Compiling C object src/vulkan/runtime/libvulkan_runtime.a.p/vk_shader_module.c.o
+[467/559] Compiling C object src/vulkan/runtime/libvulkan_runtime.a.p/vk_shader.c.o
+[468/559] Compiling C object src/vulkan/runtime/libvulkan_instance.a.p/vk_instance.c.o
+[469/559] Compiling C object src/vulkan/wsi/libvulkan_wsi.a.p/meson-generated_.._wsi_common_entrypoints.c.o
+[470/559] Compiling C object src/compiler/nir/libnir.a.p/meson-generated_.._nir_opt_algebraic.c.o
+[471/559] Compiling C object src/vulkan/wsi/libvulkan_wsi.a.p/wsi_common_headless.c.o
+[472/559] Compiling C object src/vulkan/runtime/libvulkan_runtime.a.p/vk_texcompress_etc2.c.o
+[473/559] Compiling C object src/vulkan/runtime/libvulkan_runtime.a.p/vk_pipeline.c.o
+[474/559] Compiling C object src/vulkan/wsi/libvulkan_wsi.a.p/wsi_common_metal.c.o
+[475/559] Compiling C object src/kosmickrisp/bridge/libmtl_bridge.a.p/vk_to_mtl_map.c.o
+[476/559] Compiling C object src/vulkan/wsi/libvulkan_wsi.a.p/wsi_common.c.o
+[477/559] Compiling Objective-C object src/kosmickrisp/bridge/libmtl_bridge.a.p/mtl_buffer.m.o
+[478/559] Compiling Objective-C object src/kosmickrisp/bridge/libmtl_bridge.a.p/mtl_argument_table.m.o
+[479/559] Compiling Objective-C object src/vulkan/wsi/libvulkan_wsi.a.p/wsi_common_metal_layer.m.o
+[480/559] Compiling Objective-C object src/kosmickrisp/bridge/libmtl_bridge.a.p/mtl_bridge.m.o
+[481/559] Compiling Objective-C object src/kosmickrisp/bridge/libmtl_bridge.a.p/mtl_command_buffer.m.o
+[482/559] Compiling Objective-C object src/kosmickrisp/bridge/libmtl_bridge.a.p/mtl_command_queue.m.o
+[483/559] Compiling Objective-C object src/kosmickrisp/bridge/libmtl_bridge.a.p/mtl_compiler.m.o
+[484/559] Compiling Objective-C object src/kosmickrisp/bridge/libmtl_bridge.a.p/mtl_device.m.o
+[485/559] Compiling Objective-C object src/kosmickrisp/bridge/libmtl_bridge.a.p/mtl_encoder.m.o
+[486/559] Compiling Objective-C object src/kosmickrisp/bridge/libmtl_bridge.a.p/mtl_render_state.m.o
+[487/559] Compiling Objective-C object src/kosmickrisp/bridge/libmtl_bridge.a.p/mtl_heap.m.o
+[488/559] Compiling Objective-C object src/kosmickrisp/bridge/libmtl_bridge.a.p/mtl_residency_set.m.o
+[489/559] Compiling Objective-C object src/kosmickrisp/bridge/libmtl_bridge.a.p/mtl_sampler.m.o
+[490/559] Compiling Objective-C object src/kosmickrisp/bridge/libmtl_bridge.a.p/mtl_sync.m.o
+[491/559] Compiling Objective-C object src/kosmickrisp/bridge/libmtl_bridge.a.p/ns_process_info.m.o
+[492/559] Compiling Objective-C object src/kosmickrisp/bridge/libmtl_bridge.a.p/mtl_texture.m.o
+[493/559] Compiling C object src/kosmickrisp/compiler/libmsl_compiler.a.p/meson-generated_.._msl_nir_algebraic.c.o
+[494/559] Compiling C object src/vulkan/runtime/libvulkan_lite_runtime.a.p/meson-generated_.._vk_physical_device_features.c.o
+[495/559] Compiling C object src/kosmickrisp/compiler/libmsl_compiler.a.p/msl_type_inference.c.o
+[496/559] Compiling C object src/kosmickrisp/compiler/libmsl_compiler.a.p/msl_nir_gather_common.c.o
+[497/559] Compiling C object src/kosmickrisp/compiler/libmsl_compiler.a.p/msl_iomap.c.o
+[498/559] Compiling C object src/kosmickrisp/compiler/libmsl_compiler.a.p/msl_nir_lower_subgroups.c.o
+[499/559] Compiling C object src/kosmickrisp/compiler/libmsl_compiler.a.p/msl_nir_lower_input_attachments.c.o
+[500/559] Compiling C object src/kosmickrisp/compiler/libmsl_compiler.a.p/nir_to_msl.c.o
+[501/559] Compiling C object src/kosmickrisp/libkk/liblibkk_shaders.a.p/meson-generated_.._libkk_shaders.c.o
+[502/559] Compiling C object src/kosmickrisp/compiler/libmsl_compiler.a.p/msl_nir_lower_common.c.o
+[503/559] Compiling C object src/kosmickrisp/vulkan/libkk.a.p/meson-generated_.._kk_entrypoints.c.o
+[504/559] Compiling C++ object src/kosmickrisp/libkk/liblibkk_shaders.a.p/meson-generated_.._.._.._poly_cl_libpoly.cpp.o
+[505/559] Compiling C object src/kosmickrisp/vulkan/libkk.a.p/kk_bo.c.o
+[506/559] Compiling C object src/kosmickrisp/vulkan/libkk_device_dispatch_table.a.p/meson-generated_.._.._util_kk_dispatch_trampolines.c.o
+[507/559] Compiling C object src/kosmickrisp/vulkan/libkk.a.p/kk_buffer.c.o
+[508/559] Compiling C object src/kosmickrisp/vulkan/libkk.a.p/kk_buffer_view.c.o
+[509/559] Compiling C++ object src/kosmickrisp/vulkan/libkk.a.p/meson-generated_.._.._libkk_libkk.cpp.o
+[510/559] Compiling C object src/kosmickrisp/vulkan/libkk.a.p/kk_cmd_clear.c.o
+[511/559] Compiling C object src/kosmickrisp/vulkan/libkk.a.p/kk_cmd_dispatch.c.o
+[512/559] Compiling C object src/kosmickrisp/vulkan/libkk.a.p/kk_cmd_buffer.c.o
+[513/559] Compiling C object src/kosmickrisp/vulkan/libkk_device_cmd_dispatch_table.a.p/meson-generated_.._.._util_kk_dispatch_cmd.c.o
+[514/559] Compiling C object src/kosmickrisp/vulkan/libkk.a.p/kk_cmd_copy.c.o
+[515/559] Compiling C object src/kosmickrisp/vulkan/libkk.a.p/kk_debug.c.o
+[516/559] Compiling C object src/kosmickrisp/vulkan/libkk.a.p/kk_cmd_pool.c.o
+[517/559] Compiling C object src/kosmickrisp/vulkan/libkk.a.p/kk_descriptor_set_layout.c.o
+[518/559] Compiling C object src/kosmickrisp/vulkan/libkk.a.p/kk_cmd_meta.c.o
+[519/559] Compiling C object src/kosmickrisp/vulkan/libkk.a.p/kk_descriptor_set.c.o
+[520/559] Compiling C object src/kosmickrisp/vulkan/libkk.a.p/kk_device_memory.c.o
+[521/559] Compiling C object src/kosmickrisp/vulkan/libkk.a.p/kk_format.c.o
+[522/559] Compiling C object src/kosmickrisp/vulkan/libkk.a.p/kk_device_lib.c.o
+[523/559] Compiling C object src/kosmickrisp/vulkan/libkk.a.p/kk_event.c.o
+[524/559] Compiling C object src/kosmickrisp/vulkan/libkk.a.p/kk_device.c.o
+[525/559] Compiling C object src/kosmickrisp/vulkan/libkk.a.p/kk_image_layout.c.o
+[526/559] Compiling C object src/kosmickrisp/vulkan/libkk.a.p/kk_image_view.c.o
+[527/559] Compiling C object src/kosmickrisp/vulkan/libkk.a.p/kk_instance.c.o
+[528/559] Compiling C object src/kosmickrisp/vulkan/libkk.a.p/kk_cmd_draw.c.o
+[529/559] Compiling C object src/kosmickrisp/vulkan/libkk.a.p/kk_image.c.o
+[530/559] Compiling C object src/kosmickrisp/vulkan/libkk.a.p/kk_nir_lower_custom_border.c.o
+[531/559] Compiling C object src/kosmickrisp/vulkan/libkk.a.p/kk_nir_lower_image_view_min_lod.c.o
+[532/559] Compiling C object src/kosmickrisp/vulkan/libkk.a.p/kk_nir_lower_multiview.c.o
+[533/559] Compiling C object src/kosmickrisp/vulkan/libkk.a.p/kk_nir_lower_null_images.c.o
+[534/559] Compiling C object src/kosmickrisp/vulkan/libkk.a.p/kk_nir_lower_descriptors.c.o
+[535/559] Compiling C object src/kosmickrisp/vulkan/libkk.a.p/kk_nir_lower_textures.c.o
+[536/559] Compiling C object src/kosmickrisp/vulkan/libkk.a.p/kk_query_table.c.o
+[537/559] Compiling C object src/kosmickrisp/vulkan/libkk.a.p/kk_nir_lower_vbo.c.o
+[538/559] Compiling C object src/kosmickrisp/vulkan/libkk.a.p/kk_query_pool.c.o
+[539/559] Compiling C object src/kosmickrisp/vulkan/libkk.a.p/kk_sampler.c.o
+[540/559] Compiling C object src/kosmickrisp/vulkan/libkk.a.p/kk_sync.c.o
+[541/559] Compiling C object src/kosmickrisp/vulkan/libkk.a.p/kk_queue.c.o
+[542/559] Compiling C object src/kosmickrisp/vulkan/libkk.a.p/kk_wsi.c.o
+[543/559] Compiling C object src/kosmickrisp/vulkan/libkk.a.p/kk_physical_device.c.o
+[544/559] Compiling C object src/kosmickrisp/vulkan/libkk.a.p/kk_shader.c.o
+[545/559] Linking static target src/util/libmesa_util.a
+[546/559] Linking static target src/compiler/libcompiler.a
+[547/559] Linking static target src/util/blake3/libblake3.a
+[548/559] Linking static target src/util/libmesa_util_simd.a
+[549/559] Linking static target src/compiler/spirv/libvtn.a
+[550/559] Linking static target src/poly/nir/liblibpoly_nir.a
+[551/559] Linking static target src/c11/impl/libmesa_util_c11.a
+[552/559] Linking static target src/vulkan/util/libvulkan_util.a
+[553/559] Linking static target src/kosmickrisp/bridge/libmtl_bridge.a
+[554/559] Linking static target src/kosmickrisp/compiler/libmsl_compiler.a
+[555/559] Linking static target src/compiler/nir/libnir.a
+[556/559] Linking static target src/kosmickrisp/libkk/liblibkk_shaders.a
+[557/559] Linking static target src/kosmickrisp/vulkan/libkk.a
+[558/559] Linking static target src/util/libxmlconfig.a
+[559/559] Linking target src/kosmickrisp/vulkan/libvulkan_kosmickrisp.dylib
+ld: warning: -undefined dynamic_lookup is deprecated on visionOS
+ld: warning: ignoring duplicate libraries: '-lz'
 INFO: autodetecting backend as ninja
 INFO: calculating backend command to run: /opt/homebrew/bin/ninja -C /Users/runner/work/AstroVisionPro/AstroVisionPro/build/visionos/kosmickrisp-src/mesa/build-xros -k0 src/kosmickrisp/vulkan/libvulkan_kosmickrisp.dylib
+What KosmicKrisp needs from the system:
+/Users/runner/work/AstroVisionPro/AstroVisionPro/build/visionos/kosmickrisp/KosmicKrisp.framework/KosmicKrisp:
+	@rpath/KosmicKrisp.framework/KosmicKrisp (compatibility version 0.0.0, current version 0.0.0)
+	/System/Library/Frameworks/Metal.framework/Metal (compatibility version 1.0.0, current version 373.2.0)
+	/System/Library/Frameworks/Foundation.framework/Foundation (compatibility version 300.0.0, current version 5026.5.4)
+	/System/Library/Frameworks/QuartzCore.framework/QuartzCore (compatibility version 1.2.0, current version 1195.14.3)
+	/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics (compatibility version 64.0.0, current version 1965.5.1)
+	/usr/lib/libz.1.dylib (compatibility version 1.0.0, current version 1.2.12)
+	/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1356.0.0)
+	/usr/lib/libc++.1.dylib (compatibility version 1.0.0, current version 2100.43.0)
+	/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation (compatibility version 150.0.0, current version 5026.5.4)
+	/usr/lib/libobjc.A.dylib (compatibility version 1.0.0, current version 228.0.0)
+Its entry points:
+00000000000bbbc8 T _vk_icdGetInstanceProcAddr
+0000000000096330 T _vk_icdGetPhysicalDeviceProcAddr
+000000000009630c T _vk_icdNegotiateLoaderICDInterfaceVersion
+total 27960
+drwxr-xr-x  4 runner  staff       128 Oct  8 12:04 .
+drwxr-xr-x  4 runner  staff       128 Oct  8 12:04 ..
+-rw-r--r--  1 runner  staff       402 Oct  8 12:04 Info.plist
+-rwxr-xr-x  1 runner  staff  14308824 Oct  8 12:04 KosmicKrisp
