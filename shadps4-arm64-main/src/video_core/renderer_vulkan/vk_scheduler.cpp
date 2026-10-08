@@ -10,6 +10,7 @@
 #include <cstdlib>
 #include <ctime>
 #include <utility>
+#include <vector>
 
 #include "common/assert.h"
 #include "common/debug.h"
@@ -382,8 +383,151 @@ void FrameStats::EndFrame() {
 
 std::mutex Scheduler::submit_mutex;
 
+/// Timestamps written at the start and the end of each command buffer, read back once the GPU
+/// is done with it: how much of the time the GPU actually spends on the emulator's work, which
+/// "the GPU busy" of the title's report (a submission not finished yet when looked at) cannot
+/// tell from waiting. On by default on visionOS; SHADPS4_GPU_TIMING=0|1 elsewhere.
+class GpuTimer {
+public:
+    static std::unique_ptr<GpuTimer> Create(const Instance& instance) {
+#if defined(SHADPS4_VISIONOS)
+        constexpr bool by_default = true;
+#else
+        constexpr bool by_default = false;
+#endif
+        const char* value = std::getenv("SHADPS4_GPU_TIMING");
+        const bool wanted = value != nullptr && *value != '\0' ? value[0] != '0' : by_default;
+        if (!wanted) {
+            return nullptr;
+        }
+        const auto properties = instance.GetPhysicalDevice().getProperties();
+        if (!properties.limits.timestampComputeAndGraphics ||
+            properties.limits.timestampPeriod <= 0.0f) {
+            LOG_INFO(Render_Vulkan, "GPU_TIME: the driver has no timestamps for the queue");
+            return nullptr;
+        }
+        const vk::QueryPoolCreateInfo pool_info{
+            .queryType = vk::QueryType::eTimestamp,
+            .queryCount = Entries * 2,
+        };
+        auto [result, pool] = instance.GetDevice().createQueryPool(pool_info);
+        if (result != vk::Result::eSuccess) {
+            LOG_INFO(Render_Vulkan, "GPU_TIME: no query pool ({})", vk::to_string(result));
+            return nullptr;
+        }
+        auto timer = std::make_unique<GpuTimer>();
+        timer->device = instance.GetDevice();
+        timer->pool = pool;
+        timer->period_ns = properties.limits.timestampPeriod;
+        timer->id = next_id.fetch_add(1, std::memory_order_relaxed);
+        return timer;
+    }
+
+    ~GpuTimer() {
+        if (pool) {
+            device.destroyQueryPool(pool);
+        }
+    }
+
+    /// At the start of a command buffer.
+    void Begin(vk::CommandBuffer cmdbuf) {
+        // An entry still waited for is not overwritten: the command buffer goes untimed.
+        current = Entries;
+        const u32 entry = next_entry;
+        if (std::ranges::any_of(pending, [&](const Pending& p) { return p.entry == entry; })) {
+            return;
+        }
+        next_entry = (next_entry + 1) % Entries;
+        cmdbuf.resetQueryPool(pool, entry * 2, 2);
+        cmdbuf.writeTimestamp(vk::PipelineStageFlagBits::eTopOfPipe, pool, entry * 2);
+        current = entry;
+    }
+
+    /// At the end of the command buffer that is submitted as `tick`.
+    void End(vk::CommandBuffer cmdbuf, u64 tick) {
+        if (current >= Entries) {
+            return;
+        }
+        cmdbuf.writeTimestamp(vk::PipelineStageFlagBits::eBottomOfPipe, pool, current * 2 + 1);
+        pending.push_back({current, tick});
+        current = Entries;
+    }
+
+    /// Reads what the GPU has finished, and every 5 s writes the report.
+    void Collect(MasterSemaphore& semaphore) {
+        while (!pending.empty() && semaphore.IsFree(pending.front().tick)) {
+            std::array<u64, 2> stamps{};
+            const auto result = device.getQueryPoolResults(
+                pool, pending.front().entry * 2, 2, sizeof(stamps), stamps.data(), sizeof(u64),
+                vk::QueryResultFlagBits::e64);
+            if (result == vk::Result::eNotReady) {
+                break;
+            }
+            pending.erase(pending.begin());
+            if (result != vk::Result::eSuccess || stamps[1] <= stamps[0]) {
+                ++unusable;
+                continue;
+            }
+            const double ms = double(stamps[1] - stamps[0]) * period_ns / 1e6;
+            // Several seconds for one command buffer is a clock that is not one.
+            if (ms > 5000.0) {
+                ++unusable;
+                continue;
+            }
+            busy_ms += ms;
+            longest_ms = std::max(longest_ms, ms);
+            ++timed;
+        }
+        const auto now = std::chrono::steady_clock::now();
+        if (since == std::chrono::steady_clock::time_point{}) {
+            since = now;
+            return;
+        }
+        const double seconds = std::chrono::duration<double>(now - since).count();
+        if (seconds < 5.0) {
+            return;
+        }
+        if (timed > 0 || unusable > 0) {
+            LOG_INFO(Render_Vulkan,
+                     "GPU_TIME[{}]: the GPU worked {:.0f}% of the last {:.1f} s ({:.0f} ms over "
+                     "{} command buffers, {:.1f} ms a second; the longest {:.1f} ms){}",
+                     id, busy_ms / (seconds * 10.0), seconds, busy_ms, timed,
+                     busy_ms / seconds, longest_ms,
+                     unusable > 0 ? fmt::format("; {} without a usable time", unusable)
+                                  : std::string{});
+        }
+        since = now;
+        busy_ms = 0.0;
+        longest_ms = 0.0;
+        timed = 0;
+        unusable = 0;
+    }
+
+private:
+    static constexpr u32 Entries = 512;
+    struct Pending {
+        u32 entry;
+        u64 tick;
+    };
+    static inline std::atomic<u32> next_id{};
+
+    vk::Device device;
+    vk::QueryPool pool;
+    float period_ns{1.0f};
+    u32 id{};
+    u32 next_entry{};
+    u32 current{Entries};
+    std::vector<Pending> pending;
+    std::chrono::steady_clock::time_point since{};
+    double busy_ms{};
+    double longest_ms{};
+    u32 timed{};
+    u32 unusable{};
+};
+
 Scheduler::Scheduler(const Instance& instance)
     : instance{instance}, master_semaphore{instance}, command_pool{instance, &master_semaphore} {
+    gpu_timer = GpuTimer::Create(instance);
 #if TRACY_GPU_ENABLED
     profiler_scope = reinterpret_cast<tracy::VkCtxScope*>(std::malloc(sizeof(tracy::VkCtxScope)));
 #endif
@@ -555,6 +699,9 @@ void Scheduler::AllocateWorkerCommandBuffers() {
 
     current_cmdbuf = command_pool.Commit();
     Check(current_cmdbuf.begin(begin_info));
+    if (gpu_timer) {
+        gpu_timer->Begin(current_cmdbuf);
+    }
 
     // Invalidate dynamic state so it gets applied to the new command buffer.
     dynamic_state.Invalidate();
@@ -607,6 +754,9 @@ void Scheduler::SubmitExecution(SubmitInfo& info) {
     EndRendering();
     draws_since_flush = 0;
     flush_due = false;
+    if (gpu_timer) {
+        gpu_timer->End(current_cmdbuf, signal_value);
+    }
     Check(current_cmdbuf.end());
 
     const vk::Semaphore timeline = master_semaphore.Handle();
@@ -672,6 +822,9 @@ void Scheduler::SubmitExecution(SubmitInfo& info) {
 
     // Apply pending operations
     PopPendingOperations();
+    if (gpu_timer) {
+        gpu_timer->Collect(master_semaphore);
+    }
 }
 
 void Scheduler::PriorityPendingOpsThread(std::stop_token stoken) {

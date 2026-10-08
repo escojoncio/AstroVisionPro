@@ -5,6 +5,7 @@
 
 #include <chrono>
 #include <condition_variable>
+#include <memory>
 #include <mutex>
 #include <thread>
 #include <queue>
@@ -406,6 +407,10 @@ struct DynamicState {
     }
 };
 
+/// How long the GPU really takes over what each scheduler hands it (timestamps at the start and
+/// end of every command buffer), reported every 5 s as GPU_TIME (vk_scheduler.cpp).
+class GpuTimer;
+
 class Scheduler {
 public:
     explicit Scheduler(const Instance& instance);
@@ -521,6 +526,7 @@ private:
 
 private:
     const Instance& instance;
+    std::unique_ptr<GpuTimer> gpu_timer;
     MasterSemaphore master_semaphore;
     CommandPool command_pool;
     DynamicState dynamic_state;

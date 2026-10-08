@@ -3,11 +3,15 @@
 
 #include <xxhash.h>
 
+#include <chrono>
 #include <mutex>
 #include <string>
 #include <unordered_set>
 
 #include <magic_enum/magic_enum.hpp>
+#if defined(SHADPS4_VISIONOS)
+#include <os/proc.h>
+#endif
 
 #include "common/assert.h"
 #include "common/debug.h"
@@ -1178,6 +1182,40 @@ void TextureCache::RunGarbageCollector() {
     if (instance.CanReportMemoryUsage()) {
         total_used_memory = instance.GetDeviceMemoryUsage();
     }
+#if defined(SHADPS4_VISIONOS)
+    // The GPU's memory is the process's memory, and what limits it is not a heap the driver
+    // reports but how much more the system lets the process have before it ends it without a
+    // word. The thresholds follow that: images not used for a while go once less than 2 GB is
+    // left, more of them (and ones that have to be written back first) under 1.25 GB, and the
+    // most under 700 MB.
+    const u64 headroom = static_cast<u64>(os_proc_available_memory());
+    const auto left_at = [&](u64 left) -> u64 {
+        return headroom >= left ? total_used_memory + (headroom - left)
+                                : total_used_memory - std::min(total_used_memory, left - headroom);
+    };
+    trigger_gc_memory = left_at(2048_MB);
+    pressure_gc_memory = left_at(1280_MB);
+    critical_gc_memory = left_at(700_MB);
+    const u64 used_before = total_used_memory;
+    u32 freed_images = 0;
+    SCOPE_EXIT {
+        static auto last_report = std::chrono::steady_clock::time_point{};
+        static u32 images = 0;
+        static u64 bytes = 0;
+        images += freed_images;
+        bytes += used_before - std::min(used_before, total_used_memory);
+        const auto now = std::chrono::steady_clock::now();
+        if (images > 0 && now - last_report > std::chrono::seconds{5}) {
+            LOG_INFO(Render_Vulkan,
+                     "TEXTURE_GC: {} images not used lately let go ({} MB), {} MB left to the "
+                     "process",
+                     images, bytes >> 20, headroom >> 20);
+            last_report = now;
+            images = 0;
+            bytes = 0;
+        }
+    };
+#endif
     if (total_used_memory < trigger_gc_memory) {
         return;
     }
@@ -1213,6 +1251,9 @@ void TextureCache::RunGarbageCollector() {
             DownloadImageMemory(image_id);
         }
         FreeImage(image_id);
+#if defined(SHADPS4_VISIONOS)
+        ++freed_images;
+#endif
         if (total_used_memory < critical_gc_memory) {
             if (aggresive) {
                 num_deletions >>= 2;

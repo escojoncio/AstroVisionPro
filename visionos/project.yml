@@ -68,6 +68,7 @@ targets:
           - -framework CoreBluetooth
           - -framework CoreGraphics
           - -framework Metal
+          - -framework MetalFX
           - -liconv
         ENABLE_BITCODE: NO
         DEAD_CODE_STRIPPING: YES
