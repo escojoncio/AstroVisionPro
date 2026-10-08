@@ -95,7 +95,7 @@ final class JITGate {
         components.scheme = "stikjit"
         components.host = "enable-jit"
         components.queryItems = [
-            URLQueryItem(name: "bundle-id", value: Bundle.main.bundleIdentifier ?? "com.astroquest.visionpro"),
+            URLQueryItem(name: "bundle-id", value: Bundle.main.bundleIdentifier ?? "com.kdt.livecontainer"),
             URLQueryItem(name: "pid", value: String(getpid())),
             URLQueryItem(name: "script-name", value: "universal.js"),
         ]
