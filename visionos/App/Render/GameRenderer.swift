@@ -66,6 +66,12 @@ final class GameRenderer: @unchecked Sendable {
     /// The frame being shown, the emulator's until it is handed back.
     private var frame: AstroFrame?
     private var frameTexture: MTLTexture?
+    /// The eyes of `frame`, enlarged by MetalFX (Upscaler.swift); nil: shown as the game drew them.
+    private var upscaler: Upscaler?
+    private var upscaled = false
+    /// MetalFX could not be set up: not tried again for frames of the same kind.
+    private var upscalerFailedFor: (Int, Int, MTLPixelFormat)?
+    private var upscaleFrames = 0
 
     private var lastPresentation: TimeInterval = 0
     private var refreshPeriod: TimeInterval = 1.0 / 90.0
@@ -173,6 +179,8 @@ final class GameRenderer: @unchecked Sendable {
         }
         frame = nil
         frameTexture = nil
+        upscaler = nil
+        upscaled = false
         onEnd?()
         onEnd = nil
     }
@@ -224,6 +232,7 @@ final class GameRenderer: @unchecked Sendable {
             frame = newFrame
             frameTexture = Unmanaged<AnyObject>.fromOpaque(pointer).takeUnretainedValue() as? MTLTexture
             framesTaken += 1
+            upscaleNewFrame(commandBuffer: commandBuffer)
         }
         refreshes += 1
         reportNow(at: presentation)
@@ -245,6 +254,33 @@ final class GameRenderer: @unchecked Sendable {
         commandBuffer.commit()
     }
 
+    /// Enlarges the eyes of the frame just taken with MetalFX, when the settings ask for it.
+    private func upscaleNewFrame(commandBuffer: MTLCommandBuffer) {
+        upscaled = false
+        let scale = settings.upscale
+        guard scale > 1.01, let texture = frameTexture, let frame else { return }
+        let eyeWidth = Int(frame.width) / 2
+        let eyeHeight = Int(frame.height)
+        let format = texture.pixelFormat
+        if let failed = upscalerFailedFor, failed == (eyeWidth, eyeHeight, format) {
+            return
+        }
+        if upscaler?.fits(eyeWidth: eyeWidth, eyeHeight: eyeHeight, pixelFormat: format) != true {
+            upscaler = nil
+            guard let made = Upscaler(device: device, eyeWidth: eyeWidth, eyeHeight: eyeHeight,
+                                      pixelFormat: format, scale: scale) else {
+                upscalerFailedFor = (eyeWidth, eyeHeight, format)
+                LogFiles.log("MetalFX: no spatial scaler for \(eyeWidth)x\(eyeHeight) an eye, format \(format.rawValue); the picture is shown as drawn")
+                return
+            }
+            upscaler = made
+            LogFiles.log("MetalFX: each eye enlarged from \(eyeWidth)x\(eyeHeight) to \(made.outputWidth)x\(made.outputHeight)")
+        }
+        upscaler?.encode(frame: texture, commandBuffer: commandBuffer)
+        upscaled = true
+        upscaleFrames += 1
+    }
+
     /// Every few seconds, for the console log: whether the game's frames reach the headset, and
     /// what they are.
     private func reportNow(at now: TimeInterval) {
@@ -262,6 +298,9 @@ final class GameRenderer: @unchecked Sendable {
             } else {
                 text += "; the frame's texture is not a Metal texture"
             }
+            if upscaleFrames > 0, let upscaler {
+                text += "; \(upscaleFrames) enlarged to \(upscaler.outputWidth)x\(upscaler.outputHeight) an eye"
+            }
             text += String(format: "; tangents %.3f %.3f %.3f %.3f, orientation %.3f %.3f %.3f %.3f",
                            frame.tan_out, frame.tan_in, frame.tan_up, frame.tan_down,
                            frame.orientation.0, frame.orientation.1, frame.orientation.2,
@@ -272,6 +311,7 @@ final class GameRenderer: @unchecked Sendable {
         LogFiles.log(text)
         framesTaken = 0
         refreshes = 0
+        upscaleFrames = 0
         lastReport = now
     }
 
@@ -352,12 +392,30 @@ final class GameRenderer: @unchecked Sendable {
         eye.tangents = index == 0
             ? SIMD4<Float>(frame.tan_out, frame.tan_in, frame.tan_up, frame.tan_down)
             : SIMD4<Float>(frame.tan_in, frame.tan_out, frame.tan_up, frame.tan_down)
-        // This eye's half of the frame, and the half texel at its edges.
-        let halfTexel = 0.5 / Float(max(frame.width, 1))
-        let left: Float = index == 0 ? 0.0 : 0.5
-        eye.frame_x = SIMD4<Float>(left, 0.5, left + halfTexel, left + 0.5 - halfTexel)
+        if upscaled, let upscaler {
+            // A texture of its own for each eye: all of it, less the half texel at its edges.
+            let halfTexel = 0.5 / Float(max(upscaler.outputWidth, 1))
+            eye.frame_x = SIMD4<Float>(0.0, 1.0, halfTexel, 1.0 - halfTexel)
+        } else {
+            // This eye's half of the frame, and the half texel at its edges.
+            let halfTexel = 0.5 / Float(max(frame.width, 1))
+            let left: Float = index == 0 ? 0.0 : 0.5
+            eye.frame_x = SIMD4<Float>(left, 0.5, left + halfTexel, left + 0.5 - halfTexel)
+        }
         eye.has_frame = 1
         return eye
+    }
+
+    /// The picture of each eye: textures 0 and 1 (the left and the right eye), the two halves of
+    /// the game's frame or the eyes MetalFX enlarged.
+    private func bindPicture(_ encoder: MTLRenderCommandEncoder) {
+        if upscaled, let upscaler {
+            encoder.setFragmentTexture(upscaler.outputs[0], index: 0)
+            encoder.setFragmentTexture(upscaler.outputs[1], index: 1)
+        } else {
+            encoder.setFragmentTexture(frameTexture, index: 0)
+            encoder.setFragmentTexture(frameTexture, index: 1)
+        }
     }
 
     private func encode(drawable: LayerRenderer.Drawable, anchor: DeviceAnchor?, commandBuffer: MTLCommandBuffer) {
@@ -398,7 +456,7 @@ final class GameRenderer: @unchecked Sendable {
             encoder.setVertexBytes(&all, length: MemoryLayout<AstroFrameUniforms>.stride, index: 0)
             encoder.setVertexBytes(&base, length: MemoryLayout<UInt32>.stride, index: 1)
             encoder.setFragmentBytes(&all, length: MemoryLayout<AstroFrameUniforms>.stride, index: 0)
-            encoder.setFragmentTexture(frameTexture, index: 0)
+            bindPicture(encoder)
             encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
             encoder.endEncoding()
         } else {
@@ -427,7 +485,7 @@ final class GameRenderer: @unchecked Sendable {
                 encoder.setVertexBytes(&all, length: MemoryLayout<AstroFrameUniforms>.stride, index: 0)
                 encoder.setVertexBytes(&base, length: MemoryLayout<UInt32>.stride, index: 1)
                 encoder.setFragmentBytes(&all, length: MemoryLayout<AstroFrameUniforms>.stride, index: 0)
-                encoder.setFragmentTexture(frameTexture, index: 0)
+                bindPicture(encoder)
                 encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
                 encoder.endEncoding()
             }

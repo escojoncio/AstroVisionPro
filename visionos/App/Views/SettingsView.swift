@@ -32,6 +32,11 @@ struct SettingsView: View {
                         Text(L("La que elija el juego", "The game's choice")).tag("game")
                     }
                     Toggle(L("Resolución dinámica", "Dynamic resolution"), isOn: flag("dynamic", \.dynamic))
+                    Picker(L("Escalado MetalFX", "MetalFX upscaling"), selection: upscale) {
+                        Text(L("No", "Off")).tag(Float(1.0))
+                        Text(L("×1,5 (recomendado)", "×1.5 (recommended)")).tag(Float(1.5))
+                        Text(L("×2", "×2")).tag(Float(2.0))
+                    }
                     Picker(L("Antialiasing (muestras por píxel)", "Antialiasing (samples per pixel)"), selection: text("msaa", \.msaa)) {
                         Text(L("Como la consola (4)", "As on the console (4)")).tag("")
                         Text(L("2 · más rápido", "2 · faster")).tag("2")
@@ -136,6 +141,14 @@ struct SettingsView: View {
     private func text(_ key: String, _ path: KeyPath<AstroSettings, String>) -> Binding<String> {
         Binding(get: { model.settings[keyPath: path] },
                 set: { save(key, $0) })
+    }
+
+    private var upscale: Binding<Float> {
+        Binding(get: {
+                    let value = model.settings.upscale
+                    return [Float(1.0), 1.5, 2.0].min(by: { abs($0 - value) < abs($1 - value) }) ?? 1.5
+                },
+                set: { save("upscale", String(format: "%.1f", $0)) })
     }
 
     private var sharpen: Binding<Double> {

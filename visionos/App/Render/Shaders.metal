@@ -43,7 +43,8 @@ vertex ViewOut fullscreenVertex(uint vertex_id [[vertex_id]],
 
 fragment half4 reprojectFragment(ViewOut in [[stage_in]],
                                  constant AstroFrameUniforms& uniforms [[buffer(0)]],
-                                 texture2d<half> frame [[texture(0)]]) {
+                                 texture2d<half> left_eye [[texture(0)]],
+                                 texture2d<half> right_eye [[texture(1)]]) {
     constexpr sampler linear_sampler(coord::normalized, filter::linear, address::clamp_to_edge);
     constant AstroEyeUniforms& u = uniforms.eyes[in.eye];
     if (u.has_frame < 0.5) {
@@ -68,14 +69,11 @@ fragment half4 reprojectFragment(ViewOut in [[stage_in]],
     if (s < 0.0 || s > 1.0 || t < 0.0 || t > 1.0) {
         return half4(0.0h, 0.0h, 0.0h, 1.0h);
     }
-    // For now, a thin blue line along the edges of the game's picture: it shows that frames
-    // arrive and where they land, even while what the game draws is black.
-    constexpr float edge = 0.004;
-    if (s < edge || s > 1.0 - edge || t < edge || t > 1.0 - edge) {
-        return half4(0.0h, 0.4h, 1.0h, 1.0h);
-    }
-    // Into this eye's half of the frame, not sampling across into the other eye's.
+    // Into this eye's picture (its half of the frame, or a texture of its own), not sampling
+    // across into the other eye's.
     const float x = clamp(u.frame_x.x + s * u.frame_x.y, u.frame_x.z, u.frame_x.w);
-    const half3 color = frame.sample(linear_sampler, float2(x, t)).rgb;
+    const float2 at = float2(x, t);
+    const half3 color = in.eye == 0 ? left_eye.sample(linear_sampler, at).rgb
+                                    : right_eye.sample(linear_sampler, at).rgb;
     return half4(color, 1.0h);
 }
