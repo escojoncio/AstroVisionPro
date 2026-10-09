@@ -6,6 +6,7 @@
 
 #import <Foundation/Foundation.h>
 
+#include "video_core/amdgpu/game_clock.h"
 #include "video_core/renderer_vulkan/gpu_bench.h"
 #include <array>
 #include <memory>
@@ -224,6 +225,14 @@ void astro_core_pad_state(const AstroPadState* state) {
     const bool combo = (state->buttons & AstroPadL3) != 0 && (state->buttons & AstroPadR3) != 0;
     if (bench_combo.exchange(combo) != combo && combo) {
         Vulkan::GpuBench::Start();
+    }
+    // L1 and R1 held and R3 pressed: a mark in the log (game_clock.h), for the player to say
+    // "now I see it" (the shadows and effects the title leaves out when its GPU looks slow).
+    static std::atomic<bool> mark_combo{};
+    const bool mark = (state->buttons & AstroPadL1) != 0 && (state->buttons & AstroPadR1) != 0 &&
+                      (state->buttons & AstroPadR3) != 0 && (state->buttons & AstroPadL3) == 0;
+    if (mark_combo.exchange(mark) != mark && mark) {
+        AmdGpu::GameClock::NoteMark();
     }
     const std::array<int, 6> axes{state->left_x,       state->left_y,
                                   state->right_x,      state->right_y,
