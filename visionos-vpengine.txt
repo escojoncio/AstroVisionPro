@@ -1,94 +1,99 @@
-# visionos-vpengine - f310159271431d6c2253ebca64650e83072e56d2 - 2026-10-09T21:27:49Z
+# visionos-vpengine - d7dd8fdd16bc7a93d1b2b78a9170bb1fa7665302 - 2026-10-09T22:08:37Z
 
-## core.log:     2905 lines
+## core.log:     2901 lines
 ### errors
 ### end
-[1578/1672] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/frontend/translate/vector_interpolation.cpp.o
-[1579/1672] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/frontend/translate/vector_memory.cpp.o
-[1580/1672] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/frontend/control_flow_graph.cpp.o
+[1578/1672] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/frontend/translate/vector_alu.cpp.o
+[1579/1672] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/frontend/translate/vector_interpolation.cpp.o
+[1580/1672] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/frontend/translate/vector_memory.cpp.o
 [1581/1672] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/frontend/copy_shader.cpp.o
 [1582/1672] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/frontend/decode.cpp.o
-[1583/1672] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/frontend/fetch_shader.cpp.o
-[1584/1672] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/frontend/format.cpp.o
-[1585/1672] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/frontend/instruction.cpp.o
-[1586/1672] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/frontend/structured_control_flow.cpp.o
-[1587/1672] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/constant_propagation_pass.cpp.o
-[1588/1672] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/dead_code_elimination_pass.cpp.o
-[1589/1672] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp.o
-[1590/1672] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/hull_shader_transform.cpp.o
-[1591/1672] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/identity_removal_pass.cpp.o
-[1592/1672] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/inject_clip_distance_attributes.cpp.o
+[1583/1672] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/frontend/control_flow_graph.cpp.o
+[1584/1672] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/frontend/fetch_shader.cpp.o
+[1585/1672] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/frontend/format.cpp.o
+[1586/1672] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/frontend/instruction.cpp.o
+[1587/1672] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/frontend/structured_control_flow.cpp.o
+[1588/1672] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/constant_propagation_pass.cpp.o
+[1589/1672] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/dead_code_elimination_pass.cpp.o
+[1590/1672] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp.o
+[1591/1672] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/hull_shader_transform.cpp.o
+[1592/1672] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/identity_removal_pass.cpp.o
 [1593/1672] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/lower_buffer_format_to_raw.cpp.o
-[1594/1672] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/lower_fp64_to_fp32.cpp.o
-[1595/1672] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/readlane_elimination_pass.cpp.o
-[1596/1672] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/resource_tracking_pass.cpp.o
-[1597/1672] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/ring_access_elimination.cpp.o
-[1598/1672] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/shader_info_collection_pass.cpp.o
-[1599/1672] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/shared_memory_barrier_pass.cpp.o
-[1600/1672] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/shared_memory_simplify_pass.cpp.o
-[1601/1672] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/shared_memory_to_storage_pass.cpp.o
-[1602/1672] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/ssa_rewrite_pass.cpp.o
-[1603/1672] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/abstract_syntax_list.cpp.o
-[1604/1672] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/attribute.cpp.o
-[1605/1672] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/basic_block.cpp.o
-[1606/1672] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/ir_emitter.cpp.o
-[1607/1672] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/patch.cpp.o
+[1594/1672] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/inject_clip_distance_attributes.cpp.o
+[1595/1672] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/lower_fp64_to_fp32.cpp.o
+[1596/1672] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/readlane_elimination_pass.cpp.o
+[1597/1672] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/resource_tracking_pass.cpp.o
+[1598/1672] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/ring_access_elimination.cpp.o
+[1599/1672] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/shader_info_collection_pass.cpp.o
+[1600/1672] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/shared_memory_barrier_pass.cpp.o
+[1601/1672] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/shared_memory_simplify_pass.cpp.o
+[1602/1672] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/shared_memory_to_storage_pass.cpp.o
+[1603/1672] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/ssa_rewrite_pass.cpp.o
+[1604/1672] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/abstract_syntax_list.cpp.o
+[1605/1672] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/attribute.cpp.o
+[1606/1672] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/basic_block.cpp.o
+[1607/1672] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/ir_emitter.cpp.o
 [1608/1672] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/opcodes.cpp.o
 [1609/1672] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/microinstruction.cpp.o
-[1610/1672] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/type.cpp.o
-[1611/1672] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/post_order.cpp.o
-[1612/1672] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/program.cpp.o
-[1613/1672] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/value.cpp.o
-[1614/1672] Building CXX object CMakeFiles/shadps4.dir/src/video_core/amdgpu/game_clock.cpp.o
-[1615/1672] Building CXX object CMakeFiles/shadps4.dir/src/video_core/amdgpu/pixel_format.cpp.o
-[1616/1672] Building CXX object CMakeFiles/shadps4.dir/src/video_core/amdgpu/regs.cpp.o
-[1617/1672] Building CXX object CMakeFiles/shadps4.dir/src/video_core/amdgpu/tiling.cpp.o
-[1618/1672] Building CXX object CMakeFiles/shadps4.dir/src/video_core/buffer_cache/buffer.cpp.o
-[1619/1672] Building CXX object CMakeFiles/shadps4.dir/src/video_core/buffer_cache/vk_dispatch_reload.cpp.o
-[1620/1672] Building CXX object CMakeFiles/shadps4.dir/src/video_core/buffer_cache/buffer_cache.cpp.o
-[1621/1672] Building CXX object CMakeFiles/shadps4.dir/src/video_core/buffer_cache/fault_manager.cpp.o
-[1622/1672] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/liverpool_to_vk.cpp.o
-[1623/1672] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_common.cpp.o
-[1624/1672] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_compute_pipeline.cpp.o
-[1625/1672] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_graphics_pipeline.cpp.o
-[1626/1672] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_instance.cpp.o
-[1627/1672] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_master_semaphore.cpp.o
-[1628/1672] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_pipeline_common.cpp.o
-[1629/1672] Building CXX object CMakeFiles/shadps4.dir/src/core/devtools/widget/shader_list.cpp.o
-[1630/1672] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_platform.cpp.o
-[1631/1672] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_vr_exporter.cpp.o
+[1610/1672] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/patch.cpp.o
+[1611/1672] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/type.cpp.o
+[1612/1672] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/value.cpp.o
+[1613/1672] Building CXX object CMakeFiles/shadps4.dir/src/video_core/amdgpu/game_clock.cpp.o
+[1614/1672] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/post_order.cpp.o
+[1615/1672] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/program.cpp.o
+[1616/1672] Building CXX object CMakeFiles/shadps4.dir/src/video_core/amdgpu/liverpool.cpp.o
+[1617/1672] Building CXX object CMakeFiles/shadps4.dir/src/video_core/amdgpu/pixel_format.cpp.o
+[1618/1672] Building CXX object CMakeFiles/shadps4.dir/src/video_core/amdgpu/regs.cpp.o
+[1619/1672] Building CXX object CMakeFiles/shadps4.dir/src/video_core/amdgpu/tiling.cpp.o
+[1620/1672] Building CXX object CMakeFiles/shadps4.dir/src/video_core/buffer_cache/vk_dispatch_reload.cpp.o
+[1621/1672] Building CXX object CMakeFiles/shadps4.dir/src/video_core/buffer_cache/buffer.cpp.o
+[1622/1672] Building CXX object CMakeFiles/shadps4.dir/src/video_core/buffer_cache/buffer_cache.cpp.o
+[1623/1672] Building CXX object CMakeFiles/shadps4.dir/src/video_core/buffer_cache/fault_manager.cpp.o
+[1624/1672] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/liverpool_to_vk.cpp.o
+[1625/1672] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_common.cpp.o
+[1626/1672] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_compute_pipeline.cpp.o
+[1627/1672] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_graphics_pipeline.cpp.o
+[1628/1672] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_instance.cpp.o
+[1629/1672] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_master_semaphore.cpp.o
+[1630/1672] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_pipeline_cache.cpp.o
+[1631/1672] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_pipeline_common.cpp.o
 [1632/1672] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp.o
-[1633/1672] Building CXX object CMakeFiles/shadps4.dir/src/core/memory.cpp.o
-[1634/1672] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_resource_pool.cpp.o
-[1635/1672] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_pipeline_cache.cpp.o
-[1636/1672] Building CXX object CMakeFiles/shadps4.dir/src/video_core/amdgpu/liverpool.cpp.o
-[1637/1672] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_shader_util.cpp.o
-[1638/1672] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_swapchain.cpp.o
-[1639/1672] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/host_passes/fsr_pass.cpp.o
-[1640/1672] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/host_passes/pp_pass.cpp.o
-[1641/1672] Building CXX object CMakeFiles/shadps4.dir/src/video_core/texture_cache/blit_helper.cpp.o
-[1642/1672] Building CXX object CMakeFiles/shadps4.dir/src/video_core/texture_cache/host_compatibility.cpp.o
-[1643/1672] Building CXX object CMakeFiles/shadps4.dir/src/video_core/texture_cache/image.cpp.o
-[1644/1672] Building CXX object CMakeFiles/shadps4.dir/src/video_core/texture_cache/image_info.cpp.o
-[1645/1672] Building CXX object CMakeFiles/shadps4.dir/src/video_core/texture_cache/image_view.cpp.o
-[1646/1672] Building CXX object CMakeFiles/shadps4.dir/src/video_core/texture_cache/sampler.cpp.o
-[1647/1672] Building CXX object CMakeFiles/shadps4.dir/src/video_core/texture_cache/texture_cache.cpp.o
-[1648/1672] Building CXX object CMakeFiles/shadps4.dir/src/video_core/texture_cache/tile_manager.cpp.o
-[1649/1672] Building CXX object CMakeFiles/shadps4.dir/src/video_core/cache_storage.cpp.o
-[1650/1672] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_scheduler.cpp.o
-[1651/1672] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderdoc.cpp.o
-[1652/1672] Building CXX object CMakeFiles/shadps4.dir/src/emulator.cpp.o
-[1653/1672] Building CXX object CMakeFiles/shadps4.dir/src/sdl_window.cpp.o
-[1654/1672] Building CXX object CMakeFiles/shadps4.dir/src/main.cpp.o
-[1655/1672] Building CXX object CMakeFiles/shadps4.dir/src/platform/bachata/runtime_client.cpp.o
-[1656/1672] Building CXX object CMakeFiles/shadps4.dir/src/platform/bachata/controller_snapshot.cpp.o
-[1657/1672] Building CXX object CMakeFiles/shadps4.dir/src/platform/bachata/audio_transport.cpp.o
-[1658/1672] Building CXX object CMakeFiles/shadps4.dir/src/common/jit_arena.cpp.o
-[1659/1672] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_shader_hle.cpp.o
-[1660/1672] Building C object CMakeFiles/shadps4.dir/src/platform/visionos/jit_arena.c.o
-[1661/1672] Building C object CMakeFiles/shadps4.dir/src/platform/visionos/diagnostics.c.o
-[1662/1672] Building C object CMakeFiles/shadps4.dir/src/platform/visionos/logging.c.o
-[1663/1672] Building CXX object CMakeFiles/shadps4.dir/src/core/libraries/audio/spatial_audio_visionos.mm.o
+[1633/1672] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_platform.cpp.o
+[1634/1672] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_vr_exporter.cpp.o
+[1635/1672] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_presenter.cpp.o
+[1636/1672] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_rasterizer.cpp.o
+[1637/1672] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_resource_pool.cpp.o
+[1638/1672] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_scheduler.cpp.o
+[1639/1672] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_shader_hle.cpp.o
+[1640/1672] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_shader_util.cpp.o
+[1641/1672] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_swapchain.cpp.o
+[1642/1672] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/host_passes/pp_pass.cpp.o
+[1643/1672] Building CXX object CMakeFiles/shadps4.dir/src/video_core/texture_cache/host_compatibility.cpp.o
+[1644/1672] Building CXX object CMakeFiles/shadps4.dir/src/video_core/texture_cache/blit_helper.cpp.o
+[1645/1672] Building CXX object CMakeFiles/shadps4.dir/src/video_core/texture_cache/image.cpp.o
+[1646/1672] Building CXX object CMakeFiles/shadps4.dir/src/video_core/texture_cache/image_view.cpp.o
+[1647/1672] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/host_passes/fsr_pass.cpp.o
+[1648/1672] Building CXX object CMakeFiles/shadps4.dir/src/video_core/texture_cache/image_info.cpp.o
+[1649/1672] Building CXX object CMakeFiles/shadps4.dir/src/video_core/texture_cache/sampler.cpp.o
+[1650/1672] Building CXX object CMakeFiles/shadps4.dir/src/video_core/texture_cache/texture_cache.cpp.o
+[1651/1672] Building CXX object CMakeFiles/shadps4.dir/src/video_core/texture_cache/tile_manager.cpp.o
+[1652/1672] Building CXX object CMakeFiles/shadps4.dir/src/video_core/cache_storage.cpp.o
+[1653/1672] Building CXX object CMakeFiles/shadps4.dir/src/video_core/page_manager.cpp.o
+[1654/1672] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderdoc.cpp.o
+[1655/1672] Building CXX object CMakeFiles/shadps4.dir/src/sdl_window.cpp.o
+[1656/1672] Building CXX object CMakeFiles/shadps4.dir/src/emulator.cpp.o
+[1657/1672] Building CXX object CMakeFiles/shadps4.dir/src/main.cpp.o
+[1658/1672] Building CXX object CMakeFiles/shadps4.dir/src/platform/bachata/runtime_client.cpp.o
+[1659/1672] Building CXX object CMakeFiles/shadps4.dir/src/platform/bachata/controller_snapshot.cpp.o
+[1660/1672] Building CXX object CMakeFiles/shadps4.dir/src/platform/bachata/audio_transport.cpp.o
+[1661/1672] Building CXX object CMakeFiles/shadps4.dir/src/common/jit_arena.cpp.o
+[1662/1672] Building C object CMakeFiles/shadps4.dir/src/platform/visionos/jit_arena.c.o
+[1663/1672] Building CXX object CMakeFiles/shadps4.dir/src/platform/visionos/astro_core.mm.o
+[1664/1672] Building C object CMakeFiles/shadps4.dir/src/platform/visionos/diagnostics.c.o
+[1665/1672] Building C object CMakeFiles/shadps4.dir/src/platform/visionos/logging.c.o
+[1666/1672] Building CXX object CMakeFiles/shadps4.dir/src/core/libraries/audio/phase_audio_out.cpp.o
+[1667/1672] Building CXX object CMakeFiles/shadps4.dir/src/core/libraries/audio/phase_audio_in.cpp.o
+[1668/1672] Building CXX object CMakeFiles/shadps4.dir/src/core/libraries/audio/spatial_audio_visionos.mm.o
 /Users/runner/work/AstroVisionPro/AstroVisionPro/shadps4-arm64-main/src/core/libraries/audio/spatial_audio_visionos.mm:536:39: warning: 'recordPermission' is deprecated: first deprecated in visionOS 1.0 - Please use AVAudioApplication recordPermission [-Wdeprecated-declarations]
   536 |     if (AVAudioSession.sharedInstance.recordPermission == AVAudioSessionRecordPermissionDenied) {
       |                                       ^
@@ -103,13 +108,8 @@
   827 |         AVAudioSessionRecordPermissionDenied API_DEPRECATED_WITH_REPLACEMENT("AVAudioApplicationRecordPermissionDenied", ios(8.0, 17.0), watchos(4.0, 10.0)) API_UNAVAILABLE(macos, tvos) = 'deny',
       |         ^
 2 warnings generated.
-[1664/1672] Building CXX object CMakeFiles/shadps4.dir/src/core/libraries/audio/phase_audio_out.cpp.o
-[1665/1672] Building CXX object CMakeFiles/shadps4.dir/src/core/libraries/audio/phase_audio_in.cpp.o
-[1666/1672] Linking CXX static library src/imgui/renderer/libImGui_Resources.a
-[1667/1672] Building CXX object CMakeFiles/shadps4.dir/src/video_core/page_manager.cpp.o
-[1668/1672] Building CXX object CMakeFiles/shadps4.dir/src/platform/visionos/astro_core.mm.o
-[1669/1672] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_presenter.cpp.o
-[1670/1672] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_rasterizer.cpp.o
+[1669/1672] Linking CXX static library src/imgui/renderer/libImGui_Resources.a
+[1670/1672] Linking CXX static library externals/glslang/glslang/libglslang.a
 [1671/1672] Linking CXX static library libshadps4.a
 Into libastroquest_core.a:
   /Users/runner/work/AstroVisionPro/AstroVisionPro/build/visionos/core-vpengine/libshadps4.a
@@ -148,11 +148,11 @@ Into libastroquest_core.a:
 Symbols the runtime exports for game packs:
 373
 total 231296
-drwxr-xr-x  5 runner  staff        160 Oct  9 21:26 .
-drwxr-xr-x  3 runner  staff         96 Oct  9 21:26 ..
--rw-r--r--  1 runner  staff  111105008 Oct  9 21:26 libastroquest_core.a
--rw-r--r--  1 runner  staff    7123752 Oct  9 21:26 libMoltenVK.a
--rwxr-xr-x  1 runner  staff     188288 Oct  9 21:26 libVPRuntime.dylib
+drwxr-xr-x  5 runner  staff        160 Oct  9 22:07 .
+drwxr-xr-x  3 runner  staff         96 Oct  9 22:07 ..
+-rw-r--r--  1 runner  staff  111105008 Oct  9 22:07 libastroquest_core.a
+-rw-r--r--  1 runner  staff    7123752 Oct  9 22:07 libMoltenVK.a
+-rwxr-xr-x  1 runner  staff     188288 Oct  9 22:07 libVPRuntime.dylib
 
 ## app.log:      659 lines
 ### errors
@@ -160,11 +160,11 @@ drwxr-xr-x  3 runner  staff         96 Oct  9 21:26 ..
 545-    /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -Xlinker -reproducible -target arm64-apple-xros26.5 -isysroot /Applications/Xcode_26.6.app/Contents/Developer/Platforms/XROS.platform/Developer/SDKs/XROS26.5.sdk -Os -L/Users/runner/work/AstroVisionPro/AstroVisionPro/visionos/build/dd/Build/Intermediates.noindex/EagerLinkingTBDs/Release-xros -L/Users/runner/work/AstroVisionPro/AstroVisionPro/visionos/build/dd/Build/Products/Release-xros -L/Users/runner/work/AstroVisionPro/AstroVisionPro/visionos/build/core -L/Users/runner/work/AstroVisionPro/AstroVisionPro/visionos/build/vpconvert/lib -F/Users/runner/work/AstroVisionPro/AstroVisionPro/visionos/build/dd/Build/Intermediates.noindex/EagerLinkingTBDs/Release-xros -F/Users/runner/work/AstroVisionPro/AstroVisionPro/visionos/build/dd/Build/Products/Release-xros -filelist /Users/runner/work/AstroVisionPro/AstroVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/Objects-normal/arm64/AstroQuest.LinkFileList -Xlinker -rpath -Xlinker @executable_path/Frameworks -Xlinker -dead_strip -Xlinker -object_path_lto -Xlinker /Users/runner/work/AstroVisionPro/AstroVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/Objects-normal/arm64/AstroQuest_lto.o -Xlinker -dependency_info -Xlinker /Users/runner/work/AstroVisionPro/AstroVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/Objects-normal/arm64/AstroQuest_dependency_info.dat -fobjc-link-runtime -L/Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros -L/usr/lib/swift -Xlinker -add_ast_path -Xlinker /Users/runner/work/AstroVisionPro/AstroVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/Objects-normal/arm64/AstroQuest.swiftmodule @/Users/runner/work/AstroVisionPro/AstroVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/Objects-normal/arm64/AstroQuest-linker-args.resp -Wl,-exported_symbol,__mh_execute_header -lvpconvert_all -lastroquest_core -lMoltenVK -lc++ -framework Metal -framework IOSurface -framework QuartzCore -framework CoreFoundation -framework Foundation -framework UIKit -framework AVFoundation -framework AVFAudio -framework PHASE -framework AudioToolbox -framework CoreAudio -framework CoreHaptics -framework CoreMotion -framework GameController -framework CoreVideo -framework VideoToolbox -framework Security -framework CoreBluetooth -framework CoreGraphics -framework Metal -framework MetalFX -liconv -lVPRuntime -o /Users/runner/work/AstroVisionPro/AstroVisionPro/visionos/build/dd/Build/Products/Release-xros/AstroQuest.app/AstroQuest
 546:/Users/runner/work/AstroVisionPro/AstroVisionPro/visionos/AstroQuest.xcodeproj: AstroQuest: ld: warning: reducing alignment of section __DATA,__common from 0x8000 to 0x4000 because it exceeds segment maximum alignment
 547-
-548-CopySwiftLibs /Users/runner/work/AstroVisionPro/AstroVisionPro/visionos/build/dd/Build/Products/Release-xros/AstroQuest.app (in target 'AstroQuest' from project 'AstroQuest')
+548-ExtractAppIntentsMetadata (in target 'AstroQuest' from project 'AstroQuest')
 549-    cd /Users/runner/work/AstroVisionPro/AstroVisionPro/visionos
-550-    builtin-swiftStdLibTool --copy --verbose --scan-executable /Users/runner/work/AstroVisionPro/AstroVisionPro/visionos/build/dd/Build/Products/Release-xros/AstroQuest.app/AstroQuest --scan-folder /Users/runner/work/AstroVisionPro/AstroVisionPro/visionos/build/dd/Build/Products/Release-xros/AstroQuest.app/Frameworks --scan-folder /Users/runner/work/AstroVisionPro/AstroVisionPro/visionos/build/dd/Build/Products/Release-xros/AstroQuest.app/PlugIns --scan-folder /Users/runner/work/AstroVisionPro/AstroVisionPro/visionos/build/dd/Build/Products/Release-xros/AstroQuest.app/SystemExtensions --scan-folder /Users/runner/work/AstroVisionPro/AstroVisionPro/visionos/build/dd/Build/Products/Release-xros/AstroQuest.app/Extensions --platform xros --toolchain /var/run/com.apple.security.cryptexd/mnt/com.apple.MobileAsset.MetalToolchain-v17.6.109.0.E5zMxD/Metal.xctoolchain --toolchain /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain --destination /Users/runner/work/AstroVisionPro/AstroVisionPro/visionos/build/dd/Build/Products/Release-xros/AstroQuest.app/Frameworks --strip-bitcode --strip-bitcode-tool /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/bitcode_strip --emit-dependency-info /Users/runner/work/AstroVisionPro/AstroVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/SwiftStdLibToolInputDependencies.dep --filter-for-swift-os
-551-Ignoring --strip-bitcode because --sign was not passed
-552-
+550-    /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/appintentsmetadataprocessor --toolchain-dir /var/run/com.apple.security.cryptexd/mnt/com.apple.MobileAsset.MetalToolchain-v17.6.109.0.WONNNv/Metal.xctoolchain --module-name AstroQuest --sdk-root /Applications/Xcode_26.6.app/Contents/Developer/Platforms/XROS.platform/Developer/SDKs/XROS26.5.sdk --xcode-version 17F113 --platform-family xrOS --deployment-target 26.5 --bundle-identifier com.kdt.livecontainer --output /Users/runner/work/AstroVisionPro/AstroVisionPro/visionos/build/dd/Build/Products/Release-xros/AstroQuest.app --target-triple arm64-apple-xros26.5 --binary-file /Users/runner/work/AstroVisionPro/AstroVisionPro/visionos/build/dd/Build/Products/Release-xros/AstroQuest.app/AstroQuest --dependency-file /Users/runner/work/AstroVisionPro/AstroVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/Objects-normal/arm64/AstroQuest_dependency_info.dat --stringsdata-file /Users/runner/work/AstroVisionPro/AstroVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/Objects-normal/arm64/ExtractedAppShortcutsMetadata.stringsdata --source-file-list /Users/runner/work/AstroVisionPro/AstroVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/Objects-normal/arm64/AstroQuest.SwiftFileList --metadata-file-list /Users/runner/work/AstroVisionPro/AstroVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/AstroQuest.DependencyMetadataFileList --static-metadata-file-list /Users/runner/work/AstroVisionPro/AstroVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/AstroQuest.DependencyStaticMetadataFileList --swift-const-vals-list /Users/runner/work/AstroVisionPro/AstroVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/Objects-normal/arm64/AstroQuest.SwiftConstValuesFileList --compile-time-extraction --deployment-aware-processing --validate-assistant-intents --no-app-shortcuts-localization
+551-2026-10-09 22:08:26.897 appintentsmetadataprocessor[20174:48176] Starting appintentsmetadataprocessor export
+552-2026-10-09 22:08:26.921 appintentsmetadataprocessor[20174:48176] warning: Metadata extraction skipped. No AppIntents.framework dependency found.
 ### end
     cd /
     builtin-precompileModule /Users/runner/work/AstroVisionPro/AstroVisionPro/visionos/build/dd/Build/Intermediates.noindex/ExplicitPrecompiledModules/_Builtin_stdint-1R88ZGI763LTS19VO3SC53Q4Q.scan
@@ -204,20 +204,20 @@ Ld /Users/runner/work/AstroVisionPro/AstroVisionPro/visionos/build/dd/Build/Prod
     /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -Xlinker -reproducible -target arm64-apple-xros26.5 -isysroot /Applications/Xcode_26.6.app/Contents/Developer/Platforms/XROS.platform/Developer/SDKs/XROS26.5.sdk -Os -L/Users/runner/work/AstroVisionPro/AstroVisionPro/visionos/build/dd/Build/Intermediates.noindex/EagerLinkingTBDs/Release-xros -L/Users/runner/work/AstroVisionPro/AstroVisionPro/visionos/build/dd/Build/Products/Release-xros -L/Users/runner/work/AstroVisionPro/AstroVisionPro/visionos/build/core -L/Users/runner/work/AstroVisionPro/AstroVisionPro/visionos/build/vpconvert/lib -F/Users/runner/work/AstroVisionPro/AstroVisionPro/visionos/build/dd/Build/Intermediates.noindex/EagerLinkingTBDs/Release-xros -F/Users/runner/work/AstroVisionPro/AstroVisionPro/visionos/build/dd/Build/Products/Release-xros -filelist /Users/runner/work/AstroVisionPro/AstroVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/Objects-normal/arm64/AstroQuest.LinkFileList -Xlinker -rpath -Xlinker @executable_path/Frameworks -Xlinker -dead_strip -Xlinker -object_path_lto -Xlinker /Users/runner/work/AstroVisionPro/AstroVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/Objects-normal/arm64/AstroQuest_lto.o -Xlinker -dependency_info -Xlinker /Users/runner/work/AstroVisionPro/AstroVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/Objects-normal/arm64/AstroQuest_dependency_info.dat -fobjc-link-runtime -L/Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/xros -L/usr/lib/swift -Xlinker -add_ast_path -Xlinker /Users/runner/work/AstroVisionPro/AstroVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/Objects-normal/arm64/AstroQuest.swiftmodule @/Users/runner/work/AstroVisionPro/AstroVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/Objects-normal/arm64/AstroQuest-linker-args.resp -Wl,-exported_symbol,__mh_execute_header -lvpconvert_all -lastroquest_core -lMoltenVK -lc++ -framework Metal -framework IOSurface -framework QuartzCore -framework CoreFoundation -framework Foundation -framework UIKit -framework AVFoundation -framework AVFAudio -framework PHASE -framework AudioToolbox -framework CoreAudio -framework CoreHaptics -framework CoreMotion -framework GameController -framework CoreVideo -framework VideoToolbox -framework Security -framework CoreBluetooth -framework CoreGraphics -framework Metal -framework MetalFX -liconv -lVPRuntime -o /Users/runner/work/AstroVisionPro/AstroVisionPro/visionos/build/dd/Build/Products/Release-xros/AstroQuest.app/AstroQuest
 /Users/runner/work/AstroVisionPro/AstroVisionPro/visionos/AstroQuest.xcodeproj: AstroQuest: ld: warning: reducing alignment of section __DATA,__common from 0x8000 to 0x4000 because it exceeds segment maximum alignment
 
-CopySwiftLibs /Users/runner/work/AstroVisionPro/AstroVisionPro/visionos/build/dd/Build/Products/Release-xros/AstroQuest.app (in target 'AstroQuest' from project 'AstroQuest')
-    cd /Users/runner/work/AstroVisionPro/AstroVisionPro/visionos
-    builtin-swiftStdLibTool --copy --verbose --scan-executable /Users/runner/work/AstroVisionPro/AstroVisionPro/visionos/build/dd/Build/Products/Release-xros/AstroQuest.app/AstroQuest --scan-folder /Users/runner/work/AstroVisionPro/AstroVisionPro/visionos/build/dd/Build/Products/Release-xros/AstroQuest.app/Frameworks --scan-folder /Users/runner/work/AstroVisionPro/AstroVisionPro/visionos/build/dd/Build/Products/Release-xros/AstroQuest.app/PlugIns --scan-folder /Users/runner/work/AstroVisionPro/AstroVisionPro/visionos/build/dd/Build/Products/Release-xros/AstroQuest.app/SystemExtensions --scan-folder /Users/runner/work/AstroVisionPro/AstroVisionPro/visionos/build/dd/Build/Products/Release-xros/AstroQuest.app/Extensions --platform xros --toolchain /var/run/com.apple.security.cryptexd/mnt/com.apple.MobileAsset.MetalToolchain-v17.6.109.0.E5zMxD/Metal.xctoolchain --toolchain /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain --destination /Users/runner/work/AstroVisionPro/AstroVisionPro/visionos/build/dd/Build/Products/Release-xros/AstroQuest.app/Frameworks --strip-bitcode --strip-bitcode-tool /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/bitcode_strip --emit-dependency-info /Users/runner/work/AstroVisionPro/AstroVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/SwiftStdLibToolInputDependencies.dep --filter-for-swift-os
-Ignoring --strip-bitcode because --sign was not passed
-
 ExtractAppIntentsMetadata (in target 'AstroQuest' from project 'AstroQuest')
     cd /Users/runner/work/AstroVisionPro/AstroVisionPro/visionos
-    /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/appintentsmetadataprocessor --toolchain-dir /var/run/com.apple.security.cryptexd/mnt/com.apple.MobileAsset.MetalToolchain-v17.6.109.0.E5zMxD/Metal.xctoolchain --module-name AstroQuest --sdk-root /Applications/Xcode_26.6.app/Contents/Developer/Platforms/XROS.platform/Developer/SDKs/XROS26.5.sdk --xcode-version 17F113 --platform-family xrOS --deployment-target 26.5 --bundle-identifier com.kdt.livecontainer --output /Users/runner/work/AstroVisionPro/AstroVisionPro/visionos/build/dd/Build/Products/Release-xros/AstroQuest.app --target-triple arm64-apple-xros26.5 --binary-file /Users/runner/work/AstroVisionPro/AstroVisionPro/visionos/build/dd/Build/Products/Release-xros/AstroQuest.app/AstroQuest --dependency-file /Users/runner/work/AstroVisionPro/AstroVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/Objects-normal/arm64/AstroQuest_dependency_info.dat --stringsdata-file /Users/runner/work/AstroVisionPro/AstroVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/Objects-normal/arm64/ExtractedAppShortcutsMetadata.stringsdata --source-file-list /Users/runner/work/AstroVisionPro/AstroVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/Objects-normal/arm64/AstroQuest.SwiftFileList --metadata-file-list /Users/runner/work/AstroVisionPro/AstroVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/AstroQuest.DependencyMetadataFileList --static-metadata-file-list /Users/runner/work/AstroVisionPro/AstroVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/AstroQuest.DependencyStaticMetadataFileList --swift-const-vals-list /Users/runner/work/AstroVisionPro/AstroVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/Objects-normal/arm64/AstroQuest.SwiftConstValuesFileList --compile-time-extraction --deployment-aware-processing --validate-assistant-intents --no-app-shortcuts-localization
-2026-10-09 21:27:36.730 appintentsmetadataprocessor[23327:56180] Starting appintentsmetadataprocessor export
-2026-10-09 21:27:36.748 appintentsmetadataprocessor[23327:56180] warning: Metadata extraction skipped. No AppIntents.framework dependency found.
+    /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/appintentsmetadataprocessor --toolchain-dir /var/run/com.apple.security.cryptexd/mnt/com.apple.MobileAsset.MetalToolchain-v17.6.109.0.WONNNv/Metal.xctoolchain --module-name AstroQuest --sdk-root /Applications/Xcode_26.6.app/Contents/Developer/Platforms/XROS.platform/Developer/SDKs/XROS26.5.sdk --xcode-version 17F113 --platform-family xrOS --deployment-target 26.5 --bundle-identifier com.kdt.livecontainer --output /Users/runner/work/AstroVisionPro/AstroVisionPro/visionos/build/dd/Build/Products/Release-xros/AstroQuest.app --target-triple arm64-apple-xros26.5 --binary-file /Users/runner/work/AstroVisionPro/AstroVisionPro/visionos/build/dd/Build/Products/Release-xros/AstroQuest.app/AstroQuest --dependency-file /Users/runner/work/AstroVisionPro/AstroVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/Objects-normal/arm64/AstroQuest_dependency_info.dat --stringsdata-file /Users/runner/work/AstroVisionPro/AstroVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/Objects-normal/arm64/ExtractedAppShortcutsMetadata.stringsdata --source-file-list /Users/runner/work/AstroVisionPro/AstroVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/Objects-normal/arm64/AstroQuest.SwiftFileList --metadata-file-list /Users/runner/work/AstroVisionPro/AstroVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/AstroQuest.DependencyMetadataFileList --static-metadata-file-list /Users/runner/work/AstroVisionPro/AstroVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/AstroQuest.DependencyStaticMetadataFileList --swift-const-vals-list /Users/runner/work/AstroVisionPro/AstroVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/Objects-normal/arm64/AstroQuest.SwiftConstValuesFileList --compile-time-extraction --deployment-aware-processing --validate-assistant-intents --no-app-shortcuts-localization
+2026-10-09 22:08:26.897 appintentsmetadataprocessor[20174:48176] Starting appintentsmetadataprocessor export
+2026-10-09 22:08:26.921 appintentsmetadataprocessor[20174:48176] warning: Metadata extraction skipped. No AppIntents.framework dependency found.
 
 GenerateDSYMFile /Users/runner/work/AstroVisionPro/AstroVisionPro/visionos/build/dd/Build/Products/Release-xros/AstroQuest.app.dSYM /Users/runner/work/AstroVisionPro/AstroVisionPro/visionos/build/dd/Build/Products/Release-xros/AstroQuest.app/AstroQuest (in target 'AstroQuest' from project 'AstroQuest')
     cd /Users/runner/work/AstroVisionPro/AstroVisionPro/visionos
     /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/dsymutil /Users/runner/work/AstroVisionPro/AstroVisionPro/visionos/build/dd/Build/Products/Release-xros/AstroQuest.app/AstroQuest -o /Users/runner/work/AstroVisionPro/AstroVisionPro/visionos/build/dd/Build/Products/Release-xros/AstroQuest.app.dSYM
+
+CopySwiftLibs /Users/runner/work/AstroVisionPro/AstroVisionPro/visionos/build/dd/Build/Products/Release-xros/AstroQuest.app (in target 'AstroQuest' from project 'AstroQuest')
+    cd /Users/runner/work/AstroVisionPro/AstroVisionPro/visionos
+    builtin-swiftStdLibTool --copy --verbose --scan-executable /Users/runner/work/AstroVisionPro/AstroVisionPro/visionos/build/dd/Build/Products/Release-xros/AstroQuest.app/AstroQuest --scan-folder /Users/runner/work/AstroVisionPro/AstroVisionPro/visionos/build/dd/Build/Products/Release-xros/AstroQuest.app/Frameworks --scan-folder /Users/runner/work/AstroVisionPro/AstroVisionPro/visionos/build/dd/Build/Products/Release-xros/AstroQuest.app/PlugIns --scan-folder /Users/runner/work/AstroVisionPro/AstroVisionPro/visionos/build/dd/Build/Products/Release-xros/AstroQuest.app/SystemExtensions --scan-folder /Users/runner/work/AstroVisionPro/AstroVisionPro/visionos/build/dd/Build/Products/Release-xros/AstroQuest.app/Extensions --platform xros --toolchain /var/run/com.apple.security.cryptexd/mnt/com.apple.MobileAsset.MetalToolchain-v17.6.109.0.WONNNv/Metal.xctoolchain --toolchain /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain --destination /Users/runner/work/AstroVisionPro/AstroVisionPro/visionos/build/dd/Build/Products/Release-xros/AstroQuest.app/Frameworks --strip-bitcode --strip-bitcode-tool /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/bitcode_strip --emit-dependency-info /Users/runner/work/AstroVisionPro/AstroVisionPro/visionos/build/dd/Build/Intermediates.noindex/AstroQuest.build/Release-xros/AstroQuest.build/SwiftStdLibToolInputDependencies.dep --filter-for-swift-os
+Ignoring --strip-bitcode because --sign was not passed
 
 RegisterExecutionPolicyException /Users/runner/work/AstroVisionPro/AstroVisionPro/visionos/build/dd/Build/Products/Release-xros/AstroQuest.app (in target 'AstroQuest' from project 'AstroQuest')
     cd /Users/runner/work/AstroVisionPro/AstroVisionPro/visionos
