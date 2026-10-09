@@ -18,12 +18,14 @@ on:
   workflow_dispatch:
 permissions:
   contents: write
-concurrency:
-  group: visionos-app
-  cancel-in-progress: true
 jobs:
   app:
     if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[build]')
+    # On the job, not the workflow: a push without [build] (its job skipped) does not cancel a
+    # build that is running.
+    concurrency:
+      group: visionos-app
+      cancel-in-progress: true
     runs-on: macos-26
     # The first run on a new repository builds the emulator too (no cache yet).
     timeout-minutes: 150
