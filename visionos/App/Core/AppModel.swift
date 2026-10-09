@@ -6,6 +6,7 @@
 import Foundation
 import Observation
 import SwiftUI
+import UIKit
 
 @MainActor
 @Observable
@@ -42,7 +43,109 @@ final class AppModel {
     /// The launcher's check (Diagnostics.swift), redone when the app comes back to the front.
     var diagnostics = Diagnostics.run()
 
+#if VPENGINE
+    /// The game's code translated ahead of time (VPEngine): converted on the headset or made on
+    /// a PC, signed with the player's SideStore certificate and loaded. No JIT.
+    let conversion = VPConversion.shared
+    var certificate: VPCertificate.Summary? = VPCertificate.current
+    var packLoaded: VPGamePack.Loaded?
+    /// The team SideStore signed this app with (a pack must be signed by the same).
+    let appTeam: String = {
+        guard let path = Bundle.main.executablePath else { return "" }
+        var out = [CChar](repeating: 0, count: 64)
+        return vp_codesign_file_team(path, &out, out.count) == 0 ? String(cString: out) : ""
+    }()
+
+    var engineReady: Bool { packLoaded != nil }
+
+    func importCertificateFromSideStore() {
+        guard let url = VPCertificate.sideStoreImportURL else { return }
+        LogFiles.log("VPEngine: asking SideStore for the certificate")
+        UIApplication.shared.open(url, options: [:]) { [weak self] opened in
+            if !opened {
+                Task { @MainActor in
+                    self?.message = L("No se pudo abrir SideStore. Elige el certificado (.p12) a mano en Ajustes.", "SideStore could not be opened. Choose the certificate (.p12) by hand in Settings.")
+                }
+            }
+        }
+    }
+
+    /// A URL the app was opened with: SideStore's answer with the certificate.
+    func handleOpenURL(_ url: URL) {
+        guard let result = VPCertificate.handle(url: url) else { return }
+        switch result {
+        case .success(let summary):
+            certificate = summary
+            message = L("Certificado importado: \(summary.commonName) (\(summary.team)).", "Certificate imported: \(summary.commonName) (\(summary.team)).")
+            LogFiles.log("VPEngine: certificate imported from SideStore, team \(summary.team)")
+            loadEngineIfReady()
+        case .failure(let error):
+            message = error.localizedDescription
+            LogFiles.log("VPEngine: certificate import failed: \(error.localizedDescription)")
+        }
+    }
+
+    func importCertificate(file: URL, password: String) {
+        let accessing = file.startAccessingSecurityScopedResource()
+        defer { if accessing { file.stopAccessingSecurityScopedResource() } }
+        do {
+            let data = try Data(contentsOf: file)
+            let summary = try VPCertificate.store(p12: data, password: password)
+            certificate = summary
+            message = L("Certificado importado: \(summary.commonName) (\(summary.team)).", "Certificate imported: \(summary.commonName) (\(summary.team)).")
+            loadEngineIfReady()
+        } catch {
+            message = error.localizedDescription
+        }
+    }
+
+    func convertGame() {
+        guard let gamePath else { return }
+        message = nil
+        conversion.start(game: gamePath, reason: "the player pressed Convert")
+    }
+
+    func usePCPack() {
+        guard let gamePath else { return }
+        message = L("Firmando y cargando el paquete del PC…", "Signing and loading the PC's pack…")
+        Thread.detachNewThread {
+            let result = Result { try VPGamePack.load(gameFolder: gamePath) }
+            Task { @MainActor [weak self] in
+                switch result {
+                case .success(let loaded):
+                    self?.packLoaded = loaded
+                    self?.message = L("Paquete del PC cargado: \(loaded.modules) módulos.", "PC pack loaded: \(loaded.modules) modules.")
+                case .failure(let error):
+                    self?.message = error.localizedDescription
+                }
+            }
+        }
+    }
+
+    func resetConversion() {
+        guard let gamePath, !conversion.isRunning else { return }
+        VPConversion.reset(gamePath)
+        message = packLoaded != nil
+            ? L("Conversión borrada. Reinicia la app para convertir de nuevo.", "Conversion deleted. Restart the app to convert again.")
+            : L("Conversión borrada.", "Conversion deleted.")
+    }
+
+    /// A game converted before (or a pack from the PC) is loaded as soon as the app starts.
+    private func loadEngineIfReady() {
+        guard certificate != nil, packLoaded == nil, let gamePath else { return }
+        if VPConversion.isConverted(gamePath) {
+            conversion.start(game: gamePath, reason: "app start: the game was converted before")
+        }
+    }
+#endif
+
     init() {
+#if VPENGINE
+        VPGamePack.log = { LogFiles.log($0) }
+        conversion.resolveGame = { [weak self] in self?.gamePath }
+        conversion.onFinished = { [weak self] loaded in self?.packLoaded = loaded }
+        packLoaded = VPGamePack.alreadyLoaded()
+#endif
         // Files copied in read-only or locked could not be deleted from the Files app
         // (error -5000): the app gives itself back the right to change everything in its folder.
         Task.detached {
@@ -60,6 +163,10 @@ final class AppModel {
         }
         controllers.start()
         controller = controllers.status
+#if VPENGINE
+        LogFiles.log("VPEngine build: app signed by team \(appTeam.isEmpty ? "?" : appTeam), certificate \(certificate?.team ?? "none")")
+        loadEngineIfReady()
+#endif
     }
 
     /// Where the game is: the `game=` setting, else a folder with eboot.bin in the app's
@@ -153,14 +260,24 @@ final class AppModel {
     }
 
     var canStart: Bool {
+#if VPENGINE
+        engineReady && gamePath != nil && coreState == AstroCoreStateIdle
+#else
         jit.isReady && gamePath != nil && coreState == AstroCoreStateIdle
+#endif
     }
 
     /// Starts the emulator with the game. The immersive space is opened by the view.
     func startGame() -> Bool {
+#if VPENGINE
+        guard let gamePath, engineReady else {
+            return false
+        }
+#else
         guard let gamePath, jit.isReady else {
             return false
         }
+#endif
         let environment = settings.environment
         var pointers = environment.map { strdup($0) }
         defer { pointers.forEach { free($0) } }

@@ -199,7 +199,7 @@ struct Info : InfoPersistent {
         ASSERT(user_data.size() <= NUM_USER_DATA_REGS);
         std::memcpy(flattened_ud_buf.data(), user_data.data(), user_data.size_bytes());
         if (srt_info.walker_func) {
-            srt_info.walker_func(user_data.data(), flattened_ud_buf.data());
+            RunWalker(srt_info.walker_func, user_data.data(), flattened_ud_buf.data());
         }
     }
 
