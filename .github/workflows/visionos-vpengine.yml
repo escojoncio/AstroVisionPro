@@ -184,6 +184,10 @@ jobs:
             cp -R "$KK" build/ipa/Payload/AstroQuest.app/Frameworks/
             echo "KosmicKrisp.framework is in the app" | tee -a ../app.log
           fi
+          # Which archives define the global C++ operator new/delete (LLVM's allocations go through them).
+          echo "operator new/delete defined in:" | tee -a ../app.log
+          nm -gUA build/core/libastroquest_core.a build/vpconvert/lib/libvpconvert_all.a 2>/dev/null \
+            | grep -E ' T __Z(nw|na|dl|da)' | sed 's/^.*\(lib[a-z_]*\.a\)/\1/' | sort | uniq -c | head -40 | tee -a ../app.log || true
           otool -L build/ipa/Payload/AstroQuest.app/AstroQuest | tee -a ../app.log
           du -sh build/ipa/Payload/AstroQuest.app | tee -a ../app.log
           (cd build/ipa && zip -qry ../AstroQuest-VPEngine.ipa Payload)
