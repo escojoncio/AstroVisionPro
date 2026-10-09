@@ -6,7 +6,7 @@ App visionOS en `visionos/` (SwiftUI + Compositor Services + ARKit + GameControl
 JIT: arena RWX preparada por StikDebug (protocolo `brk #0xf00d` + universal.js); la app hace detach al terminar.
 
 ## Build e7d85d8 (run 37855488586): OK, KK recompilado con el parche nuevo (kk_shader.c, kk_cmd_draw.c sin errores); `visionos-latest/AstroQuest.ipa` (sin probar)
-## Commit siguiente (`[build]`): diagnóstico de pasadas desde la app
+## Build c30e015 (run 37901660073): OK (sin probar) — diagnóstico de pasadas desde la app
 - Pasada principal: ~25 µs por draw y ~13–18 pasadas de la escena por frame (`816x870/1440x1536 1 colour +depth` 300–550 pasadas/s). Hipótesis: shadPS4 corta la pasada (`Scheduler::EndRendering`) para subidas/copias entre draws (`SynchronizeBuffer` → `EndRendering` + `copyBuffer`, texturas, blits), y en KK cada corte = store/load + barrera ALL→ALL.
 - App: `pass_diagnostics` (por defecto 1, «Diagnóstico de pasadas en el registro» en Gráficos) → `SHADPS4_FRAME_STATS=2` (ya existente en vk_scheduler.cpp: medias cada pocos segundos y una lista de las pasadas de un frame con el fichero:línea que terminó cada una).
 
