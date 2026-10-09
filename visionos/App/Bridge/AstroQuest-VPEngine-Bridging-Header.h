@@ -4,4 +4,5 @@
 #import "ShaderTypes.h"
 #import "vp_codesign.h"
 #import "vp_pack.h"
+#import "vp_pkcs12.h"
 #import "vpconvert.h"

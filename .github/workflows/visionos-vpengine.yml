@@ -145,7 +145,8 @@ jobs:
               echo "::error::VPEngine changed 300+ files since vpconvert-visionos (${BUILT::7}): rebuild it"
               exit 1
             fi
-            CHANGED=$(grep -E '^(tools/vpaot|tools/vpconvert|tools/sdk|runtime|third_party)' <<<"$FILES" || true)
+            # What the release is made of: vpaot, vpconvert, the stubs, Zydis, the runtime headers it ships.
+            CHANGED=$(grep -E '^(tools/vpaot|tools/vpconvert|tools/sdk|third_party|runtime/(vp_cpu\.h|vp_emit\.h|vp_pack\.h|vp_regs\.h|freestanding/))' <<<"$FILES" || true)
             if [[ -n "$CHANGED" ]]; then
               echo "::error::vpconvert-visionos was built from ${BUILT::7}; VPEngine ${HEAD::7} changed:"
               echo "$CHANGED"

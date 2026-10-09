@@ -156,6 +156,7 @@ final class AppModel {
     init() {
 #if VPENGINE
         VPGamePack.log = { LogFiles.log($0) }
+        VPCertificate.log = { LogFiles.log($0) }
         conversion.resolveGame = { [weak self] in self?.gamePath }
         conversion.onFinished = { [weak self] loaded in self?.packLoaded = loaded }
         packLoaded = VPGamePack.alreadyLoaded()
