@@ -1,5 +1,5 @@
 diff --git a/meson.options b/meson.options
-index 3f437d04956..02c8ba35e54 100644
+index 3f437d0..02c8ba3 100644
 --- a/meson.options
 +++ b/meson.options
 @@ -915,3 +915,10 @@ option(
@@ -14,7 +14,7 @@ index 3f437d04956..02c8ba35e54 100644
 +  description : 'Link KosmicKrisp for embedding in an app (iOS, visionOS): frameworks linked directly, @rpath install name.'
 +)
 diff --git a/src/kosmickrisp/bridge/mtl_device.m b/src/kosmickrisp/bridge/mtl_device.m
-index dc580ed0ea7..adb6aae468e 100644
+index dc580ed..adb6aae 100644
 --- a/src/kosmickrisp/bridge/mtl_device.m
 +++ b/src/kosmickrisp/bridge/mtl_device.m
 @@ -13,6 +13,7 @@
@@ -50,7 +50,7 @@ index dc580ed0ea7..adb6aae468e 100644
  
     return device;
 diff --git a/src/kosmickrisp/vulkan/kk_bo.c b/src/kosmickrisp/vulkan/kk_bo.c
-index 5562b61f1ec..aa571ab3b5f 100644
+index 5562b61..aa571ab 100644
 --- a/src/kosmickrisp/vulkan/kk_bo.c
 +++ b/src/kosmickrisp/vulkan/kk_bo.c
 @@ -11,13 +11,69 @@
@@ -142,7 +142,7 @@ index 5562b61f1ec..aa571ab3b5f 100644
      * from a host pointer */
     if (bo->mtl_handle)
 diff --git a/src/kosmickrisp/vulkan/kk_bo.h b/src/kosmickrisp/vulkan/kk_bo.h
-index d1590b99140..ce5ce14c015 100644
+index d1590b9..ce5ce14 100644
 --- a/src/kosmickrisp/vulkan/kk_bo.h
 +++ b/src/kosmickrisp/vulkan/kk_bo.h
 @@ -23,8 +23,19 @@ struct kk_bo {
@@ -166,22 +166,25 @@ index d1590b99140..ce5ce14c015 100644
     void *cpu;
     uint64_t gpu;
 diff --git a/src/kosmickrisp/vulkan/kk_cmd_buffer.c b/src/kosmickrisp/vulkan/kk_cmd_buffer.c
-index 22f4bf7f3f1..7c0d62ed013 100644
+index 22f4bf7..33bb3f2 100644
 --- a/src/kosmickrisp/vulkan/kk_cmd_buffer.c
 +++ b/src/kosmickrisp/vulkan/kk_cmd_buffer.c
-@@ -7,6 +7,11 @@
+@@ -7,6 +7,14 @@
  
  #include "kk_cmd_buffer.h"
  
 +#include <stdio.h>
 +#include <stdlib.h>
++#include <string.h>
 +
 +#include "util/u_atomic.h"
++#include "util/os_time.h"
++#include "util/simple_mtx.h"
 +
  #include "kk_buffer.h"
  #include "kk_cmd_pool.h"
  #include "kk_descriptor_set_layout.h"
-@@ -212,6 +217,7 @@ kk_BeginCommandBuffer(VkCommandBuffer commandBuffer,
+@@ -212,6 +220,7 @@ kk_BeginCommandBuffer(VkCommandBuffer commandBuffer,
     }
  
     vk_command_buffer_begin(&cmd->vk, pBeginInfo);
@@ -189,10 +192,129 @@ index 22f4bf7f3f1..7c0d62ed013 100644
     cmd->one_time_submit =
        pBeginInfo->flags & VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
  
-@@ -270,6 +276,21 @@ cs_start_render(struct kk_cmd_buffer *cmd)
+@@ -257,6 +266,116 @@ kk_encoder_update_debug(struct kk_cmd_buffer *cmd, mtl_command_encoder *encoder)
+       mtl_encoder_push_debug_group(encoder, label->pLabelName);
+ }
+ 
++
++/* Encoder census (KK_CENSUS=1). */
++bool
++kk_census(void)
++{
++   static int enabled = -1;
++   if (enabled < 0) {
++      const char *env = getenv("KK_CENSUS");
++      enabled = env && env[0] == '1';
++   }
++   return enabled;
++}
++
++#define KK_CENSUS_SITES 48u
++static struct {
++   simple_mtx_t lock;
++   int64_t since;
++   uint32_t render;
++   uint32_t compute;
++   uint32_t passes;
++   struct {
++      const char *site;
++      uint32_t cuts;
++      uint32_t computes;
++   } sites[KK_CENSUS_SITES];
++   uint32_t num_sites;
++} census = {.lock = SIMPLE_MTX_INITIALIZER};
++
++static const char *
++census_short(const char *site)
++{
++   const char *slash = strrchr(site, '/');
++   return slash ? slash + 1 : site;
++}
++
++/* With census.lock held. */
++static void
++census_report(int64_t now)
++{
++   if (census.since == 0) {
++      census.since = now;
++      return;
++   }
++   const double seconds = (double)(now - census.since) / 1e9;
++   if (seconds < 5.0)
++      return;
++   char text[2048];
++   size_t used = 0;
++   for (uint32_t i = 0; i < census.num_sites && used < sizeof(text) - 96; ++i) {
++      if (census.sites[i].cuts == 0 && census.sites[i].computes == 0)
++         continue;
++      used += snprintf(text + used, sizeof(text) - used, "%s%s %.1f cut %.1f compute",
++                       used ? "; " : "", census_short(census.sites[i].site),
++                       census.sites[i].cuts / seconds, census.sites[i].computes / seconds);
++      census.sites[i].cuts = 0;
++      census.sites[i].computes = 0;
++   }
++   text[used] = '\0';
++   fprintf(stderr,
++           "KK_CENSUS: a second, %.0f render encoders for %.0f Vulkan render passes, "
++           "%.0f compute encoders; where render encoders were cut and compute encoders "
++           "made: %s\n",
++           census.render / seconds, census.passes / seconds, census.compute / seconds,
++           used ? text : "nowhere");
++   census.render = census.compute = census.passes = 0;
++   census.since = now;
++}
++
++void
++kk_census_note(const char *site, bool cut)
++{
++   if (!kk_census())
++      return;
++   simple_mtx_lock(&census.lock);
++   uint32_t i = 0;
++   while (i < census.num_sites && census.sites[i].site != site)
++      ++i;
++   if (i == census.num_sites && census.num_sites < KK_CENSUS_SITES)
++      census.sites[census.num_sites++].site = site;
++   if (i < census.num_sites) {
++      if (cut)
++         census.sites[i].cuts++;
++      else
++         census.sites[i].computes++;
++   }
++   if (!cut)
++      census.compute++;
++   simple_mtx_unlock(&census.lock);
++}
++
++static void
++census_note_encoder(bool render, bool vulkan_pass)
++{
++   if (!kk_census())
++      return;
++   simple_mtx_lock(&census.lock);
++   if (render)
++      census.render++;
++   if (vulkan_pass)
++      census.passes++;
++   census_report(os_time_get_nano());
++   simple_mtx_unlock(&census.lock);
++}
++
++void
++kk_census_note_pass(void)
++{
++   census_note_encoder(false, true);
++}
++
+ void
+ cs_start_render(struct kk_cmd_buffer *cmd)
+ {
+@@ -269,6 +388,22 @@ cs_start_render(struct kk_cmd_buffer *cmd)
+ 
     cmd->metal.render = mtl_new_render_command_encoder_with_descriptor(
        cmd->metal.cmd_buf, state->render_pass_descriptor);
- 
++   census_note_encoder(true, false);
++
 +   if (kk_light_barriers()) {
 +      static uint32_t passes = 0u, waited = 0u;
 +      if (cmd->vertex_wait_pending) {
@@ -207,11 +329,31 @@ index 22f4bf7f3f1..7c0d62ed013 100644
 +                         "earlier work before their vertices\n",
 +                 p_atomic_read(&passes), p_atomic_read(&waited));
 +   }
-+
+ 
     kk_encoder_update_debug(cmd, cmd->metal.render);
     /* Starting a new render pass means we already flushed and no barrier is
-     * needed. */
-@@ -330,11 +351,57 @@ cs_get_compute(struct kk_cmd_buffer *cmd)
+@@ -311,10 +446,11 @@ cs_get_render(struct kk_cmd_buffer *cmd)
+ }
+ 
+ mtl_compute_encoder *
+-cs_get_compute(struct kk_cmd_buffer *cmd)
++cs_get_compute_at(struct kk_cmd_buffer *cmd, const char *site)
+ {
+    /* If we are inside render, we need to force a restart later */
+    if (cmd->metal.render) {
++      kk_census_note(site, true);
+       kk_apply_attachment_store_ops(cmd, true);
+       cs_end(cmd);
+       kk_cmd_buffer_dirty_all_gfx(cmd);
+@@ -322,6 +458,7 @@ cs_get_compute(struct kk_cmd_buffer *cmd)
+    }
+ 
+    if (cmd->metal.compute == NULL) {
++      kk_census_note(site, false);
+       cmd->metal.compute = mtl_new_compute_command_encoder(cmd->metal.cmd_buf);
+       mtl_compute_set_argument_table(cmd->metal.compute, cmd->argument_table);
+       kk_encoder_update_debug(cmd, cmd->metal.compute);
+@@ -330,11 +467,57 @@ cs_get_compute(struct kk_cmd_buffer *cmd)
     return cmd->metal.compute;
  }
  
@@ -271,7 +413,7 @@ index 22f4bf7f3f1..7c0d62ed013 100644
     mtl_end_encoding(encoder);
     mtl_release(encoder);
  
-@@ -464,6 +531,8 @@ kk_CmdPipelineBarrier2(VkCommandBuffer commandBuffer,
+@@ -464,6 +647,8 @@ kk_CmdPipelineBarrier2(VkCommandBuffer commandBuffer,
     /* TODO_KOSMICKRISP Lighten barriers according to the actual requested
      * barrier. To take advantage of this we need to remove the chaining of
      * encoders. */
@@ -280,8 +422,19 @@ index 22f4bf7f3f1..7c0d62ed013 100644
     if (cmd->metal.render) {
        /* Multisample attachments require render pass split always. Then based on
         * the barrier and if we are using depth/stencil or not, we may have to
+@@ -471,6 +656,10 @@ kk_CmdPipelineBarrier2(VkCommandBuffer commandBuffer,
+        */
+       if (cmd->state.gfx.render.samples > 1 ||
+           kk_barrier_requires_encoder_split(cmd, pDependencyInfo)) {
++         kk_census_note(cmd->state.gfx.render.samples > 1
++                           ? "pipeline barrier (multisampled pass)"
++                           : "pipeline barrier (attachment written, then read)",
++                        true);
+          kk_apply_attachment_store_ops(cmd, true);
+          cs_end(cmd);
+          cs_start_render(cmd);
 diff --git a/src/kosmickrisp/vulkan/kk_cmd_buffer.h b/src/kosmickrisp/vulkan/kk_cmd_buffer.h
-index dcd0983c202..d88755995f6 100644
+index dcd0983..95a8405 100644
 --- a/src/kosmickrisp/vulkan/kk_cmd_buffer.h
 +++ b/src/kosmickrisp/vulkan/kk_cmd_buffer.h
 @@ -250,6 +250,9 @@ struct kk_cmd_buffer {
@@ -294,9 +447,27 @@ index dcd0983c202..d88755995f6 100644
  
     void *drawable;
     mtl_argument_table *argument_table;
-@@ -316,6 +319,11 @@ void cs_start_render(struct kk_cmd_buffer *cmd);
+@@ -314,8 +317,28 @@ kk_get_descriptors_state(struct kk_cmd_buffer *cmd,
+ 
+ void cs_start_render(struct kk_cmd_buffer *cmd);
  mtl_render_encoder *cs_get_render(struct kk_cmd_buffer *cmd);
- mtl_compute_encoder *cs_get_compute(struct kk_cmd_buffer *cmd);
+-mtl_compute_encoder *cs_get_compute(struct kk_cmd_buffer *cmd);
++mtl_compute_encoder *cs_get_compute_at(struct kk_cmd_buffer *cmd,
++                                       const char *site);
++#define KK_CENSUS_STR2(x) #x
++#define KK_CENSUS_STR(x) KK_CENSUS_STR2(x)
++/* The place that asks for compute work is noted for the encoder census (KK_CENSUS=1). */
++#define cs_get_compute(cmd)                                                    \
++   cs_get_compute_at((cmd), __FILE__ ":" KK_CENSUS_STR(__LINE__))
++
++/* KK_CENSUS=1: every five seconds, on stderr, how many Metal encoders were made a second
++ * and what ended the render encoders before their Vulkan render pass did. */
++bool kk_census(void);
++/* A render encoder was ended before its Vulkan pass at `site` (`cut`), or a compute encoder
++ * was made there (!`cut`). */
++void kk_census_note(const char *site, bool cut);
++/* A Vulkan render pass began. */
++void kk_census_note_pass(void);
  void cs_end(struct kk_cmd_buffer *cmd);
 +
 +bool kk_light_barriers(void);
@@ -307,7 +478,7 @@ index dcd0983c202..d88755995f6 100644
                                          uint64_t addr);
  
 diff --git a/src/kosmickrisp/vulkan/kk_cmd_draw.c b/src/kosmickrisp/vulkan/kk_cmd_draw.c
-index 24f05def80d..11951011ff2 100644
+index 24f05de..d944ecf 100644
 --- a/src/kosmickrisp/vulkan/kk_cmd_draw.c
 +++ b/src/kosmickrisp/vulkan/kk_cmd_draw.c
 @@ -9,6 +9,10 @@
@@ -321,7 +492,26 @@ index 24f05def80d..11951011ff2 100644
  #include "kk_buffer.h"
  #include "kk_cmd_buffer.h"
  #include "kk_format.h"
-@@ -2255,19 +2259,51 @@ kk_launch_gs_prerast(struct kk_cmd_buffer *cmd,
+@@ -438,6 +442,7 @@ kk_CmdBeginRendering(VkCommandBuffer commandBuffer,
+ 
+    /* Rendering with no attachments requires pushing the start of the render
+     * pass to first pipeline binding to know sample count. */
++   kk_census_note_pass();
+    cmd->state.gfx.render_pass_descriptor = pass_descriptor;
+    if (!no_framebuffer)
+       cs_start_render(cmd);
+@@ -968,6 +973,10 @@ kk_flush_render_pass(struct kk_cmd_buffer *cmd)
+          kk_apply_attachment_store_ops(cmd, true);
+       }
+ 
++      kk_census_note(color_attachment_map_changed ? "pipeline with another colour "
++                                                    "attachment map"
++                                                  : "pipeline with other sample locations",
++                     true);
+       cs_end(cmd);
+       kk_cmd_buffer_dirty_all_gfx(cmd);
+       cmd->state.gfx.need_to_start_render_pass = true;
+@@ -2255,19 +2264,51 @@ kk_launch_gs_prerast(struct kk_cmd_buffer *cmd,
      * two pre-render pipelines */
     uint32_t pre_render_count = vs->pipeline.gfx.pre_render_count;
     struct mtl_size local_size = {KK_POLY_WG_SIZE, 1, 1};
@@ -386,7 +576,7 @@ index 24f05def80d..11951011ff2 100644
     struct kk_draw_data rast = {
        .primitive_type = mesa_prim_to_mtl_primitive_type(gs->info.gs.mode),
 diff --git a/src/kosmickrisp/vulkan/kk_descriptor_set.c b/src/kosmickrisp/vulkan/kk_descriptor_set.c
-index 5f56abc877d..2381be7ffba 100644
+index 5f56abc..2381be7 100644
 --- a/src/kosmickrisp/vulkan/kk_descriptor_set.c
 +++ b/src/kosmickrisp/vulkan/kk_descriptor_set.c
 @@ -526,6 +526,7 @@ kk_CreateDescriptorPool(VkDevice _device,
@@ -398,7 +588,7 @@ index 5f56abc877d..2381be7ffba 100644
        /* The BO may be larger thanks to GPU page alignment.  We may as well
         * make that extra space available to the client.
 diff --git a/src/kosmickrisp/vulkan/kk_device_memory.c b/src/kosmickrisp/vulkan/kk_device_memory.c
-index e658bd7d39c..dab68028e3d 100644
+index e658bd7..dab6802 100644
 --- a/src/kosmickrisp/vulkan/kk_device_memory.c
 +++ b/src/kosmickrisp/vulkan/kk_device_memory.c
 @@ -145,6 +145,7 @@ kk_AllocateMemory(VkDevice device, const VkMemoryAllocateInfo *pAllocateInfo,
@@ -410,7 +600,7 @@ index e658bd7d39c..dab68028e3d 100644
  
     *pMem = kk_device_memory_to_handle(mem);
 diff --git a/src/kosmickrisp/vulkan/kk_event.c b/src/kosmickrisp/vulkan/kk_event.c
-index 3e6db313375..232d4f3c471 100644
+index 3e6db31..232d4f3 100644
 --- a/src/kosmickrisp/vulkan/kk_event.c
 +++ b/src/kosmickrisp/vulkan/kk_event.c
 @@ -113,4 +113,7 @@ kk_CmdWaitEvents2(VkCommandBuffer commandBuffer, uint32_t eventCount,
@@ -422,7 +612,7 @@ index 3e6db313375..232d4f3c471 100644
 +      kk_note_dependency_outside_render(cmd, &pDependencyInfos[i]);
  }
 diff --git a/src/kosmickrisp/vulkan/kk_image.c b/src/kosmickrisp/vulkan/kk_image.c
-index 5cbf34b9804..aea51d4c848 100644
+index 5cbf34b..aea51d4 100644
 --- a/src/kosmickrisp/vulkan/kk_image.c
 +++ b/src/kosmickrisp/vulkan/kk_image.c
 @@ -11,6 +11,7 @@
@@ -482,7 +672,7 @@ index 5cbf34b9804..aea51d4c848 100644
 +}
 +#endif
 diff --git a/src/kosmickrisp/vulkan/kk_physical_device.c b/src/kosmickrisp/vulkan/kk_physical_device.c
-index 613977ac036..193b8d0d5d6 100644
+index 613977a..193b8d0 100644
 --- a/src/kosmickrisp/vulkan/kk_physical_device.c
 +++ b/src/kosmickrisp/vulkan/kk_physical_device.c
 @@ -181,6 +181,9 @@ kk_get_device_extensions(const struct kk_instance *instance,
@@ -496,7 +686,7 @@ index 613977ac036..193b8d0d5d6 100644
        .EXT_hdr_metadata = true,
        .EXT_image_2d_view_of_3d = true,
 diff --git a/src/kosmickrisp/vulkan/kk_shader.c b/src/kosmickrisp/vulkan/kk_shader.c
-index 362739cd398..438d0c253b1 100644
+index 362739c..438d0c2 100644
 --- a/src/kosmickrisp/vulkan/kk_shader.c
 +++ b/src/kosmickrisp/vulkan/kk_shader.c
 @@ -8,6 +8,10 @@
@@ -682,7 +872,7 @@ index 362739cd398..438d0c253b1 100644
  
     const struct msl_compile_data *vs_data = &vs->msl_data[vs_stage];
 diff --git a/src/kosmickrisp/vulkan/kk_shader.h b/src/kosmickrisp/vulkan/kk_shader.h
-index 296f9ffcd13..2ccb8f17afc 100644
+index 296f9ff..2ccb8f1 100644
 --- a/src/kosmickrisp/vulkan/kk_shader.h
 +++ b/src/kosmickrisp/vulkan/kk_shader.h
 @@ -126,6 +126,7 @@ struct kk_pipeline_handles {
@@ -703,7 +893,7 @@ index 296f9ffcd13..2ccb8f17afc 100644
  kk_buffer_addr_format(VkPipelineRobustnessBufferBehaviorEXT robustness)
  {
 diff --git a/src/kosmickrisp/vulkan/meson.build b/src/kosmickrisp/vulkan/meson.build
-index f82e80fd87e..665a9cdc53d 100644
+index f82e80f..665a9cd 100644
 --- a/src/kosmickrisp/vulkan/meson.build
 +++ b/src/kosmickrisp/vulkan/meson.build
 @@ -163,7 +163,13 @@ libkk = static_library(
@@ -722,7 +912,7 @@ index f82e80fd87e..665a9cdc53d 100644
    install : true,
  )
 diff --git a/src/vulkan/wsi/wsi_common_metal_layer.m b/src/vulkan/wsi/wsi_common_metal_layer.m
-index 6308d70da11..2c99e40ac7c 100644
+index 6308d70..2c99e40 100644
 --- a/src/vulkan/wsi/wsi_common_metal_layer.m
 +++ b/src/vulkan/wsi/wsi_common_metal_layer.m
 @@ -10,6 +10,7 @@
