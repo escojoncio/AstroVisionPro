@@ -379,6 +379,10 @@ struct DynamicState {
         }
     }
 
+    bool IsRasterizerDiscardEnabled() const {
+        return rasterizer_discard_enable;
+    }
+
     void SetRasterizerDiscardEnabled(const bool enabled) {
         if (rasterizer_discard_enable != enabled) {
             rasterizer_discard_enable = enabled;
