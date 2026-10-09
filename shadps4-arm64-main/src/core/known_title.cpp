@@ -22,6 +22,7 @@
 #include "core/known_title_builds.h"
 #include "core/memory.h"
 #include "core/vr/vr_runtime.h"
+#include "video_core/amdgpu/game_clock.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
 
 namespace Core::KnownTitle {
@@ -795,6 +796,103 @@ void DumpResolutionControl(VAddr base, const Build& build, Clock::time_point now
     LOG_INFO(Core, "QUALITY_DUMP: the title's size control at {:#x}: {}", control, text);
 }
 
+/// The automatic GPU clock (SHADPS4_GPU_CLOCK_SCALE=auto, video_core/amdgpu/game_clock.h): the
+/// title keeps in its size control object two times it measured on its GPU clocks (doubles at
+/// 0x08 and 0x10, milliseconds) and its frame rate (0x18), and leaves shadows and effects out
+/// when they look long. The clocks are slowed, within each frame, by as much as keeps the larger
+/// of the two at a quarter of a frame of the title's (as they were with the clocks at half
+/// speed, when it drew everything). Every five seconds a line in the log: GPU_CLOCK_AUTO.
+class GpuClockTuner {
+public:
+    void Tune(VAddr base, const Build& build, Clock::time_point now) {
+        if (!AmdGpu::GameClock::IsAutomatic()) {
+            return;
+        }
+        const u64 control = Read<u64>(base + build.resolution_pointer);
+        auto* const memory = Core::Memory::Instance();
+        if (control == 0 || (control & 3) != 0 || !memory->IsValidMapping(control, 0x20)) {
+            return;
+        }
+        const double a = Read<double>(control + 0x08);
+        const double b = Read<double>(control + 0x10);
+        const u32 rate = Read<u32>(control + 0x18);
+        const auto plausible = [](double ms) { return std::isfinite(ms) && ms > 0.0 && ms < 500.0; };
+        if (!plausible(a) && !plausible(b)) {
+            Report(now, a, b);
+            return;
+        }
+        const double measured = std::max(plausible(a) ? a : 0.0, plausible(b) ? b : 0.0);
+        const double fps = rate >= 30 && rate <= 120 ? static_cast<double>(rate) : 60.0;
+        target = Target() > 0.0 ? Target() : 250.0 / fps;
+        // What the title measures follows the clocks with a lag; the factor moves a little
+        // every frame toward where the measured time would sit at the target.
+        // A load or a clock put back in the middle of a frame reads as one huge time: it counts
+        // no more than four times the target.
+        const double counted = std::min(measured, target * 4.0);
+        averaged = averaged == 0.0 ? counted : averaged + (counted - averaged) * 0.08;
+        const double factor = AmdGpu::GameClock::Factor();
+        const double wanted = std::clamp(factor * target / std::max(averaged, 0.01), 0.1, 1.0);
+        AmdGpu::GameClock::SetFactor(factor + (wanted - factor) * 0.03);
+        Report(now, a, b);
+    }
+
+private:
+    /// SHADPS4_GPU_CLOCK_TARGET_MS: the time the title is to measure; a quarter of its frame
+    /// when not given.
+    static double Target() {
+        static const double value = [] {
+            const char* text = std::getenv("SHADPS4_GPU_CLOCK_TARGET_MS");
+            if (text == nullptr) {
+                return 0.0;
+            }
+            double whole = 0.0;
+            double fraction = 0.0;
+            double place = 0.1;
+            bool after_mark = false;
+            for (const char* c = text; *c != '\0'; ++c) {
+                if (*c >= '0' && *c <= '9') {
+                    if (after_mark) {
+                        fraction += (*c - '0') * place;
+                        place /= 10.0;
+                    } else {
+                        whole = whole * 10.0 + (*c - '0');
+                    }
+                } else if ((*c == '.' || *c == ',') && !after_mark) {
+                    after_mark = true;
+                } else {
+                    return 0.0;
+                }
+            }
+            return std::clamp(whole + fraction, 0.5, 30.0);
+        }();
+        return value;
+    }
+
+    void Report(Clock::time_point now, double a, double b) {
+        if (now < next_report) {
+            return;
+        }
+        if (next_report == Clock::time_point{}) {
+            next_report = now + std::chrono::seconds{5};
+            return;
+        }
+        next_report = now + std::chrono::seconds{5};
+        const auto stats = AmdGpu::GameClock::TakeResyncStats();
+        LOG_INFO(Core,
+                 "GPU_CLOCK_AUTO: factor {:.2f}; the title measures {:.2f} and {:.2f} ms "
+                 "(averaged {:.2f}, aimed at {:.2f}); put back on real time {} times at a frame's "
+                 "end and {} for lack of one, {:.1f} ms caught up in all",
+                 AmdGpu::GameClock::Factor(), a, b, averaged, target, stats.frames, stats.late,
+                 stats.catch_up_ms);
+    }
+
+    double averaged{};
+    double target{};
+    Clock::time_point next_report{};
+};
+
+GpuClockTuner gpu_clock_tuner;
+
 } // namespace
 
 void OnControllerRead() {
@@ -856,6 +954,7 @@ void OnFrameSubmitted() {
     }
     const s32 resolution = TendResolution(base, *build, wanted);
     DumpResolutionControl(base, *build, now);
+    gpu_clock_tuner.Tune(base, *build, now);
     frame_pace.store(governor.Pace(), std::memory_order_relaxed);
 
     if (settings.time_step) {
