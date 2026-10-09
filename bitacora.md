@@ -5,7 +5,7 @@ Base: shadPS4 ARM64 (`shadps4-arm64-main/`) + FEXCore (x86-64 → ARM64) + Molte
 App visionOS en `visionos/` (SwiftUI + Compositor Services + ARKit + GameController).
 JIT: arena RWX preparada por StikDebug (protocolo `brk #0xf00d` + universal.js); la app hace detach al terminar.
 
-## Commit siguiente a a74e9a5: prueba de GPU por shader (L3+R3) — build lanzada
+## Build 2f34cf1 (run 37971920274): OK, `visionos-latest/AstroQuest.ipa` (sin probar) — prueba de GPU por shader (L3+R3)
 - `gpu_bench.h` / `vk_rasterizer.cpp` (`GpuBench`): `Start()` lanza la prueba por shader salvo `SHADPS4_GPU_BENCH=stages` (la de etapas de antes). Prueba por shader: 4 s contando draws y vértices por hash de fragment shader en pasadas de escena (`BenchLeavesOut`: profundidad + algún color, ancho ≥ 1024); elige hasta 10 (6 por draws + resto por vértices); pasos de 3 s `[B, c0, B, c1, …, B, cN, B, todos, B]` (B = normal). `ShaderDraw` cuenta/decide la omisión; `AdvanceShaderTest` (desde `Current()`) elige candidatos, fija `out_hash`/`one_out`/`all_out` y registra pasos. `TimingTag()` (paso actual, -1 en el primer 0.5 s de cada paso o en el recuento) → `GpuTimer` (`vk_scheduler.cpp`) lo guarda en `Block::bench_tag` en `Begin`, lo anula en `End` si cambió, y en `Collect` llama a `NoteGpuTime(id, tag, ms)`. Resultado ~1 s tras el último paso, con el temporizador de más tiempo (el del juego).
 - `BenchLeavesOut(mode, pipeline, vertices)` (firma nueva en `vk_rasterizer.h`).
 - Log: `GPU_SHADER_BENCH: counted …` (candidatos con vs, GS, draws/s, k vértices/s), `step i of n`, `done`, `result: as they are X ms (de A a B en N pasos = ruido)` y una línea por candidato `without fs …: out ms against base = ±ms (%)` ordenadas por ahorro, más «all N at once».
