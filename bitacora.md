@@ -85,6 +85,12 @@ Incluye ab5f2f9 (banco de GPU, ver abajo) y 54d91d2 (botón «Probar vibración�
 - Revisión adversarial aplicada: motores que podían quedar a nil para siempre tras rehacerlos, vibración en curso no reenviada, lanzador duplicado al salir con `close_launcher=0`, carrera fin/Start del banco, includes.
 - Qué probar: (1) en el lanzador, «Probar vibración del mando» → `Controller rumble test …`; (2) jugar con «Cerrar el lanzador al jugar» activado y buscar `motors made anew`, `App:` y `could not play`; (3) si sigue sin vibrar, desactivarlo y probar el botón con la ventana abierta durante la partida; (4) en el mundo, quieto, L3+R3 → 11 pasos de 10 s: leer `GPU_BENCH: step i` y el `GPU_TIME` siguiente.
 
+## Build VPEngine 269a5e0 (run 37950678955): OK — primera IPA sin FEX ni JIT (sin probar)
+- Release `visionos-vpengine`: https://github.com/escojoncio/AstroVisionPro/releases/download/visionos-vpengine/AstroQuest-VPEngine.ipa (64,7 MB; app 160 MB con KK). Bundle `com.kdt.livecontainer` (sustituye a la normal al instalar).
+- Log `ci-logs/visionos-vpengine.txt`: 0 errores; núcleo recompilado (ccache); enlace `-lvpconvert_all -lastroquest_core … -lVPRuntime`, sin símbolos duplicados; `otool -L` con `@rpath/libVPRuntime.dylib`; único aviso `__DATA,__common` 0x8000→0x4000 (también en la build normal). vpconvert de VPEngine d1b289f (release reconstruida, la comprobación de COMMIT pasó).
+- Swift compartido: `swiftc -typecheck` contra xros 26 con la interfaz C (workflow «visionOS layer type-check» de VPEngine, ahora con `platform/visionos/vpengine-bridge.h`): OK.
+- Siguiente (usuario en el visor): importar certificado (SideStore o .p12) → Convertir → compartir `conversion.log` (Ajustes › VPEngine) y `Documents/vpengine_missing.txt` si arranca. Incierto: aceptación de la firma del paquete (amfid), memoria/tiempo de conversión, arranque real.
+
 ## Revisión adversarial de la variante VPEngine (2026-10-09 tarde) — corregido, sin build aún
 - **Zydis duplicado (grave):** `libastroquest_core.a` llevaba el Zydis de shadPS4 (submódulo 120e0e7) y
   `libvpconvert_all.a` el de VPEngine (a95bb71); mismos símbolos, otro layout (medido: `sizeof
