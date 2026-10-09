@@ -57,6 +57,8 @@ targets:
           - -framework Foundation
           - -framework UIKit
           - -framework AVFoundation
+          - -framework AVFAudio
+          - -framework PHASE
           - -framework AudioToolbox
           - -framework CoreAudio
           - -framework CoreHaptics

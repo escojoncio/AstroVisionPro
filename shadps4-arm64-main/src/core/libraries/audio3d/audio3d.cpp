@@ -14,6 +14,9 @@
 #include "core/libraries/audio/audioout_error.h"
 #include "core/libraries/audio3d/audio3d.h"
 #include "core/libraries/audio3d/audio3d_error.h"
+#if defined(SHADPS4_VISIONOS)
+#include "core/libraries/audio/spatial_audio.h"
+#endif
 #include "core/libraries/error_codes.h"
 #include "core/libraries/libs.h"
 
@@ -552,6 +555,12 @@ s32 PS4_SYSV_ABI sceAudio3dPortAdvance(const OrbisAudio3dPortId port_id) {
         std::free(data.sample_buffer);
     }
 
+#if defined(SHADPS4_VISIONOS)
+    // With the headset's 3D audio each object is a sound of its own there (spatial_audio.h).
+    const bool spatial_audio = SpatialAudio::Available();
+    SpatialAudio::ObjectsTick();
+#endif
+
     // Every object that got a block since the last advance is placed around the listener.
     u32 active = 0;
     const ObjectState* loudest = nullptr;
@@ -574,8 +583,17 @@ s32 PS4_SYSV_ABI sceAudio3dPortAdvance(const OrbisAudio3dPortId port_id) {
                 mix[i * 2 + 1] += obj.pcm[i] * gain;
             }
         } else {
-            obj.spatializer.Process(obj.pcm.data(), granularity, mix, obj.placement,
-                                    static_cast<float>(AUDIO3D_SAMPLE_RATE));
+#if defined(SHADPS4_VISIONOS)
+            // A sound from all around (a wide spread) has no direction to give the headset:
+            // it stays in the mix, as do objects beyond the headset's voices.
+            const bool point = obj.placement.spread < 1.5f;
+            if (!(spatial_audio && point &&
+                  SpatialAudio::WriteObject((u64{port_id} << 32) | obj_id, obj.pcm.data(),
+                                            granularity, obj.placement.x, obj.placement.y,
+                                            obj.placement.z, obj.placement.gain)))
+#endif
+                obj.spatializer.Process(obj.pcm.data(), granularity, mix, obj.placement,
+                                        static_cast<float>(AUDIO3D_SAMPLE_RATE));
         }
         if (loudest == nullptr || obj.placement.gain > loudest->placement.gain) {
             loudest = &obj;

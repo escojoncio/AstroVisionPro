@@ -1390,9 +1390,13 @@ if (SHADPS4_VISIONOS)
         src/platform/visionos/jit_arena.c
         src/platform/visionos/diagnostics.c
         src/platform/visionos/logging.c
+        src/core/libraries/audio/spatial_audio.h
+        src/core/libraries/audio/spatial_audio_visionos.mm
     )
     target_include_directories(shadps4 PRIVATE src/platform/visionos)
     set_source_files_properties(src/platform/visionos/astro_core.mm
+        PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
+    set_source_files_properties(src/core/libraries/audio/spatial_audio_visionos.mm
         PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
     # Vulkan's Metal structures hold Objective-C pointers, which ARC would make non-trivial
     # (vulkan.hpp needs them trivial): this file is built without ARC. The textures it hands
