@@ -90,6 +90,13 @@ typedef enum AstroCoreState {
 /// its data (saves, logs, shader cache) in Library/Application Support/shadPS4 of the app.
 /// To be called on the main thread. Returns 0, or an errno value.
 int astro_core_start(const char* game_path, const char* const* environment, int count);
+
+/// VPEngine: what the emulator changes in a title's code when it loads it with these settings
+/// (the same environment as astro_core_start), made on `image` (the module at its link base,
+/// offset 0 = its lowest address), so that the code is translated ahead of time as it will run.
+/// 1 when the title is one the emulator changes, 0 otherwise. Any thread; no other effect.
+int astro_core_title_code_patches(unsigned char* image, unsigned long size,
+                                  const char* const* environment, int count);
 AstroCoreState astro_core_state(void);
 /// The emulator's exit code once it has stopped.
 int astro_core_exit_code(void);
