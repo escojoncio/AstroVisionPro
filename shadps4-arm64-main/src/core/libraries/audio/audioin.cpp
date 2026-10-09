@@ -11,6 +11,9 @@
 #include "audioin_error.h"
 #include "common/logging/log.h"
 #include "core/libraries/audio/audioin.h"
+#ifdef SHADPS4_VISIONOS
+#include "core/libraries/audio/spatial_audio.h"
+#endif
 #include "core/libraries/error_codes.h"
 #include "core/libraries/libs.h"
 #include "input/scripted_input.h"
@@ -228,6 +231,14 @@ int PS4_SYSV_ABI sceAudioInOpen(Libraries::UserService::OrbisUserServiceUserId u
         // here
 #ifdef ENABLE_BACHATA_RUNTIME
         audio = std::make_unique<BachataAudioIn>();
+#elif defined(SHADPS4_VISIONOS)
+        // The headset's audio (and its microphone) may not have started yet: the title can open
+        // its microphone before its first output port.
+        if (SpatialAudio::Start() && SpatialAudio::OpenMicrophone()) {
+            audio = std::make_unique<PhaseAudioIn>();
+        } else {
+            audio = std::make_unique<SDLAudioIn>();
+        }
 #else
         audio = std::make_unique<SDLAudioIn>();
 #endif

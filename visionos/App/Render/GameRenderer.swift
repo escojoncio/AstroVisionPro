@@ -302,10 +302,10 @@ final class GameRenderer: @unchecked Sendable {
             edgeSmoother = EdgeSmoother(device: device, library: library, pixelFormat: format)
             if edgeSmoother == nil {
                 smootherFailedFor = format
-                LogFiles.log("Edge smoothing: not available for format \(format.rawValue)")
+                LogFiles.log("Antialiasing (SMAA): not available for format \(format.rawValue)")
                 return
             }
-            LogFiles.log("Edge smoothing (FXAA): on, \(texture.width)x\(texture.height)")
+            LogFiles.log("Antialiasing (SMAA): on, \(texture.width)x\(texture.height)")
         }
         smoothed = edgeSmoother?.encode(frame: texture, commandBuffer: commandBuffer) ?? false
         if smoothed { smoothFrames += 1 }
@@ -338,7 +338,7 @@ final class GameRenderer: @unchecked Sendable {
                 text += "; the frame's texture is not a Metal texture"
             }
             if smoothFrames > 0 {
-                text += "; \(smoothFrames) with edges smoothed"
+                text += "; \(smoothFrames) antialiased (SMAA)"
             }
             if upscaleFrames > 0, let upscaler {
                 text += "; \(upscaleFrames) enlarged to \(upscaler.outputWidth)x\(upscaler.outputHeight) an eye"

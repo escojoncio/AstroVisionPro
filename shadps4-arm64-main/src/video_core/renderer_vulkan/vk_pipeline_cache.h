@@ -192,6 +192,8 @@ private:
         std::chrono::steady_clock::time_point queued{};
         u32 compile_ms{};
         std::atomic<bool> done{};
+        /// A draw waited for it already (WaitForJob): the others are left out until it is made.
+        bool waited{};
     };
     class PipelineWorkers;
     const GraphicsPipeline* FinishPendingGraphicsPipeline(PendingGraphicsPipeline& job);

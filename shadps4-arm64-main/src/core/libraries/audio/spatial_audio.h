@@ -39,6 +39,16 @@ bool WriteObject(u64 key, const float* mono, u32 count, float x, float y, float 
 /// Called once per block of the 3D port: objects silent for a while give their voice back.
 void ObjectsTick();
 
+/// The microphone, taken on the headset's own audio session when the title first opens it (SDL
+/// would take the session down under PHASE): opening it (once; whether it is on), whether it
+/// is on, mono frames at 48 kHz waiting, reading them (the rest of `count` is silence; answers
+/// with how many were heard), dropping them.
+bool OpenMicrophone();
+bool MicrophoneOn();
+u32 MicrophoneQueued();
+u32 MicrophoneRead(float* mono, u32 count);
+void MicrophoneClear();
+
 /// Called often by whoever writes to the voices: when PHASE has stopped asking for sound (the
 /// audio session was taken down under it), it is started again.
 void Watch();

@@ -493,7 +493,10 @@ public:
         pass.depth = state.depth_stencil_attachment.has_depth;
         block.passes.push_back(pass);
         const u32 query = current * BlockQueries + 2 + 2 * u32(block.passes.size() - 1);
-        cmdbuf.writeTimestamp(vk::PipelineStageFlagBits::eBottomOfPipe, pool, query);
+        // At the start of the pass (in KosmicKrisp: after the vertex stage of nothing yet); the
+        // end is taken after its last stage, a different one (a driver keeps one timestamp a
+        // stage in a pass).
+        cmdbuf.writeTimestamp(vk::PipelineStageFlagBits::eTopOfPipe, pool, query);
         pass_open = true;
     }
 
@@ -871,10 +874,13 @@ void Scheduler::BeginRendering(const RenderState& requested) {
         .pStencilAttachment = db.has_stencil ? &stencil_attachment : nullptr,
     };
 
+    current_cmdbuf.beginRendering(rendering_info);
+    // The pass's timestamps are taken inside it: one taken between passes makes KosmicKrisp
+    // open a compute encoder of its own for it, and every encoder that ends waits for all the
+    // GPU's work (two such stops a pass kept passes from overlapping on the GPU).
     if (gpu_timer) {
         gpu_timer->PassBegin(current_cmdbuf, render_state);
     }
-    current_cmdbuf.beginRendering(rendering_info);
 
     FrameStats::RenderPass(render_state);
 }
@@ -889,10 +895,10 @@ void Scheduler::EndRendering(std::source_location where) {
     if (const u32 limit = FlushDraws(); limit != 0 && draws_since_flush >= limit) {
         flush_due = true;
     }
-    current_cmdbuf.endRendering();
     if (gpu_timer) {
         gpu_timer->PassEnd(current_cmdbuf);
     }
+    current_cmdbuf.endRendering();
 }
 
 void Scheduler::NoteDraw(u64 gs_hash) {

@@ -28,6 +28,13 @@ public:
     std::unique_ptr<PortInBackend> Open(PortIn& port) override;
 };
 
+/// The headset's microphone, taken by the audio engine of the headset's 3D audio from the
+/// start (spatial_audio.h); see phase_audio_in.cpp.
+class PhaseAudioIn final : public AudioInBackend {
+public:
+    std::unique_ptr<PortInBackend> Open(PortIn& port) override;
+};
+
 /// The microphone of the device the host app runs on, see bachata_audio_in.cpp.
 class BachataAudioIn final : public AudioInBackend {
 public:

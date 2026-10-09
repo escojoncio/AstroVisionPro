@@ -67,6 +67,11 @@ public:
         skip_to.store(write.load(std::memory_order_relaxed), std::memory_order_release);
     }
 
+    /// Drops what is waiting (from the reader's side).
+    void SkipAll() {
+        read.store(write.load(std::memory_order_acquire), std::memory_order_release);
+    }
+
     u32 Queued() const {
         const u64 w = write.load(std::memory_order_acquire);
         const u64 r = std::max(read.load(std::memory_order_acquire),
@@ -105,6 +110,9 @@ private:
     std::atomic<u64> skip_to{0};
 };
 
+/// What the microphone heard, mono at SampleRate (a second at most).
+std::unique_ptr<Ring> g_mic_ring;
+
 enum class Kind { Object, Fixed, Stereo };
 
 struct Voice {
@@ -133,6 +141,11 @@ std::mutex g_make_mutex;
 std::once_flag g_once;
 std::atomic<bool> g_available{false};
 PHASEEngine* g_engine = nil;
+
+/// The microphone, taken with the session's own engine from the start (StartMicrophone): one
+/// owner of the audio session, so nothing takes it down under PHASE when the title opens it.
+AVAudioEngine* g_mic_engine = nil;
+std::atomic<bool> g_mic_on{false};
 PHASEListener* g_listener = nil;
 u32 g_device_frames = 256;
 /// Voices are never taken apart and never move: the table does not grow, so a voice can be
@@ -349,6 +362,8 @@ int Take(Kind kind) {
 std::atomic<bool> g_recovering{false};
 u32 g_recoveries = 0;
 
+bool StartMicEngine();
+
 void Recover(u64 stalled_ms) {
     @autoreleasepool {
         AVAudioSession* session = [AVAudioSession sharedInstance];
@@ -368,6 +383,10 @@ void Recover(u64 stalled_ms) {
         started = [g_engine startAndReturnError:&error];
         const std::string start_error =
             started ? "" : (error.localizedDescription.UTF8String ?: "?");
+        // The microphone's engine stops with the session too.
+        if (g_mic_engine != nil && !g_mic_engine.isRunning) {
+            StartMicEngine();
+        }
         u32 resumed = 0;
         u32 remade = 0;
         // Voices are made under this lock (Take): none is half made while they are gone over.
@@ -406,7 +425,165 @@ void Recover(u64 stalled_ms) {
     }
 }
 
+/// Taps the microphone in the format it has now: mono, resampled to SampleRate, into g_mic_ring.
+/// False when it has no input (or the tap was refused).
+bool InstallMicTap() {
+    AVAudioInputNode* input = g_mic_engine.inputNode;
+    @try {
+        [input removeTapOnBus:0];
+    } @catch (NSException*) {
+    }
+    AVAudioFormat* format = [input outputFormatForBus:0];
+    if (format == nil || format.sampleRate <= 0 || format.channelCount == 0) {
+        LOG_WARNING(Lib_AudioIn, "MICROPHONE: there is none");
+        return false;
+    }
+    Ring* ring = g_mic_ring.get();
+    const double step = format.sampleRate / static_cast<double>(SampleRate);
+    // Linear resampling from the microphone's rate, carried over from block to block.
+    auto position = std::make_shared<double>(0.0);
+    auto previous = std::make_shared<float>(0.0f);
+    @try {
+        [input installTapOnBus:0
+                    bufferSize:1024
+                        format:format
+                         block:^(AVAudioPCMBuffer* buffer, AVAudioTime*) {
+                           const u32 frames = buffer.frameLength;
+                           const u32 channels = buffer.format.channelCount;
+                           float* const* data = buffer.floatChannelData;
+                           if (data == nullptr || frames < 2 || channels == 0) {
+                               return;
+                           }
+                           // Nobody read for a while (half a second waits): what waits is old.
+                           if (ring->Queued() > SampleRate / 2) {
+                               ring->Discard();
+                           }
+                           float mono[2048];
+                           u32 made = 0;
+                           const auto sample = [&](s64 i) -> float {
+                               if (i < 0) {
+                                   return *previous;
+                               }
+                               float sum = 0.0f;
+                               for (u32 c = 0; c < channels; ++c) {
+                                   sum += data[c][i];
+                               }
+                               return sum / static_cast<float>(channels);
+                           };
+                           double at = *position;
+                           while (at < static_cast<double>(frames) - 1.0 + 1e-9) {
+                               const s64 i = static_cast<s64>(std::floor(at));
+                               const float t = static_cast<float>(at - std::floor(at));
+                               const float a = sample(i);
+                               const float b = sample(std::min<s64>(i + 1, frames - 1));
+                               mono[made++] = a + (b - a) * t;
+                               if (made == 2048) {
+                                   ring->Write(mono, made);
+                                   made = 0;
+                               }
+                               at += step;
+                           }
+                           if (made > 0) {
+                               ring->Write(mono, made);
+                           }
+                           *previous = sample(frames - 1);
+                           // Counted from the last sample of this block (index -1 of the next).
+                           *position = at - static_cast<double>(frames);
+                         }];
+    } @catch (NSException* exception) {
+        LOG_WARNING(Lib_AudioIn, "MICROPHONE: not tapped: {}",
+                    exception.reason.UTF8String ?: "?");
+        return false;
+    }
+    LOG_INFO(Lib_AudioIn, "MICROPHONE: {} Hz, {} channels, to mono {} Hz", format.sampleRate,
+             format.channelCount, SampleRate);
+    return true;
+}
+
+/// (Re)starts the microphone's engine with a tap for the input it has now.
+bool StartMicEngine() {
+    if (!InstallMicTap()) {
+        return false;
+    }
+    NSError* error = nil;
+    bool started = false;
+    @try {
+        [g_mic_engine prepare];
+        started = [g_mic_engine startAndReturnError:&error];
+    } @catch (NSException* exception) {
+        LOG_WARNING(Lib_AudioIn, "MICROPHONE: did not start: {}",
+                    exception.reason.UTF8String ?: "?");
+        return false;
+    }
+    if (!started) {
+        LOG_WARNING(Lib_AudioIn, "MICROPHONE: did not start: {}",
+                    error.localizedDescription.UTF8String ?: "?");
+    }
+    return started;
+}
+
+/// Starts taking the microphone when the title first opens it (StartMicEngine), with the engine
+/// of its own on the session as it is (SDL would take the session down and set it up again,
+/// which silences PHASE for a moment); it is tapped again whenever the input changes.
+void StartMicrophone() {
+    if (AVAudioSession.sharedInstance.recordPermission == AVAudioSessionRecordPermissionDenied) {
+        LOG_INFO(Lib_AudioIn, "MICROPHONE: not allowed by the system; the title hears silence");
+        return;
+    }
+    g_mic_engine = [[AVAudioEngine alloc] init];
+    g_mic_ring = std::make_unique<Ring>(1, SampleRate);
+    if (!StartMicEngine()) {
+        g_mic_engine = nil;
+        return;
+    }
+    [[NSNotificationCenter defaultCenter]
+        addObserverForName:AVAudioEngineConfigurationChangeNotification
+                    object:g_mic_engine
+                     queue:nil
+                usingBlock:^(NSNotification*) {
+                  LOG_INFO(Lib_AudioIn, "MICROPHONE: its input changed, tapped again");
+                  StartMicEngine();
+                }];
+    g_mic_on.store(true, std::memory_order_release);
+}
+
 } // namespace
+
+bool OpenMicrophone() {
+    static std::once_flag once;
+    std::call_once(once, [] {
+        if (!Available()) {
+            return;
+        }
+        @autoreleasepool {
+            StartMicrophone();
+        }
+    });
+    return MicrophoneOn();
+}
+
+bool MicrophoneOn() {
+    return g_mic_on.load(std::memory_order_acquire);
+}
+
+u32 MicrophoneQueued() {
+    return MicrophoneOn() ? g_mic_ring->Queued() : 0;
+}
+
+u32 MicrophoneRead(float* mono, u32 count) {
+    if (!MicrophoneOn()) {
+        std::fill(mono, mono + count, 0.0f);
+        return 0;
+    }
+    float* planes[1] = {mono};
+    return g_mic_ring->Read(planes, 1, count);
+}
+
+void MicrophoneClear() {
+    if (MicrophoneOn()) {
+        g_mic_ring->SkipAll();
+    }
+}
 
 void Watch() {
     if (!Available()) {

@@ -12,6 +12,7 @@
 #include <exception>
 #include <mutex>
 #include <string>
+#include <utility>
 #include <vector>
 #include <ranges>
 
@@ -468,6 +469,58 @@ PipelineCache::PipelineCache(const Instance& instance_, Scheduler& scheduler_,
 
 PipelineCache::~PipelineCache() = default;
 
+/// How long a draw waits for its pipeline being made on a worker before it is left out
+/// (SHADPS4_PIPELINE_WAIT_MS, 0 to 200; 40 by default). Most come from the driver's shader cache
+/// in a few milliseconds: a draw left out for them is a picture without what it draws (a
+/// world shown whole for a moment before the title's own effect of building it up starts).
+static std::chrono::milliseconds PipelineWait() {
+    static const std::chrono::milliseconds wait = [] {
+        long ms = 40;
+        if (const char* value = std::getenv("SHADPS4_PIPELINE_WAIT_MS"); value && *value) {
+            ms = std::clamp(std::atol(value), 0L, 200L);
+        }
+        return std::chrono::milliseconds{ms};
+    }();
+    return wait;
+}
+
+/// Waits for the job to be done, the first draw that asks only; true when it is.
+template <typename Job>
+static bool WaitForJob(Job& job) {
+    const auto& done = job.done;
+    if (done.load(std::memory_order_acquire)) {
+        return true;
+    }
+    if (std::exchange(job.waited, true)) {
+        return false;
+    }
+    // No more than PipelineWait in all in any tenth of a second: many new pipelines at once
+    // (a level coming in) cost a few frames, not one of seconds.
+    using Clock = std::chrono::steady_clock;
+    static Clock::time_point window_start{};
+    static Clock::duration window_waited{};
+    const auto now = Clock::now();
+    if (now - window_start > std::chrono::milliseconds(100)) {
+        window_start = now;
+        window_waited = {};
+    }
+    const auto budget = PipelineWait() - window_waited;
+    if (budget <= Clock::duration::zero()) {
+        return false;
+    }
+    const auto until = now + budget;
+    bool ready = true;
+    while (!done.load(std::memory_order_acquire)) {
+        if (Clock::now() >= until) {
+            ready = false;
+            break;
+        }
+        std::this_thread::sleep_for(std::chrono::microseconds(250));
+    }
+    window_waited += Clock::now() - now;
+    return ready;
+}
+
 const GraphicsPipeline* PipelineCache::GetGraphicsPipeline() {
     const auto started = std::chrono::steady_clock::now();
     if (!RefreshGraphicsKey()) {
@@ -482,7 +535,7 @@ const GraphicsPipeline* PipelineCache::GetGraphicsPipeline() {
         if (const auto pending = pending_graphics_pipelines.find(graphics_key);
             pending != pending_graphics_pipelines.end()) {
             fetch_shader.reset();
-            if (!pending->second->done.load(std::memory_order_acquire)) {
+            if (!WaitForJob(*pending->second)) {
                 ++skipped_draws;
                 return nullptr;
             }
@@ -529,6 +582,12 @@ const GraphicsPipeline* PipelineCache::GetGraphicsPipeline() {
             job->done.store(true, std::memory_order_release);
         });
         fetch_shader.reset();
+        if (WaitForJob(*job)) {
+            const auto it_pending = pending_graphics_pipelines.find(graphics_key);
+            const auto ready_job = it_pending->second;
+            pending_graphics_pipelines.erase(it_pending);
+            return FinishPendingGraphicsPipeline(*ready_job);
+        }
         ++skipped_draws;
         return nullptr;
     }
