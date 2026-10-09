@@ -375,6 +375,12 @@ final class PlayStationController: @unchecked Sendable {
 
     @MainActor
     private func remakeRumbleNow(reason: String) {
+        // Not while the rumble test runs: it makes its own engines, and the game's motors are
+        // made anew when it ends.
+        if RumbleTest.isRunning {
+            LogFiles.log("Controller rumble: not made anew (\(reason)) while the rumble test runs")
+            return
+        }
         lock.lock()
         let chosen = controller
         let senses = [senseLeft, senseRight].compactMap { $0 }
@@ -540,26 +546,29 @@ final class PlayStationController: @unchecked Sendable {
         return controller
     }
 
-    /// The settings' «Probar vibración»: both motors at full strength for half a second, outside
-    /// the game (whether rumble works at all, or only not in the immersive space).
-    func testRumble() {
+    /// The settings' «Probar vibración» (RumbleTest.swift): five ways of making the controller
+    /// rumble, one after the other, with the game's own motors stopped meanwhile (made anew
+    /// afterwards), so that no other engine of the app is on the controller during the test.
+    /// `report` is told each step as it starts and "" at the end. On the main thread.
+    @MainActor
+    func testRumble(report: @escaping (String) -> Void) {
+        guard !RumbleTest.isRunning else { return }
         lock.lock()
-        let low = lowFrequency
-        let high = highFrequency
-        let name = controller?.vendorName ?? "none"
+        let chosen = controller
+        let motors = [lowFrequency, highFrequency].compactMap { $0 }
+        lowFrequency = nil
+        highFrequency = nil
         lock.unlock()
-        let state = Thread.isMainThread ? MainActor.assumeIsolated { Self.appState() } : "?"
-        LogFiles.log("Controller rumble test on \(name): motors \(low != nil ? "yes" : "no")/\(high != nil ? "yes" : "no"); \(state)")
-        low?.setIntensity(1.0)
-        if high !== low {
-            high?.setIntensity(1.0)
+        LogFiles.log("Controller rumble test: \(Self.appState())")
+        var stopped = Set<ObjectIdentifier>()
+        for motor in motors where stopped.insert(ObjectIdentifier(motor)).inserted {
+            motor.stop()
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-            low?.setIntensity(0)
-            if high !== low {
-                high?.setIntensity(0)
+        RumbleTest.run(controller: chosen) { [weak self] step in
+            report(step)
+            if step.isEmpty {
+                self?.remakeRumble(after: 0.1, reason: "after the rumble test")
             }
-            LogFiles.log("Controller rumble test: done")
         }
     }
 
@@ -785,7 +794,8 @@ final class RumbleMotor: @unchecked Sendable {
     /// Told when the motor's engine stops by itself (on CoreHaptics' queue), with the reason.
     private let onStopped: ((CHHapticEngine.StoppedReason) -> Void)?
     private var engine: CHHapticEngine?
-    private var player: CHHapticAdvancedPatternPlayer?
+    /// A plain player, as SDL uses (its strength changed with sendParameters).
+    private var player: CHHapticPatternPlayer?
     private var active = false
     /// The last strength asked for, played again on an engine made anew.
     private var wanted: Float = 0
@@ -828,8 +838,8 @@ final class RumbleMotor: @unchecked Sendable {
             }
             return nil
         }
-        // Rumble only: no audio of its own, so nothing about the audio session concerns it.
-        engine.playsHapticsOnly = true
+        // As SDL makes it: nothing else set (playsHapticsOnly was tried, log 2026-10-09 14:01,
+        // and made no difference).
         engine.stoppedHandler = { [weak self, weak engine] reason in
             guard let self else { return }
             self.lock.lock()
@@ -924,7 +934,7 @@ final class RumbleMotor: @unchecked Sendable {
                     relativeTime: 0,
                     duration: TimeInterval(GCHapticDurationInfinite))
                 let pattern = try CHHapticPattern(events: [event], parameters: [])
-                player = try engine.makeAdvancedPlayer(with: pattern)
+                player = try engine.makePlayer(with: pattern)
                 active = false
             }
             try player?.sendParameters(

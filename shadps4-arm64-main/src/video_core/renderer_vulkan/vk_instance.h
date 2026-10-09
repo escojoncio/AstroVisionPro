@@ -190,12 +190,13 @@ public:
 
     /// Returns true when VK_EXT_primitive_topology_list_restart is supported for regular lists.
     bool IsListRestartSupported() const {
-        return list_restart && list_restart_features.primitiveTopologyListRestart;
+        return list_restart && !list_restart_off && list_restart_features.primitiveTopologyListRestart;
     }
 
     /// Returns true when VK_EXT_primitive_topology_list_restart is supported for patch lists.
     bool IsPatchListRestartSupported() const {
-        return list_restart && list_restart_features.primitiveTopologyPatchListRestart;
+        return list_restart && !list_restart_off &&
+               list_restart_features.primitiveTopologyPatchListRestart;
     }
 
     /// Returns true when VK_EXT_legacy_vertex_attributes is supported.
@@ -554,6 +555,10 @@ private:
     bool vertex_input_dynamic_state{};
     bool robustness2{};
     bool list_restart{};
+    /// Restart on lists left out although the driver has it (SHADPS4_LIST_RESTART=0): titles
+    /// leave restart on where they do not need it, and KosmicKrisp unrolls every such draw with
+    /// a compute pass (as shadPS4 upstream does for KosmicKrisp since its PR #5161).
+    bool list_restart_off{};
     bool legacy_vertex_attributes{};
     bool provoking_vertex{};
     bool shader_stencil_export{};

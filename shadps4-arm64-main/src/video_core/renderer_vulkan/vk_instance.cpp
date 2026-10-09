@@ -351,6 +351,11 @@ bool Instance::CreateDevice() {
                  list_restart_features.primitiveTopologyListRestart);
         LOG_INFO(Render_Vulkan, "- primitiveTopologyPatchListRestart: {}",
                  list_restart_features.primitiveTopologyPatchListRestart);
+        if (const char* value = std::getenv("SHADPS4_LIST_RESTART");
+            value != nullptr && value[0] == '0') {
+            list_restart_off = true;
+            LOG_INFO(Render_Vulkan, "- primitive restart on lists left out (SHADPS4_LIST_RESTART=0)");
+        }
     }
     amd_shader_explicit_vertex_parameter =
         add_extension(VK_AMD_SHADER_EXPLICIT_VERTEX_PARAMETER_EXTENSION_NAME);

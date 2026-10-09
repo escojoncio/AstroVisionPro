@@ -759,6 +759,42 @@ private:
 
 PhysicsWatch physics_watch;
 
+/// The object that sets the size the scene is drawn at (Resolution*), whole, in the log every
+/// two seconds (SHADPS4_QUALITY_DUMP=1): what besides the size the title keeps there and moves
+/// by how slow it finds its GPU. Words that changed since the dump before carry a '*'.
+void DumpResolutionControl(VAddr base, const Build& build, Clock::time_point now) {
+    static const bool on = [] {
+        const char* value = std::getenv("SHADPS4_QUALITY_DUMP");
+        return value != nullptr && value[0] == '1';
+    }();
+    if (!on) {
+        return;
+    }
+    static Clock::time_point next{};
+    static std::array<u32, 32> before{};
+    static bool have_before = false;
+    if (now < next) {
+        return;
+    }
+    next = now + std::chrono::seconds{2};
+    constexpr u64 Size = sizeof(before);
+    const u64 control = Read<u64>(base + build.resolution_pointer);
+    auto* const memory = Core::Memory::Instance();
+    if (control == 0 || (control & 3) != 0 || !memory->IsValidMapping(control, Size)) {
+        return;
+    }
+    const auto words = Read<std::array<u32, 32>>(control);
+    std::string text;
+    for (u32 i = 0; i < words.size(); ++i) {
+        const bool changed = have_before && words[i] != before[i];
+        text += fmt::format("{}{:02x}:{:08x}{}", i == 0 ? "" : " ", i * 4, words[i],
+                            changed ? "*" : "");
+    }
+    before = words;
+    have_before = true;
+    LOG_INFO(Core, "QUALITY_DUMP: the title's size control at {:#x}: {}", control, text);
+}
+
 } // namespace
 
 void OnControllerRead() {
@@ -819,6 +855,7 @@ void OnFrameSubmitted() {
         break;
     }
     const s32 resolution = TendResolution(base, *build, wanted);
+    DumpResolutionControl(base, *build, now);
     frame_pace.store(governor.Pace(), std::memory_order_relaxed);
 
     if (settings.time_step) {
