@@ -16,6 +16,8 @@
 #include "video_core/renderer_vulkan/vk_shader_hle.h"
 
 #include <array>
+#include <atomic>
+#include <chrono>
 #include <algorithm>
 #include <bit>
 #include <cmath>
@@ -313,7 +315,9 @@ Mode Current() {
                      Name(Steps[step]));
         } else {
             LOG_INFO(Render_Vulkan, "GPU_BENCH: done");
-            g_started.store(0, std::memory_order_release);
+            // Only this run's start: a Start() made meanwhile is kept.
+            s64 expected = started;
+            g_started.compare_exchange_strong(expected, 0, std::memory_order_acq_rel);
         }
     }
     return step < total ? Steps[step] : Mode::Normal;
