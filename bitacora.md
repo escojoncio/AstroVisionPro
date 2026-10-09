@@ -131,6 +131,7 @@ Incluye ab5f2f9 (banco de GPU, ver abajo) y 54d91d2 (botón «Probar vibración�
 
 ## Segunda prueba (log 20:09): clang abortaba por `allocate_buffer`; datos tomados por código — corregido en VPEngine 70df54c
 - Detalle en la bitácora de VPEngine («Segunda prueba en el visor»). Aquí: `visionos-vpengine.yml` lista con `nm -gUA` qué miembros de `libastroquest_core.a` / `libvpconvert_all.a` definen `operator new/delete` (en app.log).
+- Build 268891c (run 37974231325): OK. `nm` confirma el culpable: `libastroquest_core.a:almalloc.cpp.o` (OpenAL Soft) define los `operator new/delete` **alineados** globales (incl. `new(size, align_val_t, nothrow)`); LLVM los usaba vía `allocate_buffer`. vpconvert ya no pasa por ellos para sus búferes; el resto de `new` alineado de LLVM (raro) seguiría yendo a almalloc.
 
 ## Primera conversión (log 19:43): certificado OK, compilación falla al instante — build de diagnóstico
 - Detalle en la bitácora de VPEngine («Primera conversión en el visor»). Cambio aquí: `VPEngineViews.swift` EngineCard muestra `ProgressView(value: conversion.fraction)` con el % (texto de estado con fase y tiempo restante). El resto (auto-prueba del compilador, señal/fase del crash, mnemónicos no soportados) va en vpconvert (release `vpconvert-visionos` de VPEngine f8b6c76).
