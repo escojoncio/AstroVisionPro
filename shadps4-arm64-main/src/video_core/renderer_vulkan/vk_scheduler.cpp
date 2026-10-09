@@ -289,6 +289,7 @@ std::chrono::nanoseconds FrameStats::ThreadTime() {
 }
 
 void FrameStats::EndFrame() {
+    GpuBench::NoteFrame();
     if (!Enabled()) {
         return;
     }
@@ -582,17 +583,17 @@ public:
                 return ms > 5000.0 ? -1.0 : ms;
             };
             const double total = span(0);
+            double bench_ms = -1.0;
             if (total < 0.0) {
                 ++unusable;
             } else {
                 busy_ms += total;
                 longest_ms = std::max(longest_ms, total);
                 ++timed;
-                if (block.bench_tag >= 0) {
-                    GpuBench::NoteGpuTime(id, block.bench_tag, total);
-                }
+                bench_ms = total;
             }
             double in_passes = 0.0;
+            double scene_ms = 0.0;
             for (u32 i = 0; i < block.passes.size(); ++i) {
                 const double ms = span(2 + 2 * i);
                 if (ms < 0.0) {
@@ -600,6 +601,9 @@ public:
                     continue;
                 }
                 const Pass& pass = block.passes[i];
+                if (pass.depth && pass.colors > 0 && pass.width >= 1024) {
+                    scene_ms += ms; // GpuBench's scene passes
+                }
                 Totals& totals = pass_totals[pass.Key()];
                 totals.ms += ms;
                 totals.count += 1;
@@ -610,6 +614,10 @@ public:
             }
             if (total >= 0.0) {
                 outside_ms += std::max(0.0, total - in_passes);
+            }
+            if (block.bench_tag >= 0) {
+                // Its passes are timed on their own: they count even when the whole is not.
+                GpuBench::NoteGpuTime(id, block.bench_tag, bench_ms, scene_ms);
             }
         }
         const auto now = std::chrono::steady_clock::now();
