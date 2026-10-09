@@ -129,6 +129,9 @@ Incluye ab5f2f9 (banco de GPU, ver abajo) y 54d91d2 (botón «Probar vibración�
 - Revisión adversarial aplicada: motores que podían quedar a nil para siempre tras rehacerlos, vibración en curso no reenviada, lanzador duplicado al salir con `close_launcher=0`, carrera fin/Start del banco, includes.
 - Qué probar: (1) en el lanzador, «Probar vibración del mando» → `Controller rumble test …`; (2) jugar con «Cerrar el lanzador al jugar» activado y buscar `motors made anew`, `App:` y `could not play`; (3) si sigue sin vibrar, desactivarlo y probar el botón con la ventana abierta durante la partida; (4) en el mundo, quieto, L3+R3 → 11 pasos de 10 s: leer `GPU_BENCH: step i` y el `GPU_TIME` siguiente.
 
+## Tercera prueba (log 21:28): compila en el visor (1,8 MB/s, 99,6 % soportado); fallo de una pieza — corregido en VPEngine 5be7d74
+- Detalle en la bitácora de VPEngine («Tercera prueba»). Esta app solo cambia por la release `vpconvert-visionos` y las fuentes Swift de VPEngine (piezas a la vez según calor).
+
 ## Segunda prueba (log 20:09): clang abortaba por `allocate_buffer`; datos tomados por código — corregido en VPEngine 70df54c
 - Detalle en la bitácora de VPEngine («Segunda prueba en el visor»). Aquí: `visionos-vpengine.yml` lista con `nm -gUA` qué miembros de `libastroquest_core.a` / `libvpconvert_all.a` definen `operator new/delete` (en app.log).
 - Build 268891c (run 37974231325): OK. `nm` confirma el culpable: `libastroquest_core.a:almalloc.cpp.o` (OpenAL Soft) define los `operator new/delete` **alineados** globales (incl. `new(size, align_val_t, nothrow)`); LLVM los usaba vía `allocate_buffer`. vpconvert ya no pasa por ellos para sus búferes; el resto de `new` alineado de LLVM (raro) seguiría yendo a almalloc.
