@@ -5,7 +5,7 @@ Base: shadPS4 ARM64 (`shadps4-arm64-main/`) + FEXCore (x86-64 → ARM64) + Molte
 App visionOS en `visionos/` (SwiftUI + Compositor Services + ARKit + GameController).
 JIT: arena RWX preparada por StikDebug (protocolo `brk #0xf00d` + universal.js); la app hace detach al terminar.
 
-## Commit siguiente a e2dd2d3: estado y SPIR-V de los candidatos en el log — build lanzada
+## Build d56f184 (run 37993065991): OK, `visionos-latest/AstroQuest.ipa` (sin probar) — estado y SPIR-V de los candidatos en el log
 - `gpu_bench.h`: `WantsShaderState`, `NoteShaderState`, `NoteSpirv(key_hash, spirv)` (incluye `<span>`, `<string>`, `common/types.h`).
 - `vk_rasterizer.cpp`: `ShaderTest::states` (estado de la primera draw de escena de cada fs durante el recuento); `SpirvStore g_spirv` (todo shader compilado por `HashCombine(pgm_hash, perm_idx)`, tope 24 MB, el primero gana); `Base64` (comprobado frente a Python); `LogSpirv`. En `ChooseCandidates`, tras la línea de candidatos: `GPU_SHADER_STATE fs <hash>: depth test … func N write …, stencil …; N colour targets [opaque|blend(no writes)…]; N samples; prim N; pixel shader: discard yes/no, writes depth yes/no, N images, N samplers, N buffers, fp16 yes/no` y `GPU_SHADER_SPIRV fs|vs <hash> i/n <base64>` (líneas de 3000 caracteres) para fs y vs de cada candidato. `CompareFunc`: 0 Never, 1 Less, 2 Equal, 3 LessEqual, 4 Greater, 5 NotEqual, 6 GreaterEqual, 7 Always.
 - `Rasterizer::DescribeDrawState` (`vk_rasterizer.h`), llamado desde `BenchLeavesOut` en pasadas de escena mientras `WantsShaderState`.
