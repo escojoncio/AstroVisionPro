@@ -52,6 +52,7 @@
 namespace Vulkan {
 /// What the Vulkan driver says the device's memory holds (vk_instance.cpp), 0 if not known.
 u64 DeviceMemoryUsageForReports();
+std::string VmaBlocksForReports();
 } // namespace Vulkan
 
 namespace VideoCore {
@@ -661,6 +662,9 @@ void ReportPace(Clock::time_point now) {
                               Core::ResidentConsoleMemory() >> 20,
                               Vulkan::DeviceMemoryUsageForReports() >> 20);
         memory += "; " + VideoCore::DescribeGpuAllocations();
+        if (const std::string vma = Vulkan::VmaBlocksForReports(); !vma.empty()) {
+            memory += "; " + vma;
+        }
 #endif
     }
     LOG_INFO(Core, "PACE: {:.1f} guest frames/s; CPU {:.0f}% in all: {}{}", fps, total, text,

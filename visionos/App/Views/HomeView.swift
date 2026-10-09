@@ -173,6 +173,9 @@ struct HomeView: View {
                 .controlSize(.extraLarge)
                 .buttonBorderShape(.capsule)
                 .disabled(!model.canStart)
+                GameLanguagePicker()
+                    .labelsHidden()
+                    .fixedSize()
             }
             if let message = model.message {
                 Text(message)

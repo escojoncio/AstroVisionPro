@@ -25,6 +25,14 @@ struct SettingsView: View {
                 }
 
                 Section {
+                    GameLanguagePicker()
+                } header: {
+                    Text(L("Idioma del juego", "Language of the game"))
+                } footer: {
+                    Text(gameLanguageFooter)
+                }
+
+                Section {
                     Picker(L("Resolución por ojo", "Resolution per eye"), selection: text("resolution", \.resolution)) {
                         Text(L("1440 · consola", "1440 · console")).tag("1440")
                         Text(L("2160 · más nítida, más memoria", "2160 · sharper, more memory")).tag("2160")
@@ -36,7 +44,6 @@ struct SettingsView: View {
                         Text(L("2 · más rápido", "2 · faster")).tag("2")
                         Text(L("1 · el más rápido, con dientes de sierra", "1 · fastest, jagged edges")).tag("1")
                     }
-                    Toggle(L("Suavizar bordes (FXAA)", "Smooth edges (FXAA)"), isOn: flag("edge_smoothing", \.edgeSmoothing))
                     Picker(L("Imágenes por segundo", "Frames per second"), selection: number("fps", \.fps)) {
                         Text("60").tag(60)
                         Text("45").tag(45)
@@ -67,10 +74,11 @@ struct SettingsView: View {
                     }
                     Toggle(L("Compilar shaders en segundo plano", "Compile shaders in the background"), isOn: flag("async_shaders", \.asyncShaders))
                     Toggle(L("Geometry shaders sin cortar la pasada", "Geometry shaders without breaking the pass"), isOn: flag("gs_in_pass", \.gsInPass))
+                    Toggle(L("Pasadas solapadas (experimental)", "Overlapping passes (experimental)"), isOn: flag("light_barriers", \.lightBarriers))
                 } header: {
                     Text(L("Gráficos", "Graphics"))
                 } footer: {
-                    Text(L("KosmicKrisp dibuja los efectos y ambos ojos como en la consola. Si no arranca o va peor, vuelve a MoltenVK. Con los shaders en segundo plano no hay tirones: lo que aparece por primera vez tarda un instante en verse. Si los efectos o partículas se ven mal, desactiva «Geometry shaders sin cortar la pasada».", "KosmicKrisp draws the effects and both eyes as the console does. If it does not start or runs worse, go back to MoltenVK. With shaders in the background there are no stalls: what appears for the first time shows a moment late. If effects or particles look wrong, turn off «Geometry shaders without breaking the pass»."))
+                    Text(L("KosmicKrisp dibuja los efectos y ambos ojos como en la consola. Si no arranca o va peor, vuelve a MoltenVK. Con los shaders en segundo plano no hay tirones: lo que aparece por primera vez tarda un instante en verse. Si los efectos o partículas se ven mal, desactiva «Geometry shaders sin cortar la pasada». «Pasadas solapadas» deja que cada pasada empiece antes de que acabe la anterior: más rápido, pero si ves parpadeos o imágenes rotas, desactívalo.", "KosmicKrisp draws the effects and both eyes as the console does. If it does not start or runs worse, go back to MoltenVK. With shaders in the background there are no stalls: what appears for the first time shows a moment late. If effects or particles look wrong, turn off «Geometry shaders without breaking the pass». «Overlapping passes» lets each pass start before the one before it ends: faster, but turn it off if you see flicker or broken pictures."))
                 }
 
                 Section {
@@ -117,6 +125,17 @@ struct SettingsView: View {
         }
     }
 
+    private var gameLanguageFooter: String {
+        let codes = model.gameLanguageCodes
+        let base = L("El juego usa el idioma que le dé la consola si lo tiene; si no, inglés.",
+                     "The game plays in the console's language when it has it; English otherwise.")
+        if codes.isEmpty {
+            return base
+        }
+        return base + " " + L("Idiomas en los archivos de tu copia: ", "Languages in your copy's files: ")
+            + codes.joined(separator: ", ") + "."
+    }
+
     // MARK: - Bindings that write settings.txt
 
     private func save(_ key: String, _ value: String) {
@@ -147,5 +166,40 @@ struct SettingsView: View {
     private var renderQuality: Binding<Float> {
         Binding(get: { model.settings.renderQuality },
                 set: { save("render_quality", String(format: "%.2f", $0)) })
+    }
+}
+
+/// The language the game is played in, as a menu: the headset's, or one of the game's. The ones
+/// the copy's files show it has come first.
+struct GameLanguagePicker: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        let available = GameLanguages.available(codes: model.gameLanguageCodes)
+        let current = model.settings.gameLanguage
+        let inCopy = GameLanguages.all.filter { available.contains($0.tag) }
+        let others = GameLanguages.all.filter { !available.contains($0.tag) }
+        Picker(L("Idioma del juego", "Language of the game"), selection: Binding(
+            get: { model.settings.gameLanguage },
+            set: {
+                AstroSettings.write("game_language", $0)
+                model.settings = AstroSettings.load()
+            })) {
+            Text(L("El del visor", "The headset's")).tag("system")
+            if current != "system" && !GameLanguages.all.contains(where: { $0.tag == current }) {
+                Text(current).tag(current)
+            }
+            if !inCopy.isEmpty {
+                Section(L("En tu copia", "In your copy")) {
+                    ForEach(inCopy) { Text(GameLanguages.name(of: $0.tag)).tag($0.tag) }
+                }
+                Section(L("Otros (si tu copia no lo tiene, inglés)", "Others (English if your copy does not have it)")) {
+                    ForEach(others) { Text(GameLanguages.name(of: $0.tag)).tag($0.tag) }
+                }
+            } else {
+                ForEach(GameLanguages.all) { Text(GameLanguages.name(of: $0.tag)).tag($0.tag) }
+            }
+        }
+        .pickerStyle(.menu)
     }
 }
