@@ -67,6 +67,9 @@ struct AstroSettings {
     /// The headset's 3D audio, as PlayStation VR renders it: each of the title's 3D sounds and
     /// surround speakers rendered by Apple's PHASE, head-locked (SHADPS4_SPATIAL_AUDIO).
     var spatialAudio = true
+    /// GPU diagnostics in the log: every few seconds what a frame is made of, and one frame's
+    /// render passes with the code that ended each (SHADPS4_FRAME_STATS=2).
+    var passDiagnostics = true
     /// The edges of the game's picture smoothed (FXAA) before it is shown.
     var edgeSmoothing = false
     /// The language the game is played in: "system" (the headset's) or a language tag
@@ -159,6 +162,7 @@ struct AstroSettings {
         case "gs_in_pass": gsInPass = flag
         case "light_barriers": lightBarriers = flag
         case "spatial_audio": spatialAudio = flag
+        case "pass_diagnostics": passDiagnostics = flag
         case "game_language": gameLanguage = value
         default: break
         }
@@ -224,6 +228,9 @@ struct AstroSettings {
         env.append("KK_GS_IN_PASS=\(gsInPass ? 1 : 0)")
         env.append("KK_LIGHT_BARRIERS=\(lightBarriers ? 1 : 0)")
         env.append("SHADPS4_SPATIAL_AUDIO=\(spatialAudio ? 1 : 0)")
+        if passDiagnostics {
+            env.append("SHADPS4_FRAME_STATS=2")
+        }
         env.append("SHADPS4_CONSOLE_LANGUAGE=\(GameLanguages.tag(for: gameLanguage))")
         // KosmicKrisp keeps what it translated (Mesa's shader cache) where the app may write:
         // the VPS4 folder when there is one (it outlives the app), else the app's caches.
