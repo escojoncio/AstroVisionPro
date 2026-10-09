@@ -19,6 +19,11 @@ JIT: arena RWX preparada por StikDebug (protocolo `brk #0xf00d` + universal.js);
 - Vibración: sigue fallando ("No se ha podido establecer comunicación…", motor rehecho y `stopped (reason -1)`). Causa probable: el sistema desactiva hápticos mientras se graba (el juego mantiene el micro abierto) salvo `setAllowHapticsAndSystemSoundsDuringRecording`.
 - Carga del mundo: ~500 draws saltados; pipelines listos hasta 3045 ms tras su primer draw (cola de 2 workers con ~50 pipelines de 20–110 ms).
 
+## Sin build aún (commit sin [build]): banco de pruebas de GPU con L3+R3
+- `video_core/renderer_vulkan/gpu_bench.h` + implementación en `vk_rasterizer.cpp` (`GpuBench::Start/Current`): 11 pasos de 10 s (normal, sin píxeles = rasterizer discard en `UpdatePrimitiveState`, 3 vértices por draw, sin pasadas solo-profundidad, sin draws con GS, ×2, normal). Log `GPU_BENCH: step i of n: …`; leer el `GPU_TIME` posterior a cada paso. `Rasterizer::BenchLeavesOut` omite el draw (Draw y DrawIndirect; el límite de vértices solo en Draw).
+- `platform/visionos/astro_core.mm` `astro_core_pad_state`: L3+R3 a la vez → `GpuBench::Start()`.
+- App: quitado el selector «Prueba de GPU» (solo se aplicaba al arrancar).
+
 ## Nota (sin log): 2160/ojo con build c494416 → imagen mejor, framerate muy por debajo y térmico disparado (como test 3). A 1440 el coste no escala con píxeles (816 ≈ 1440), a 2160 sí.
 - Siguiente paso acordado: medir antes de optimizar. «Prueba de GPU: sin geometría» (build 42bb1d1) para separar vértices vs coste fijo; si hay Mac disponible, captura de frame de Metal (.gputrace) para ver coste por draw/shader.
 

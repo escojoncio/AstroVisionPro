@@ -13,6 +13,7 @@
 #include "common/shared_first_mutex.h"
 #include "video_core/buffer_cache/buffer_cache.h"
 #include "video_core/page_manager.h"
+#include "video_core/renderer_vulkan/gpu_bench.h"
 #include "video_core/renderer_vulkan/vk_pipeline_cache.h"
 #include "video_core/texture_cache/texture_cache.h"
 
@@ -131,6 +132,8 @@ private:
     /// After a draw began a render pass: what the pass's pipelines are made for and which
     /// images it draws to, for the draws after it (PipelineForOpenPass).
     void NoteOpenPass(const GraphicsPipeline* pipeline);
+    /// Whether the GPU test (gpu_bench.h) leaves this draw out now.
+    bool BenchLeavesOut(GpuBench::Mode mode, const GraphicsPipeline* pipeline) const;
     /// A draw whose targets are some of those of the pass that is open (the same images, none
     /// cleared, the same size), or none at all, can be made in that pass instead of ending it:
     /// on a GPU that renders in tiles, ending a pass writes all its targets out to memory and

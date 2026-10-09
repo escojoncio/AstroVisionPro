@@ -10,6 +10,7 @@
 #include "video_core/renderer_vulkan/liverpool_to_vk.h"
 #include "video_core/renderer_vulkan/readconst_snapshot_diag.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
+#include "video_core/renderer_vulkan/gpu_bench.h"
 #include "video_core/renderer_vulkan/vk_rasterizer.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
 #include "video_core/renderer_vulkan/vk_shader_hle.h"
@@ -260,6 +261,66 @@ void Rasterizer::EliminateFastClear() {
     ScopeMarkerEnd();
 }
 
+namespace GpuBench {
+
+namespace {
+constexpr Mode Steps[] = {Mode::Normal,          Mode::NoFragments,     Mode::NoGeometry,
+                          Mode::NoDepthOnlyPasses, Mode::NoGeometryShaders, Mode::Normal,
+                          Mode::NoFragments,     Mode::NoGeometry,      Mode::NoDepthOnlyPasses,
+                          Mode::NoGeometryShaders, Mode::Normal};
+constexpr auto StepLength = std::chrono::seconds(10);
+std::atomic<s64> g_started{0};
+std::atomic<int> g_step{-1};
+
+const char* Name(Mode mode) {
+    switch (mode) {
+    case Mode::Normal:
+        return "as they are";
+    case Mode::NoFragments:
+        return "without pixels (vertices only)";
+    case Mode::NoGeometry:
+        return "three vertices a draw (next to no geometry)";
+    case Mode::NoDepthOnlyPasses:
+        return "without depth-only passes (shadows, depth prepass)";
+    case Mode::NoGeometryShaders:
+        return "without geometry shader draws";
+    }
+    return "?";
+}
+} // namespace
+
+void Start() {
+    const auto now = std::chrono::steady_clock::now().time_since_epoch().count();
+    g_step.store(-1, std::memory_order_relaxed);
+    g_started.store(now, std::memory_order_release);
+    LOG_INFO(Render_Vulkan, "GPU_BENCH: started: {} steps of {} s; keep still", std::size(Steps),
+             StepLength.count());
+}
+
+Mode Current() {
+    const s64 started = g_started.load(std::memory_order_acquire);
+    if (started == 0) {
+        return Mode::Normal;
+    }
+    const auto elapsed = std::chrono::steady_clock::now().time_since_epoch() -
+                         std::chrono::steady_clock::duration{started};
+    const int step = static_cast<int>(elapsed / StepLength);
+    const int total = static_cast<int>(std::size(Steps));
+    int seen = g_step.load(std::memory_order_relaxed);
+    if (step != seen && g_step.compare_exchange_strong(seen, step)) {
+        if (step < total) {
+            LOG_INFO(Render_Vulkan, "GPU_BENCH: step {} of {}: {}", step + 1, total,
+                     Name(Steps[step]));
+        } else {
+            LOG_INFO(Render_Vulkan, "GPU_BENCH: done");
+            g_started.store(0, std::memory_order_release);
+        }
+    }
+    return step < total ? Steps[step] : Mode::Normal;
+}
+
+} // namespace GpuBench
+
 void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
     RENDERER_TRACE;
 
@@ -393,11 +454,15 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
         const char* value = std::getenv("SHADPS4_DBG_DRAW_VERTICES");
         return value != nullptr && value[0] != 0 ? static_cast<u32>(std::atoi(value)) : ~0u;
     }();
-    const u32 num_vertices = std::min<u32>(regs.num_indices, vertex_limit);
+    const auto bench = GpuBench::Current();
+    const u32 num_vertices = std::min<u32>(
+        regs.num_indices, bench == GpuBench::Mode::NoGeometry ? 3u : vertex_limit);
     FrameStats::Add(FrameStats::Counter::Vertices,
                     u64{num_vertices} * regs.num_instances.NumInstances());
 
-    if (is_indexed) {
+    if (BenchLeavesOut(bench, pipeline)) {
+        // (GpuBench) not drawn.
+    } else if (is_indexed) {
         cmdbuf.drawIndexed(num_vertices, regs.num_instances.NumInstances(), 0,
                            s32(vertex_offset), instance_offset);
     } else {
@@ -407,6 +472,25 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
 
     ResetBindings();
     RetireIsolatedReadConstSnapshots();
+}
+
+bool Rasterizer::BenchLeavesOut(GpuBench::Mode mode, const GraphicsPipeline* pipeline) const {
+    if (mode == GpuBench::Mode::NoGeometryShaders) {
+        return pipeline->GetGraphicsKey().stage_hashes[u32(Shader::LogicalStage::Geometry)] != 0;
+    }
+    if (mode == GpuBench::Mode::NoDepthOnlyPasses && scheduler.IsRendering()) {
+        const auto& rs = scheduler.GetRenderState();
+        if (!rs.depth_stencil_attachment.image_view) {
+            return false;
+        }
+        for (u32 cb = 0; cb < rs.num_color_attachments; ++cb) {
+            if (rs.color_attachments[cb].image_view) {
+                return false;
+            }
+        }
+        return true;
+    }
+    return false;
 }
 
 void Rasterizer::NoteOpenPass(const GraphicsPipeline* pipeline) {
@@ -720,7 +804,9 @@ void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u3
     const auto cmdbuf = scheduler.CommandBuffer();
     scheduler.BindGraphicsPipeline(draw_pipeline->Handle());
 
-    if (is_indexed) {
+    if (BenchLeavesOut(GpuBench::Current(), pipeline)) {
+        // (GpuBench) not drawn.
+    } else if (is_indexed) {
         ASSERT(sizeof(VkDrawIndexedIndirectCommand) == stride);
 
         if (count_address != 0) {
@@ -2116,7 +2202,9 @@ void Rasterizer::UpdatePrimitiveState(const bool is_indexed) const {
     const auto front_face = LiverpoolToVK::FrontFace(regs.polygon_control.front_face);
 
     dynamic_state.SetPrimitiveRestartEnabled(prim_restart);
-    dynamic_state.SetRasterizerDiscardEnabled(regs.clipper_control.dx_rasterization_kill);
+    dynamic_state.SetRasterizerDiscardEnabled(regs.clipper_control.dx_rasterization_kill ||
+                                              GpuBench::Current() ==
+                                                  GpuBench::Mode::NoFragments);
     dynamic_state.SetCullMode(cull_mode);
     dynamic_state.SetFrontFace(front_face);
 }
