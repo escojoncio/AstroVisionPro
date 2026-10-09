@@ -148,7 +148,23 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release delete visionos-latest --yes --cleanup-tag || true
+          # Drafts left by an earlier run have no tag: deleted by id.
+          gh api "repos/${GITHUB_REPOSITORY}/releases" \
+            --jq '.[] | select(.draft and .tag_name == "visionos-latest") | .id' |
+            xargs -r -I{} gh api -X DELETE "repos/${GITHUB_REPOSITORY}/releases/{}" || true
           gh release create visionos-latest visionos/build/AstroQuest.ipa \
             --target "$GITHUB_SHA" --prerelease \
             --title "AstroQuest para Apple Vision Pro (última compilación)" \
             --notes "App sin firmar, compilada de ${GITHUB_SHA::7}. Fírmala con tu cuenta de desarrollador e instálala; los pasos están en README-VISIONOS.md."
+          # gh can leave the release a draft (no public link) when the old tag is still being
+          # removed: published by hand, then the link checked.
+          for i in 1 2 3 4 5; do
+            gh release edit visionos-latest --draft=false --prerelease && break
+            sleep 10
+          done
+          for i in $(seq 1 12); do
+            code=$(curl -sSIL -o /dev/null -w '%{http_code}' "https://github.com/${GITHUB_REPOSITORY}/releases/download/visionos-latest/AstroQuest.ipa")
+            [ "$code" = 200 ] && echo "Download link OK" && exit 0
+            sleep 10
+          done
+          echo "The download link does not answer"; exit 1
