@@ -77,6 +77,7 @@ struct SettingsView: View {
                     Toggle(L("Compilar shaders en segundo plano", "Compile shaders in the background"), isOn: flag("async_shaders", \.asyncShaders))
                     Toggle(L("Geometry shaders sin cortar la pasada", "Geometry shaders without breaking the pass"), isOn: flag("gs_in_pass", \.gsInPass))
                     Toggle(L("Pasadas solapadas (experimental)", "Overlapping passes (experimental)"), isOn: flag("light_barriers", \.lightBarriers))
+                    Toggle(L("Diagnóstico de pasadas en el registro", "Pass diagnostics in the log"), isOn: flag("pass_diagnostics", \.passDiagnostics))
                 } header: {
                     Text(L("Gráficos", "Graphics"))
                 } footer: {
