@@ -27,6 +27,8 @@ struct AstroSettings {
     var sharpen = "0.3"
     /// No longer used: the game is drawn with one sample a pixel (SHADPS4_MAX_MSAA=1).
     var msaa = ""
+    /// Where the game resolves a multisampled picture (held with one sample a pixel here), the
+    /// edges are smoothed on the way (SmoothInto, SHADPS4_RESOLVE_AA). Off: copied as they are.
     var antialias = true
     /// The hands holding the controller place it in the game.
     var hands = true
@@ -88,8 +90,9 @@ struct AstroSettings {
     var closeLauncher = true
     /// The title's GPU clocks run at this fraction of real time ("1", "0.5", "0.25";
     /// SHADPS4_GPU_CLOCK_SCALE): it times its drawing with them and leaves shadows and effects
-    /// out when the drawing looks slow.
-    var gpuClockScale = "1"
+    /// out when the drawing looks slow. "auto": slowed within each frame by as much as keeps what
+    /// the title measures within a console's budget, back on real time at every frame's end.
+    var gpuClockScale = "auto"
     /// The launcher's view takes the controller's events through GameController
     /// (handlesGameControllerEvents): the app is then the controller's, for its rumble too.
     var controllerToApp = true
@@ -268,7 +271,9 @@ struct AstroSettings {
             env.append("SHADPS4_GPU_STAMP_LOG=1")
             env.append("SHADPS4_QUALITY_DUMP=1")
         }
-        if let scale = Double(gpuClockScale), scale > 0, scale < 1 {
+        if gpuClockScale == "auto" {
+            env.append("SHADPS4_GPU_CLOCK_SCALE=auto")
+        } else if let scale = Double(gpuClockScale), scale > 0, scale < 1 {
             env.append("SHADPS4_GPU_CLOCK_SCALE=\(gpuClockScale)")
             if !passDiagnostics {
                 env.append("SHADPS4_GPU_STAMP_LOG=1")

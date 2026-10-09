@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <cstdlib>
 #include <mutex>
@@ -19,9 +20,23 @@ namespace AmdGpu::GameClock {
 
 namespace {
 
-double Scale() {
-    static const double scale = [] {
+/// The least the automatic clocks are slowed to (a tenth of real time).
+constexpr double MinFactor = 0.1;
+/// Without a frame's end for this long (a load, a hang), the automatic clocks are put back
+/// on real time at the next stamp instead.
+constexpr s64 LateAfterNs = 1'000'000'000;
+
+/// What SHADPS4_GPU_CLOCK_SCALE asks for: a fixed fraction (0.1 to 1), or "auto" (0 here).
+double Setting() {
+    static const double setting = [] {
         const char* value = std::getenv("SHADPS4_GPU_CLOCK_SCALE");
+        if (value != nullptr && (value[0] == 'a' || value[0] == 'A')) {
+            LOG_INFO(Lib_GnmDriver,
+                     "GPU_CLOCK: automatic - the title's GPU clocks run slower within each frame, "
+                     "by as much as keeps what it measures with them within a console's budget, "
+                     "and are put back on real time at the end of every frame");
+            return 0.0;
+        }
         // Read by hand: atof would follow the C locale's decimal mark.
         double parsed = 1.0;
         if (value != nullptr) {
@@ -57,7 +72,19 @@ double Scale() {
         }
         return result;
     }();
-    return scale;
+    return setting;
+}
+
+bool Automatic() {
+    return Setting() == 0.0;
+}
+
+/// The factor the automatic clocks run at now (written by SetFactor, read by every stamp).
+std::atomic<double> auto_factor{1.0};
+
+/// The scale the stamp log shows.
+double Scale() {
+    return Automatic() ? auto_factor.load(std::memory_order_relaxed) : Setting();
 }
 
 bool StampLog() {
@@ -68,24 +95,74 @@ bool StampLog() {
     return on;
 }
 
-/// A clock that runs at Scale() of the raw one from its first reading on.
+/// A clock that runs at a fraction of the raw one. Fixed: from its first reading on, drifting
+/// away from real time. Automatic: at the factor in auto_factor, re-anchored (continuing from
+/// where it was) when the factor changes, and put back on the raw clock by Resync at the end
+/// of every frame, so that it never drifts more than one frame's worth. Never goes back.
 class Scaled {
 public:
     u64 Get(u64 raw) {
-        const double scale = Scale();
-        if (scale == 1.0) {
-            return raw;
+        if (!Automatic()) {
+            const double scale = Setting();
+            if (scale == 1.0) {
+                return raw;
+            }
+            std::call_once(once, [&] { anchor = raw; });
+            if (raw >= anchor) {
+                return anchor + static_cast<u64>(static_cast<double>(raw - anchor) * scale);
+            }
+            return anchor - static_cast<u64>(static_cast<double>(anchor - raw) * scale);
         }
-        std::call_once(once, [&] { anchor = raw; });
-        if (raw >= anchor) {
-            return anchor + static_cast<u64>(static_cast<double>(raw - anchor) * scale);
+        std::scoped_lock lock{mutex};
+        if (!started) {
+            started = true;
+            raw_anchor = raw;
+            value_anchor = raw;
+            factor_used = auto_factor.load(std::memory_order_relaxed);
         }
-        return anchor - static_cast<u64>(static_cast<double>(anchor - raw) * scale);
+        const double factor = auto_factor.load(std::memory_order_relaxed);
+        if (factor != factor_used) {
+            value_anchor = std::max(last, Value(raw));
+            raw_anchor = std::max(raw, raw_anchor);
+            factor_used = factor;
+        }
+        last = std::max(last, Value(raw));
+        return last;
+    }
+
+    /// Back on the raw clock (never behind what was given out). Returns by how much it moved
+    /// forward beyond its own pace, in raw units.
+    u64 Resync(u64 raw) {
+        std::scoped_lock lock{mutex};
+        if (!started) {
+            return 0;
+        }
+        const u64 now = std::max(last, Value(raw));
+        const u64 target = std::max(now, raw);
+        raw_anchor = std::max(raw, raw_anchor);
+        value_anchor = target;
+        last = target;
+        return target - now;
     }
 
 private:
+    u64 Value(u64 raw) const {
+        if (raw <= raw_anchor) {
+            return value_anchor;
+        }
+        return value_anchor +
+               static_cast<u64>(static_cast<double>(raw - raw_anchor) * factor_used);
+    }
+
     std::once_flag once;
     u64 anchor{};
+
+    std::mutex mutex;
+    bool started{};
+    u64 raw_anchor{};
+    u64 value_anchor{};
+    u64 last{};
+    double factor_used{1.0};
 };
 
 Scaled clock64;
@@ -214,10 +291,12 @@ StampWindow& Window() {
 } // namespace
 
 u64 GpuClock64() {
+    ResyncIfLate();
     return clock64.Get(RawClock64());
 }
 
 u64 PerfCounter() {
+    ResyncIfLate();
     return perf_counter.Get(RawPerfCounter());
 }
 
@@ -230,6 +309,70 @@ void NoteStamp(const void* address, u64 value, bool perf_counter_stamp) {
 
 void NoteMark() {
     Window().Mark();
+}
+
+bool IsAutomatic() {
+    return Automatic();
+}
+
+void SetFactor(double factor) {
+    auto_factor.store(std::clamp(factor, MinFactor, 1.0), std::memory_order_relaxed);
+}
+
+double Factor() {
+    return Automatic() ? auto_factor.load(std::memory_order_relaxed) : Setting();
+}
+
+namespace {
+std::atomic<u64> frame_resyncs{0};
+std::atomic<u64> late_resyncs{0};
+std::atomic<u64> catch_up_ns{0};
+std::atomic<s64> last_resync_ns{0};
+
+s64 SteadyNs() {
+    return std::chrono::duration_cast<std::chrono::nanoseconds>(
+               std::chrono::steady_clock::now().time_since_epoch())
+        .count();
+}
+
+void DoResync() {
+    const u64 moved = clock64.Resync(RawClock64());
+    perf_counter.Resync(RawPerfCounter());
+    catch_up_ns.fetch_add(moved, std::memory_order_relaxed);
+    last_resync_ns.store(SteadyNs(), std::memory_order_relaxed);
+}
+} // namespace
+
+void OnFrameDone() {
+    if (!Automatic()) {
+        return;
+    }
+    DoResync();
+    frame_resyncs.fetch_add(1, std::memory_order_relaxed);
+}
+
+void ResyncIfLate() {
+    if (!Automatic()) {
+        return;
+    }
+    const s64 last = last_resync_ns.load(std::memory_order_relaxed);
+    if (last != 0 && SteadyNs() - last < LateAfterNs) {
+        return;
+    }
+    if (last == 0) {
+        last_resync_ns.store(SteadyNs(), std::memory_order_relaxed);
+        return;
+    }
+    DoResync();
+    late_resyncs.fetch_add(1, std::memory_order_relaxed);
+}
+
+ResyncStats TakeResyncStats() {
+    ResyncStats stats;
+    stats.frames = frame_resyncs.exchange(0, std::memory_order_relaxed);
+    stats.late = late_resyncs.exchange(0, std::memory_order_relaxed);
+    stats.catch_up_ms = static_cast<double>(catch_up_ns.exchange(0, std::memory_order_relaxed)) / 1e6;
+    return stats;
 }
 
 } // namespace AmdGpu::GameClock

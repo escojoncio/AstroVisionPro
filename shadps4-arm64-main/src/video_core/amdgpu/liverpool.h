@@ -77,6 +77,9 @@ public:
         mapped_queues[GfxQueueId].ccb_buffer_offset = 0;
         mapped_queues[GfxQueueId].dcb_buffer_offset = 0;
         submit_done = true;
+        // The title's next graphics submission starts its next frame (automatic GPU clock,
+        // game_clock.h: put back on real time right before it is processed).
+        resync_next_gfx.store(true, std::memory_order_relaxed);
         submit_cv.notify_one();
     }
 
@@ -243,6 +246,10 @@ private:
     std::atomic<u32> num_submits{};
     std::atomic<u32> num_commands{};
     std::atomic<bool> submit_done{};
+    /// SubmitDone came: the next graphics submission begins a frame.
+    std::atomic<bool> resync_next_gfx{};
+    /// That submission's task, until the command processor starts on it.
+    std::atomic<void*> resync_task{};
     std::mutex submit_mutex;
     std::condition_variable_any submit_cv;
     std::queue<Common::UniqueFunction<void>> command_queue{};
