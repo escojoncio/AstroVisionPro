@@ -6,6 +6,11 @@ App visionOS en `visionos/` (SwiftUI + Compositor Services + ARKit + GameControl
 JIT: arena RWX preparada por StikDebug (protocolo `brk #0xf00d` + universal.js); la app hace detach al terminar.
 
 ## Build e7d85d8 (run 37855488586): OK, KK recompilado con el parche nuevo (kk_shader.c, kk_cmd_draw.c sin errores); `visionos-latest/AstroQuest.ipa` (sin probar)
+## VPEngine (escojoncio/VPEngine) como CPU del juego en vez de FEX — seguimiento
+- 03:20 UTC: VPEngine tiene `integrations/shadps4/` (`aot_guest_engine.cpp` con la interfaz de `src/core/fex/fex_guest_engine.h`, `vpengine.cmake`, `astrovisionpro.patch` → opción `ENABLE_VPENGINE_GUEST_CPU`, OFF por defecto). El patch aplica limpio (`git apply --check`) sobre main.
+- No ha ejecutado todavía ningún juego real. Faltan: traducir `eboot.bin` + `sce_module/*.prx` de ASTRO BOT con `tools/scripts/translate_game.ps1` (necesita los archivos del juego) y decidir dónde guardar el C traducido (no puede ir a este repo público: build local en un Mac, repo privado con token o artefacto privado).
+- Al integrarlo, la app no necesitaría JIT ni StikDebug (`JITGate.swift`, `AppModel.canStart` exige `jit.isReady`): habría que saltarse esa espera en una build VPEngine.
+
 ## Estudio (sin código): importar la memoria de la consola como búferes de GPU (`VK_EXT_external_memory_host`)
 - Viable técnicamente (VAddr == puntero del host; páginas de caché 16 KB = alineación mínima de KK; BDA sobre memoria importada funciona, kk_buffer.c:184-196), pero **no ahora**. Requisitos previos:
   1. `EventWriteEop`/`EventWriteEos`/`ReleaseMem` (liverpool.cpp:813-841, :1417-1426) señalan al procesar el comando, no al acabar la GPU (hasta 8 envíos en vuelo, vk_scheduler.cpp:27/:982). Con copia, el dato se fotografía al grabar; con import, el juego reutilizaría ring buffers aún no leídos → corrupción. Hay que retrasar las señales a la finalización (riesgo de esperas en `WaitRegMem`).
