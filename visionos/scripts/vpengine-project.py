@@ -32,6 +32,8 @@ target["sources"] = list(target["sources"]) + [
     {"path": str(vpengine / "platform/visionos/Sources/VPGamePack.swift")},
     {"path": str(vpengine / "platform/visionos/Sources/VPConversion.swift")},
     {"path": str(vpengine / "runtime/vp_codesign.c")},
+    # .p12 files Apple's SecPKCS12Import cannot read (OpenSSL 3's AES encryption: iloader's).
+    {"path": str(vpengine / "runtime/vp_pkcs12.c")},
     {"path": "build/VPEngineSDK", "type": "folder", "buildPhase": "resources"},
     {"path": "build/VPEngineCertificates", "type": "folder", "buildPhase": "resources"},
 ]
