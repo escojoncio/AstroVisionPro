@@ -5,7 +5,7 @@ Base: shadPS4 ARM64 (`shadps4-arm64-main/`) + FEXCore (x86-64 → ARM64) + Molte
 App visionOS en `visionos/` (SwiftUI + Compositor Services + ARKit + GameController).
 JIT: arena RWX preparada por StikDebug (protocolo `brk #0xf00d` + universal.js); la app hace detach al terminar.
 
-## Commit siguiente a 1671fad: constantes como uniform buffers (SHADPS4_CONSTANT_UBO) — build lanzada
+## Build 6861ed1 (run 37997807560): OK, `visionos-latest/AstroQuest.ipa` (sin probar) — constantes como uniform buffers (SHADPS4_CONSTANT_UBO)
 - Motivo (test de d56f184, abajo): el fs caro es el material iluminado del escenario; 127 lecturas de constantes por píxel desde SSBO. En KK los SSBO van a `device` y los UBO a `constant` (`kk_shader.c` `nir_lower_explicit_io` + `nir_to_msl.c` `load_global_constant[_bounded]`, con límite del rango enlazado). KK: `maxUniformBufferRange` 65536, `KK_MIN_UBO_ALIGNMENT` 64, UBO standard layout y 8/16-bit en uniform activados.
 - `shader_recompiler/resource.h`: `BufferResource::uniform_buffer_max_size` (estático, 0 = siempre storage como upstream). `IsStorage`: storage si 0, `is_written`, `buffer_type != Guest`, tamaño 0 o > máximo; si no, UBO. El camino UBO de upstream (array fijo de `max_ubo_size`, `is_storage` en la especialización, `BindBuffers` con alineación UBO y ajuste por push data) ya existía.
 - `vk_pipeline_cache.cpp`: ctor, antes de `WarmUp`: `SHADPS4_CONSTANT_UBO=1` → `uniform_buffer_max_size = profile.max_ubo_size` (65472) y log `Read-only buffers of up to N bytes as uniform buffers`. Pool de descriptores UBO 512 → 8192.
