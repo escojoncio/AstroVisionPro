@@ -64,6 +64,9 @@ struct AstroSettings {
     /// KosmicKrisp runs the geometry shaders' work inside the render pass (as vertex-only draws)
     /// instead of breaking the pass for a compute pass on every such draw.
     var gsInPass = true
+    /// KosmicKrisp frees the geometry shaders' memory between render passes instead of cutting
+    /// a pass at its first geometry shader draw (KK_HEAP_BETWEEN_PASSES).
+    var heapBetweenPasses = true
     /// Experimental: KosmicKrisp lets the next render pass start its vertex work while the one
     /// before is still drawing, instead of waiting for all of it (KK_LIGHT_BARRIERS).
     var lightBarriers = false
@@ -190,6 +193,7 @@ struct AstroSettings {
         case "vulkan_driver": vulkanDriver = value.lowercased()
         case "async_shaders": asyncShaders = flag
         case "gs_in_pass": gsInPass = flag
+        case "heap_between_passes": heapBetweenPasses = flag
         case "light_barriers": lightBarriers = flag
         case "merge_passes": mergePasses = flag
         case "pipeline_cache": pipelineCache = flag
@@ -257,6 +261,7 @@ struct AstroSettings {
         env.append("SHADPS4_VK_DRIVER=\(vulkanDriver)")
         env.append("SHADPS4_ASYNC_PIPELINES=\(asyncShaders ? 1 : 0)")
         env.append("KK_GS_IN_PASS=\(gsInPass ? 1 : 0)")
+        env.append("KK_HEAP_BETWEEN_PASSES=\(heapBetweenPasses ? 1 : 0)")
         env.append("KK_LIGHT_BARRIERS=\(lightBarriers ? 1 : 0)")
         env.append("SHADPS4_MERGE_PASSES=\(mergePasses ? 1 : 0)")
         // shadPS4's pipeline cache reads the game's memory while preloading, before the game has
