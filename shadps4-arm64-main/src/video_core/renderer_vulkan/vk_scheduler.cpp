@@ -19,6 +19,7 @@
 #include "common/logging/log.h"
 #include "common/thread.h"
 #include "imgui/renderer/texture_manager.h"
+#include "video_core/renderer_vulkan/gpu_bench.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
 
@@ -470,6 +471,8 @@ public:
         next_block = (next_block + 1) % Blocks;
         Block& block = blocks[current];
         block.passes.clear();
+        // The step of the GPU test whose time this command buffer is (gpu_bench.h), if any.
+        block.bench_tag = GpuBench::TimingTag();
         cmdbuf.resetQueryPool(pool, current * BlockQueries, BlockQueries);
         cmdbuf.writeTimestamp(vk::PipelineStageFlagBits::eTopOfPipe, pool, current * BlockQueries);
     }
@@ -533,6 +536,10 @@ public:
                               current * BlockQueries + 1);
         blocks[current].pending = true;
         blocks[current].tick = tick;
+        if (blocks[current].bench_tag != GpuBench::TimingTag()) {
+            // Begun in one step of the test and ended in another: no step's.
+            blocks[current].bench_tag = -1;
+        }
         order.push_back(current);
         current = Blocks;
     }
@@ -581,6 +588,9 @@ public:
                 busy_ms += total;
                 longest_ms = std::max(longest_ms, total);
                 ++timed;
+                if (block.bench_tag >= 0) {
+                    GpuBench::NoteGpuTime(id, block.bench_tag, total);
+                }
             }
             double in_passes = 0.0;
             for (u32 i = 0; i < block.passes.size(); ++i) {
@@ -698,6 +708,7 @@ private:
         std::vector<Pass> passes;
         bool pending{};
         u64 tick{};
+        int bench_tag{-1};
         std::chrono::steady_clock::time_point not_ready_since{};
     };
     struct Totals {
