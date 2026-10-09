@@ -30,8 +30,10 @@ struct EngineCard: View {
                     }
                 } else if model.packLoaded == nil, let game = model.gamePath {
                     if conversion.isRunning {
-                        if case .running(_, let done, let total) = conversion.state, total > 0 {
-                            ProgressView(value: Double(done), total: Double(total))
+                        // The whole conversion in %, with the phase and time left as the card's detail.
+                        ProgressView(value: conversion.fraction) {
+                            Text("\(Int((conversion.fraction * 100).rounded(.down))) %")
+                                .font(.headline.monospacedDigit())
                         }
                         Button(L("Pausar", "Pause")) {
                             conversion.requestStop(reason: "the player paused it")

@@ -112,6 +112,10 @@ Incluye ab5f2f9 (banco de GPU, ver abajo) y 54d91d2 (botón «Probar vibración�
 - Revisión adversarial aplicada: motores que podían quedar a nil para siempre tras rehacerlos, vibración en curso no reenviada, lanzador duplicado al salir con `close_launcher=0`, carrera fin/Start del banco, includes.
 - Qué probar: (1) en el lanzador, «Probar vibración del mando» → `Controller rumble test …`; (2) jugar con «Cerrar el lanzador al jugar» activado y buscar `motors made anew`, `App:` y `could not play`; (3) si sigue sin vibrar, desactivarlo y probar el botón con la ventana abierta durante la partida; (4) en el mundo, quieto, L3+R3 → 11 pasos de 10 s: leer `GPU_BENCH: step i` y el `GPU_TIME` siguiente.
 
+## Primera conversión (log 19:43): certificado OK, compilación falla al instante — build de diagnóstico
+- Detalle en la bitácora de VPEngine («Primera conversión en el visor»). Cambio aquí: `VPEngineViews.swift` EngineCard muestra `ProgressView(value: conversion.fraction)` con el % (texto de estado con fase y tiempo restante). El resto (auto-prueba del compilador, señal/fase del crash, mnemónicos no soportados) va en vpconvert (release `vpconvert-visionos` de VPEngine f8b6c76).
+- Siguiente: el usuario pulsa Convertir y comparte `conversion.log`.
+
 ## Certificado: lector PKCS#12 propio (VPEngine 0a6df69) — build lanzada
 - Log del usuario (19:01): SideStore **sí** devuelve el certificado (`cert` 3784 caracteres, `password` 32); el .p12 de iloader (2838 bytes, el mismo) también llega; ambos fallan en `SecPKCS12Import` con `-26275` (errSecDecode): cifrado PBES2/AES de OpenSSL 3 que el lector de Apple no lee en visionOS.
 - Ahora `VPCertificate` usa el lector propio de VPEngine (`runtime/vp_pkcs12.c`, CommonCrypto) cuando el de Apple falla: compilado en la app (`vpengine-project.py`), `#import "vp_pkcs12.h"` en el bridging header, `VPCertificate.log = LogFiles.log` en `AppModel.init`. Log: qué lector lo leyó, tipo de clave y nº de certificados, o el motivo exacto.
