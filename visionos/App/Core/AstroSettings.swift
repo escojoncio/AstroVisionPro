@@ -82,6 +82,10 @@ struct AstroSettings {
     /// The language the game is played in: "system" (the headset's) or a language tag
     /// (GameLanguages.swift).
     var gameLanguage = "system"
+    /// The launcher's window closes when the game's space opens. Off: it stays open (behind the
+    /// game) - a test of whether the controller's rumble stops because the app is left without
+    /// a window (GameController then takes it for an app in the background).
+    var closeLauncher = true
 
     static var documents: URL {
         FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -157,6 +161,7 @@ struct AstroSettings {
         case "stick_touchpad": stickTouchpad = flag
         case "surround": surround = flag
         case "real_time": realTime = flag
+        case "close_launcher": closeLauncher = flag
         case "pause": pause = flag
         case "game": game = value
         case "env": extraEnvironment.append(value)

@@ -216,9 +216,15 @@ struct HomeView: View {
             switch await openImmersiveSpace(id: AppModel.immersiveSpaceID) {
             case .opened:
                 model.immersiveOpen = true
-                LogFiles.log("Immersive space opened")
+                LogFiles.log("Immersive space opened; the launcher \(model.settings.closeLauncher ? "closes" : "stays open")")
                 // Only the game in view: the launcher comes back when the game's space closes.
-                dismissWindow(id: AppModel.launcherID)
+                if model.settings.closeLauncher {
+                    model.launcherClosed = true
+                    dismissWindow(id: AppModel.launcherID)
+                }
+                // The rumble engines made while the launcher was in front stop when it goes
+                // (applicationSuspended): new ones, once the space is the app's scene.
+                PlayStationController.shared.remakeRumble(after: 1.0, reason: "the immersive space opened")
             default:
                 model.message = L("No se pudo abrir el espacio inmersivo.", "The immersive space could not be opened.")
             }
