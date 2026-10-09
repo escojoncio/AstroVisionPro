@@ -1,0 +1,181 @@
+# The Apple Vision Pro app with VPEngine instead of FEX: the game's code is translated ahead of
+# time (on the headset itself, or as a pack made on a PC) and runs with no JIT and no StikDebug.
+# Same app otherwise (scripts/vpengine-project.py). Logs: ci-logs branch (visionos-vpengine.txt);
+# the app: release "visionos-vpengine" (AstroQuest-VPEngine.ipa).
+#
+# Only when asked for: by hand (Actions > visionos-vpengine > Run workflow) or a push whose commit
+# message has [build-vpengine] in it. The emulator built this way is kept between runs.
+name: visionos-vpengine
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: visionos-vpengine
+  cancel-in-progress: true
+jobs:
+  app:
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[build-vpengine]')
+    runs-on: macos-26
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          submodules: false
+      - name: VPEngine (runtime, engine, the app's shared code)
+        uses: actions/checkout@v4
+        with:
+          repository: escojoncio/VPEngine
+          path: vpengine
+          fetch-depth: 1
+          submodules: false
+
+      - name: What the emulator is built from
+        run: |
+          git ls-tree -r HEAD shadps4-arm64-main/externals | awk '$2 == "commit"' > core-inputs.txt
+          (cd vpengine && git ls-tree -r HEAD runtime integrations) >> core-inputs.txt
+      - uses: actions/cache/restore@v4
+        id: core
+        with:
+          path: visionos/build/core
+          key: visionos-core-vpengine-${{ hashFiles('core-inputs.txt', 'shadps4-arm64-main/src/**', 'shadps4-arm64-main/CMakeLists.txt', 'shadps4-arm64-main/externals/CMakeLists.txt', 'shadps4-arm64-main/cmake/**', 'visionos/scripts/build-core.sh', 'visionos/scripts/build-moltenvk.sh', 'visionos/scripts/build-ffmpeg.sh') }}
+
+      - name: Submodules the visionOS build uses
+        if: steps.core.outputs.cache-hit != 'true'
+        run: |
+          SKIP="mesa-kosmickrisp vulkan-loader libadrenotools bachata-xserver discord-rpc hwinfo ext-wepoll libdeflate"
+          PATHS=()
+          while read -r P; do
+            NAME=$(basename "$P")
+            [[ " $SKIP " == *" $NAME "* ]] && continue
+            PATHS+=("$P")
+          done < <(git config -f .gitmodules --get-regexp '\.path$' | awk '{print $2}')
+          for ATTEMPT in 1 2 3; do
+            git submodule update --init --recursive --depth 1 --jobs 8 -- "${PATHS[@]}" && break
+            sleep 10
+          done
+          git submodule update --init --recursive --jobs 8 -- "${PATHS[@]}"
+
+      - name: Tools
+        run: |
+          brew install xcodegen zstd || true
+          pip3 install --break-system-packages pyyaml
+          if [[ "${{ steps.core.outputs.cache-hit }}" != "true" ]]; then brew install ccache ninja || true; fi
+
+      # Restored and saved separately: a build that fails half way still keeps what it compiled.
+      - uses: actions/cache/restore@v4
+        if: steps.core.outputs.cache-hit != 'true'
+        with:
+          path: ~/Library/Caches/ccache
+          key: ccache-visionos-vpengine-${{ github.sha }}
+          restore-keys: |
+            ccache-visionos-vpengine-
+            ccache-visionos-app-
+      - uses: actions/cache@v4
+        if: steps.core.outputs.cache-hit != 'true'
+        with:
+          path: build/visionos/moltenvk
+          key: moltenvk-visionos-v1.4.2
+      - uses: actions/cache@v4
+        if: steps.core.outputs.cache-hit != 'true'
+        with:
+          path: build/visionos/ffmpeg
+          key: ffmpeg-visionos-n7.1.1-${{ hashFiles('visionos/scripts/build-ffmpeg.sh') }}
+
+      - name: The emulator for visionOS with VPEngine (MoltenVK, FFmpeg, shadPS4, libVPRuntime)
+        if: steps.core.outputs.cache-hit != 'true'
+        run: |
+          set -o pipefail
+          GUEST_CPU=vpengine VPENGINE_DIR=$PWD/vpengine bash visionos/scripts/build-core.sh 2>&1 | tee core.log
+      - name: Keep the emulator for the next runs
+        if: steps.core.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: visionos/build/core
+          key: visionos-core-vpengine-${{ hashFiles('core-inputs.txt', 'shadps4-arm64-main/src/**', 'shadps4-arm64-main/CMakeLists.txt', 'shadps4-arm64-main/externals/CMakeLists.txt', 'shadps4-arm64-main/cmake/**', 'visionos/scripts/build-core.sh', 'visionos/scripts/build-moltenvk.sh', 'visionos/scripts/build-ffmpeg.sh') }}
+      - uses: actions/cache/save@v4
+        if: always() && steps.core.outputs.cache-hit != 'true'
+        with:
+          path: ~/Library/Caches/ccache
+          key: ccache-visionos-vpengine-${{ github.sha }}
+
+      - uses: actions/cache@v4
+        id: kosmickrisp
+        with:
+          path: build/visionos/kosmickrisp
+          key: kosmickrisp-visionos-${{ hashFiles('visionos/patches/kosmickrisp-visionos.patch', 'visionos/scripts/build-kosmickrisp.sh') }}
+      - name: KosmicKrisp for visionOS
+        if: steps.kosmickrisp.outputs.cache-hit != 'true'
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          brew install meson pkg-config llvm spirv-tools spirv-llvm-translator libclc || true
+          pip3 install --break-system-packages mako packaging pyyaml
+          bash visionos/scripts/build-kosmickrisp.sh 2>&1 | tee kosmickrisp.log
+
+      # vpconvert (vpaot + clang + lld for visionOS, built by VPEngine's vpconvert-visionos
+      # workflow) and what the compiler needs on the headset; Apple's intermediate and root
+      # certificates, which the signature of a converted game carries.
+      - name: vpconvert and certificates
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          cd visionos/build
+          curl -sSfL -o vpconvert.tar.zst https://github.com/escojoncio/VPEngine/releases/download/vpconvert-visionos/vpconvert-visionos.tar.zst
+          zstd -dc vpconvert.tar.zst | tar -x
+          rm -rf vpconvert VPEngineSDK && mv vpconvert-visionos vpconvert && cp -R vpconvert/sdk VPEngineSDK
+          cat vpconvert/COMMIT vpconvert/LLVM_VERSION || true
+          ls -la vpconvert/lib
+          mkdir -p VPEngineCertificates
+          for C in AppleWWDRCAG3 AppleWWDRCAG4 AppleWWDRCAG5 AppleWWDRCAG6; do
+            curl -sSfL -o VPEngineCertificates/$C.cer https://www.apple.com/certificateauthority/$C.cer || echo "no $C"
+          done
+          curl -sSfL -o VPEngineCertificates/AppleRootCA-G3.cer https://www.apple.com/certificateauthority/AppleRootCA-G3.cer || true
+          curl -sSfL -o VPEngineCertificates/AppleIncRootCertificate.cer https://www.apple.com/appleca/AppleIncRootCertificate.cer
+          ls -la VPEngineCertificates
+
+      - name: The app
+        run: |
+          set -o pipefail
+          cd visionos
+          ls -la build/core
+          python3 scripts/vpengine-project.py ../vpengine build/vpconvert
+          xcodegen generate --spec project-vpengine.yml
+          xcodebuild -project AstroQuest.xcodeproj -scheme AstroQuest \
+            -sdk xros -configuration Release -destination 'generic/platform=visionOS' \
+            -derivedDataPath build/dd \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            build 2>&1 | tee ../app.log
+          APP=$(find build/dd/Build/Products -name 'AstroQuest.app' -maxdepth 3 | head -n 1)
+          mkdir -p build/ipa/Payload
+          cp -R "$APP" build/ipa/Payload/
+          mkdir -p build/ipa/Payload/AstroQuest.app/Frameworks
+          cp build/core/libVPRuntime.dylib build/ipa/Payload/AstroQuest.app/Frameworks/
+          KK=../build/visionos/kosmickrisp/KosmicKrisp.framework
+          if [[ -f "$KK/KosmicKrisp" ]]; then
+            cp -R "$KK" build/ipa/Payload/AstroQuest.app/Frameworks/
+            echo "KosmicKrisp.framework is in the app" | tee -a ../app.log
+          fi
+          otool -L build/ipa/Payload/AstroQuest.app/AstroQuest | tee -a ../app.log
+          du -sh build/ipa/Payload/AstroQuest.app | tee -a ../app.log
+          (cd build/ipa && zip -qry ../AstroQuest-VPEngine.ipa Payload)
+          ls -la build/AstroQuest-VPEngine.ipa
+
+      - name: Publish the logs
+        if: always()
+        run: bash visionos/scripts/ci-publish-log.sh visionos-vpengine core.log kosmickrisp.log app.log
+
+      - name: Publish the app as a release
+        if: success() && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete visionos-vpengine --yes --cleanup-tag || true
+          gh release create visionos-vpengine visionos/build/AstroQuest-VPEngine.ipa \
+            --target "$GITHUB_SHA" --prerelease \
+            --title "AstroQuest para Apple Vision Pro con VPEngine (sin JIT)" \
+            --notes "App sin firmar, compilada de ${GITHUB_SHA::7}, con VPEngine en lugar de FEX: el juego se convierte en el visor y se ejecuta sin JIT ni StikDebug."

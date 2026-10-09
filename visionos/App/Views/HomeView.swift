@@ -28,7 +28,11 @@ struct HomeView: View {
                         .foregroundStyle(.secondary)
                 }
                 HStack(alignment: .top, spacing: 16) {
+#if VPENGINE
+                    EngineCard()
+#else
                     jitCard
+#endif
                     gameCard
                     controllerCard
                 }
@@ -192,9 +196,15 @@ struct HomeView: View {
     }
 
     private var hint: String {
+#if VPENGINE
+        if !model.engineReady {
+            return L("Convierte el juego (una vez) para poder jugar.", "Convert the game (once) to play.")
+        }
+#else
         if !model.jit.isReady {
             return L("Activa el JIT para poder jugar.", "Enable JIT to play.")
         }
+#endif
         if model.gamePath == nil {
             return L("Falta el juego.", "The game is missing.")
         }
