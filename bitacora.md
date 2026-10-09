@@ -5,6 +5,12 @@ Base: shadPS4 ARM64 (`shadps4-arm64-main/`) + FEXCore (x86-64 → ARM64) + Molte
 App visionOS en `visionos/` (SwiftUI + Compositor Services + ARKit + GameController).
 JIT: arena RWX preparada por StikDebug (protocolo `brk #0xf00d` + universal.js); la app hace detach al terminar.
 
+## Test de c4d958d (log 2026-10-09 18:36; gpu_clock_scale=auto)
+- **Reloj automático funciona**: sombras durante toda la partida (confirmado por el usuario). `GPU_CLOCK_AUTO`: re-sincronización una vez por frame (113–226 por 5 s = fps×5), 0 «for lack of one», sin cuelgues. Nave: factor 1.00 (el juego mide 1–2.5 ms, por debajo del objetivo). Mundo: factor 0.27–0.67, medida media 3.9–4.3 ms ≈ objetivo 4.17; un pico de 11.4 ms (carga) absorbido por el tope de 4× sin hundir el factor.
+- «0.0 ms caught up»: el juego solo lee el contador de rendimiento (P), y `catch_up_ns` solo cuenta `clock64` → cosmético; contar el de `perf_counter` (convertido a ms) en la próxima build.
+- «Suavizado del juego al resolver»: el usuario no notó diferencia, pero el log tiene una sola línea `Settings:` → el interruptor se cambió con el juego ya arrancado y `SHADPS4_RESOLVE_AA` solo se lee al iniciar el emulador (`BlitHelper` ctor). Prueba pendiente: cerrar la app, desactivarlo, volver a jugar.
+- Rendimiento igual que antes: nave 45 fps (GPU 55–85 %), mundo 30 fps (GPU 90–98 %), thermal fair a los ~1:20 de mundo.
+
 ## Build c4d958d (run 37945949896): OK, `visionos-latest/AstroQuest.ipa` (sin probar) — reloj de GPU automático sin desfase, interruptor del suavizado al resolver
 - `video_core/amdgpu/game_clock.{h,cpp}`: `SHADPS4_GPU_CLOCK_SCALE=auto` → modo automático (`Setting()` devuelve 0). `Scaled` en automático: factor en `auto_factor` (atómico, 0.1–1), re-ancla al cambiar el factor (`value_anchor = max(last, Value(raw))`), monótono (`last`), con mutex por reloj. API: `IsAutomatic`, `SetFactor`, `Factor`, `OnFrameDone` (re-sincroniza ambos relojes con el real), `ResyncIfLate` (en cada sello; re-sincroniza si pasó >1 s sin frame), `TakeResyncStats`. Modos fijos y Real sin cambios.
 - `liverpool.{h,cpp}`: `SubmitDone` pone `resync_next_gfx`; `SubmitGfx` guarda en `resync_task` el handle del primer envío gráfico tras él; `Process` llama a `GameClock::OnFrameDone()` justo antes del primer `resume` de ese task (CAS). Así la re-sincronización cae al empezar los comandos del frame siguiente, no cuando el hilo se queda sin trabajo (revisión adversarial: con la GPU retrasada eso caía a mitad de frame).
