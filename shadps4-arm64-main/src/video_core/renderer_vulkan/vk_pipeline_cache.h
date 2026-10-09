@@ -194,9 +194,24 @@ private:
         std::atomic<bool> done{};
         /// A draw waited for it already (WaitForJob): the others are left out until it is made.
         bool waited{};
+        /// From the cache on disk (WarmUp), made in the background from the start: already
+        /// kept there, and no draw asked for it yet.
+        bool preloaded{};
+        /// A preloaded one a draw asked for is put before the others (promoted): whichever of
+        /// its two worker jobs starts first makes it (started).
+        bool promoted{};
+        std::atomic<bool> started{};
     };
     class PipelineWorkers;
     const GraphicsPipeline* FinishPendingGraphicsPipeline(PendingGraphicsPipeline& job);
+    /// Has a worker make the job's pipeline; urgent (a draw asks for it) before any preloaded.
+    void MakeOnWorker(std::shared_ptr<PendingGraphicsPipeline> job, bool urgent);
+    // The cache on disk's pipelines being made in the background (WarmUp).
+    std::atomic<u32> preloads_done{};
+    std::atomic<u32> preloads_total{~0u};
+    std::atomic<bool> preloads_reported{};
+    std::chrono::steady_clock::time_point preloads_begun{};
+    void ReportPreloadsIfDone();
     bool async_pipelines{};
     u32 skipped_draws{};
     tsl::robin_map<GraphicsPipelineKey, std::shared_ptr<PendingGraphicsPipeline>>

@@ -369,6 +369,9 @@ void Emulator::Run(std::filesystem::path file, std::vector<std::string> args,
     // used are kept and made again when it starts, before its first frame.
     if (const char* value = std::getenv("SHADPS4_PIPELINE_CACHE"); value != nullptr && *value) {
         EmulatorSettings.SetPipelineCacheEnabled(value[0] != '0', true);
+        // Each blob a file of its own, written as it is made: the archive is only finished when
+        // the emulator closes, and the app is often closed by the system without that.
+        EmulatorSettings.SetPipelineCacheArchived(false, true);
     }
 #endif
     LOG_INFO(Config, "Vulkan PipelineCacheEnabled: {}", EmulatorSettings.IsPipelineCacheEnabled());

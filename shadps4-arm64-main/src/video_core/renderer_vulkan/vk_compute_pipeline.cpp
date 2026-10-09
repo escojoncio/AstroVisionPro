@@ -33,22 +33,44 @@ ComputePipeline::ComputePipeline(const Instance& instance, Scheduler& scheduler,
 
     u32 binding{};
     boost::container::small_vector<vk::DescriptorSetLayoutBinding, 32> bindings;
-    for (const auto& buffer : info->buffers) {
-        // During deserialization, we don't have access to the UD to fetch sharp data. To address
-        // this properly we need to track shaprs or portion of them in `sdata`, but since we're
-        // interested only in "is storage" flag (which is not even effective atm), we can take a
-        // shortcut there.
-        const auto sharp = preloading ? AmdGpu::Buffer{} : buffer.GetSharp(*info);
+    // Loaded from the cache on disk, the sharps are not there: what was taken from them when
+    // the pipeline was first made (kept in sdata), if it is all there.
+    const bool kept = preloading && sdata.buffer_is_storage.size() == info->buffers.size() &&
+                      sdata.image_num_bindings.size() == info->images.size();
+    if (!preloading) {
+        sdata.buffer_is_storage.clear();
+        sdata.image_num_bindings.clear();
+    }
+    for (size_t index = 0; index < info->buffers.size(); ++index) {
+        const auto& buffer = info->buffers[index];
+        bool is_storage;
+        if (kept) {
+            is_storage = sdata.buffer_is_storage[index] != 0;
+        } else if (preloading) {
+            is_storage = buffer.IsStorage(AmdGpu::Buffer{});
+        } else {
+            is_storage = buffer.IsStorage(buffer.GetSharp(*info));
+            sdata.buffer_is_storage.push_back(is_storage ? 1 : 0);
+        }
         bindings.push_back({
             .binding = binding++,
-            .descriptorType = buffer.IsStorage(sharp) ? vk::DescriptorType::eStorageBuffer
-                                                      : vk::DescriptorType::eUniformBuffer,
+            .descriptorType = is_storage ? vk::DescriptorType::eStorageBuffer
+                                         : vk::DescriptorType::eUniformBuffer,
             .descriptorCount = 1,
             .stageFlags = vk::ShaderStageFlagBits::eCompute,
         });
     }
-    for (const auto& image : info->images) {
-        const u32 num_bindings = image.NumBindings(*info);
+    for (size_t index = 0; index < info->images.size(); ++index) {
+        const auto& image = info->images[index];
+        u32 num_bindings;
+        if (kept) {
+            num_bindings = sdata.image_num_bindings[index];
+        } else {
+            num_bindings = image.NumBindings(*info);
+            if (!preloading) {
+                sdata.image_num_bindings.push_back(num_bindings);
+            }
+        }
         bindings.push_back({
             .binding = binding,
             .descriptorType = image.is_written ? vk::DescriptorType::eStorageImage

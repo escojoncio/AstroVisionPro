@@ -93,6 +93,7 @@ struct SettingsView: View {
                         Text(L("MoltenVK · el anterior", "MoltenVK · the previous one")).tag("moltenvk")
                     }
                     Toggle(L("Compilar shaders en segundo plano", "Compile shaders in the background"), isOn: flag("async_shaders", \.asyncShaders))
+                    Toggle(L("Guardar y precargar shaders", "Keep and preload shaders"), isOn: flag("shader_cache", \.shaderCache))
                     Toggle(L("Geometry shaders sin cortar la pasada", "Geometry shaders without breaking the pass"), isOn: flag("gs_in_pass", \.gsInPass))
                     Toggle(L("Memoria de geometry shaders entre pasadas", "Geometry shader memory between passes"), isOn: flag("heap_between_passes", \.heapBetweenPasses))
                     Toggle(L("Juntar pasadas", "Merge passes"), isOn: flag("merge_passes", \.mergePasses))

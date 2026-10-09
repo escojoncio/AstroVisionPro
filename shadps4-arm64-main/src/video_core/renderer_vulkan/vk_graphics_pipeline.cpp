@@ -38,7 +38,7 @@ GraphicsPipeline::GraphicsPipeline(
       fetch_shader{std::move(fetch_shader_)} {
     const vk::Device device = instance.GetDevice();
     std::ranges::copy(infos, stages.begin());
-    BuildDescSetLayout(preloading, sdata.buffer_is_storage);
+    BuildDescSetLayout(preloading, sdata);
     const auto debug_str = GetDebugString();
 
     const vk::PushConstantRange push_constants = {
@@ -463,15 +463,19 @@ void GraphicsPipeline::PrepareSerialization(
                             sdata.divisors, guest_buffers, vs_info.step_rate_0,
                             vs_info.step_rate_1);
     }
-    // The kind of each buffer binding, from the live sharps (BuildDescSetLayout), in the order
-    // the layout takes them.
+    // The kind of each buffer binding and the bindings of each image, from the live sharps
+    // (BuildDescSetLayout), in the order the layout takes them.
     sdata.buffer_is_storage.clear();
+    sdata.image_num_bindings.clear();
     for (const auto* stage : infos) {
         if (stage == nullptr) {
             continue;
         }
         for (const auto& buffer : stage->buffers) {
             sdata.buffer_is_storage.push_back(buffer.IsStorage(buffer.GetSharp(*stage)) ? 1 : 0);
+        }
+        for (const auto& image : stage->images) {
+            sdata.image_num_bindings.push_back(image.NumBindings(*stage));
         }
     }
     const auto& fs_info = runtime_infos[u32(Shader::LogicalStage::Fragment)].fs_info;
@@ -507,11 +511,35 @@ template void GraphicsPipeline::GetVertexInputs(
     VertexInputs<vk::VertexInputBindingDivisorDescriptionEXT>& divisors,
     VertexInputs<AmdGpu::Buffer>& guest_buffers, u32 step_rate_0, u32 step_rate_1) const;
 
-void GraphicsPipeline::BuildDescSetLayout(bool preloading,
-                                          const std::vector<u8>& buffer_is_storage) {
+void GraphicsPipeline::BuildDescSetLayout(bool preloading, SerializationSupport& sdata) {
     boost::container::small_vector<vk::DescriptorSetLayoutBinding, 32> bindings;
     u32 binding{};
+
+    size_t num_buffers{};
+    size_t num_images{};
+    for (const auto* stage : stages) {
+        if (stage) {
+            num_buffers += stage->buffers.size();
+            num_images += stage->images.size();
+        }
+    }
+    // Preloading (a worker, or the cache on disk): what was taken from the live sharps, if it
+    // is all there; else (an older cache) what the shader description itself says.
+    const bool kept = preloading && sdata.buffer_is_storage.size() == num_buffers &&
+                      sdata.image_num_bindings.size() == num_images;
+    if (preloading && !kept) {
+        LOG_WARNING(Render_Vulkan,
+                    "Pipeline {:#x} made without its buffer kinds and image bindings ({} of {} "
+                    "buffers, {} of {} images): taken from the shaders",
+                    std::hash<GraphicsPipelineKey>{}(key), sdata.buffer_is_storage.size(),
+                    num_buffers, sdata.image_num_bindings.size(), num_images);
+    }
+    if (!preloading) {
+        sdata.buffer_is_storage.clear();
+        sdata.image_num_bindings.clear();
+    }
     size_t buffer_index{};
+    size_t image_index{};
 
     for (const auto* stage : stages) {
         if (!stage) {
@@ -519,14 +547,15 @@ void GraphicsPipeline::BuildDescSetLayout(bool preloading,
         }
         const auto stage_bit = LogicalStageToStageBit[u32(stage->l_stage)];
         for (const auto& buffer : stage->buffers) {
-            const auto sharp =
-                preloading ? AmdGpu::Buffer{}
-                           : buffer.GetSharp(*stage); // See for the comment in compute PL creation
-            // Made on a worker: what the main thread saw (PrepareSerialization), as the shader
-            // was compiled with it.
-            const bool is_storage = preloading && buffer_index < buffer_is_storage.size()
-                                        ? buffer_is_storage[buffer_index] != 0
-                                        : buffer.IsStorage(sharp);
+            bool is_storage;
+            if (kept) {
+                is_storage = sdata.buffer_is_storage[buffer_index] != 0;
+            } else if (preloading) {
+                is_storage = buffer.IsStorage(AmdGpu::Buffer{});
+            } else {
+                is_storage = buffer.IsStorage(buffer.GetSharp(*stage));
+                sdata.buffer_is_storage.push_back(is_storage ? 1 : 0);
+            }
             ++buffer_index;
             bindings.push_back({
                 .binding = binding++,
@@ -537,7 +566,17 @@ void GraphicsPipeline::BuildDescSetLayout(bool preloading,
             });
         }
         for (const auto& image : stage->images) {
-            const u32 num_bindings = image.NumBindings(*stage);
+            u32 num_bindings;
+            if (kept) {
+                num_bindings = sdata.image_num_bindings[image_index];
+            } else {
+                // Preloading, from the description's own copy of the user data.
+                num_bindings = image.NumBindings(*stage);
+                if (!preloading) {
+                    sdata.image_num_bindings.push_back(num_bindings);
+                }
+            }
+            ++image_index;
             bindings.push_back({
                 .binding = binding,
                 .descriptorType = image.is_written ? vk::DescriptorType::eStorageImage
