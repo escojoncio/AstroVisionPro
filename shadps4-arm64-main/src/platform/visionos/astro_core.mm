@@ -6,6 +6,7 @@
 
 #import <Foundation/Foundation.h>
 
+#include "video_core/renderer_vulkan/gpu_bench.h"
 #include <array>
 #include <memory>
 #include <atomic>
@@ -217,6 +218,13 @@ void astro_core_pad_state(const AstroPadState* state) {
         return;
     }
     static std::atomic<bool> home_down{};
+    // L3 and R3 together start the GPU test (gpu_bench.h): from inside the game, where it is
+    // to be measured.
+    static std::atomic<bool> bench_combo{};
+    const bool combo = (state->buttons & AstroPadL3) != 0 && (state->buttons & AstroPadR3) != 0;
+    if (bench_combo.exchange(combo) != combo && combo) {
+        Vulkan::GpuBench::Start();
+    }
     const std::array<int, 6> axes{state->left_x,       state->left_y,
                                   state->right_x,      state->right_y,
                                   state->left_trigger, state->right_trigger};
