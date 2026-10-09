@@ -146,6 +146,13 @@ void Liverpool::Process(std::stop_token stoken) {
                 }
                 task = queue.submits.front();
             }
+            if (void* first = task.address();
+                resync_task.load(std::memory_order_relaxed) == first &&
+                resync_task.compare_exchange_strong(first, nullptr)) {
+                // The first commands of a new frame: the title's clocks are back on real time
+                // (automatic GPU clock, game_clock.h), before any of its stamps.
+                GameClock::OnFrameDone();
+            }
             in_gfx_task.store(true, std::memory_order_relaxed);
             task.resume();
             in_gfx_task.store(false, std::memory_order_relaxed);
@@ -1506,6 +1513,9 @@ void Liverpool::SubmitGfx(std::span<const u32> dcb, std::span<const u32> ccb) {
     }
 
     auto task = ProcessGraphics(dcb, ccb);
+    if (resync_next_gfx.exchange(false, std::memory_order_relaxed)) {
+        resync_task.store(task.handle.address(), std::memory_order_relaxed);
+    }
     {
         std::scoped_lock lock{queue.m_access};
         queue.submits.emplace(task.handle);
