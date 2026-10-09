@@ -12,12 +12,14 @@ on:
   workflow_dispatch:
 permissions:
   contents: write
-concurrency:
-  group: visionos-vpengine
-  cancel-in-progress: true
 jobs:
   app:
     if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[build-vpengine]')
+    # On the job, not the workflow: a push without [build-vpengine] makes a run whose job is
+    # skipped, and a workflow-level group would let that run cancel a build in progress.
+    concurrency:
+      group: visionos-vpengine
+      cancel-in-progress: true
     runs-on: macos-26
     timeout-minutes: 180
     steps:
@@ -123,19 +125,40 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          set -e
+          set -eo pipefail
           cd visionos/build
-          curl -sSfL -o vpconvert.tar.zst https://github.com/escojoncio/VPEngine/releases/download/vpconvert-visionos/vpconvert-visionos.tar.zst
+          curl -sSfL --retry 4 --retry-delay 5 -o vpconvert.tar.zst https://github.com/escojoncio/VPEngine/releases/download/vpconvert-visionos/vpconvert-visionos.tar.zst
           zstd -dc vpconvert.tar.zst | tar -x
           rm -rf vpconvert VPEngineSDK && mv vpconvert-visionos vpconvert && cp -R vpconvert/sdk VPEngineSDK
-          cat vpconvert/COMMIT vpconvert/LLVM_VERSION || true
+          cat vpconvert/COMMIT vpconvert/LLVM_VERSION
           ls -la vpconvert/lib
+          # The release must be built from what the app compiles against: if VPEngine changed
+          # vpaot, vpconvert, the runtime, its SDK or Zydis since, the app would carry an old
+          # converter with a new runtime. Fail instead (run "vpconvert for visionOS" first).
+          BUILT=$(cat vpconvert/COMMIT)
+          HEAD=$(git -C ../../vpengine rev-parse HEAD)
+          if [[ "$BUILT" != "$HEAD" ]]; then
+            # A failing API call (or a release commit that no longer exists) must fail the step.
+            FILES=$(gh api "repos/escojoncio/VPEngine/compare/$BUILT...$HEAD" --paginate --jq '.files[].filename')
+            # The compare API lists at most 300 files: past that, the list cannot be trusted.
+            if (( $(wc -l <<<"$FILES") >= 300 )); then
+              echo "::error::VPEngine changed 300+ files since vpconvert-visionos (${BUILT::7}): rebuild it"
+              exit 1
+            fi
+            CHANGED=$(grep -E '^(tools/vpaot|tools/vpconvert|tools/sdk|runtime|third_party)' <<<"$FILES" || true)
+            if [[ -n "$CHANGED" ]]; then
+              echo "::error::vpconvert-visionos was built from ${BUILT::7}; VPEngine ${HEAD::7} changed:"
+              echo "$CHANGED"
+              exit 1
+            fi
+          fi
+          echo "vpconvert ${BUILT::7} matches VPEngine ${HEAD::7}"
           mkdir -p VPEngineCertificates
           for C in AppleWWDRCAG3 AppleWWDRCAG4 AppleWWDRCAG5 AppleWWDRCAG6; do
-            curl -sSfL -o VPEngineCertificates/$C.cer https://www.apple.com/certificateauthority/$C.cer || echo "no $C"
+            curl -sSfL --retry 4 --retry-delay 5 -o VPEngineCertificates/$C.cer https://www.apple.com/certificateauthority/$C.cer || echo "no $C"
           done
-          curl -sSfL -o VPEngineCertificates/AppleRootCA-G3.cer https://www.apple.com/certificateauthority/AppleRootCA-G3.cer || true
-          curl -sSfL -o VPEngineCertificates/AppleIncRootCertificate.cer https://www.apple.com/appleca/AppleIncRootCertificate.cer
+          curl -sSfL --retry 4 --retry-delay 5 -o VPEngineCertificates/AppleRootCA-G3.cer https://www.apple.com/certificateauthority/AppleRootCA-G3.cer || true
+          curl -sSfL --retry 4 --retry-delay 5 -o VPEngineCertificates/AppleIncRootCertificate.cer https://www.apple.com/appleca/AppleIncRootCertificate.cer
           ls -la VPEngineCertificates
 
       - name: The app

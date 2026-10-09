@@ -85,6 +85,25 @@ Incluye ab5f2f9 (banco de GPU, ver abajo) y 54d91d2 (botón «Probar vibración�
 - Revisión adversarial aplicada: motores que podían quedar a nil para siempre tras rehacerlos, vibración en curso no reenviada, lanzador duplicado al salir con `close_launcher=0`, carrera fin/Start del banco, includes.
 - Qué probar: (1) en el lanzador, «Probar vibración del mando» → `Controller rumble test …`; (2) jugar con «Cerrar el lanzador al jugar» activado y buscar `motors made anew`, `App:` y `could not play`; (3) si sigue sin vibrar, desactivarlo y probar el botón con la ventana abierta durante la partida; (4) en el mundo, quieto, L3+R3 → 11 pasos de 10 s: leer `GPU_BENCH: step i` y el `GPU_TIME` siguiente.
 
+## Revisión adversarial de la variante VPEngine (2026-10-09 tarde) — corregido, sin build aún
+- **Zydis duplicado (grave):** `libastroquest_core.a` llevaba el Zydis de shadPS4 (submódulo 120e0e7) y
+  `libvpconvert_all.a` el de VPEngine (a95bb71); mismos símbolos, otro layout (medido: `sizeof
+  (ZydisDecodedInstruction)` 328 vs 352, `ZYDIS_REGISTER_RSP` 57 vs 105). Con `-lastroquest_core` antes,
+  vpaot usaba el de shadPS4 → traducción basura sin error de enlace. Ahora: `vpengine-project.py`
+  inserta `-lvpconvert_all` justo antes de `-lastroquest_core`; `build-core.sh` con `GUEST_CPU=vpengine`
+  no mete `libZydis.a`/`libZycore.a` en el núcleo (en ARM64 shadPS4 solo usa Zydis bajo
+  `ARCH_X86_64`: `cpu_patches.cpp` solo x86, `signals.cpp` y el walker x86 con `#ifdef`).
+- **Workflow `visionos-vpengine.yml`:** paso «vpconvert and certificates» con `set -eo pipefail`,
+  `curl --retry 4`; falla si la release `vpconvert-visionos` (`vpconvert/COMMIT`) no corresponde al
+  VPEngine del checkout: `gh api repos/escojoncio/VPEngine/compare/BUILT...HEAD` (error de API → falla;
+  ≥ 300 ficheros → falla) filtrado a `tools/vpaot|tools/vpconvert|tools/sdk|runtime|third_party`.
+  `concurrency` movido al job (una run saltada no cancela una build en marcha).
+- **Intérprete SRT:** `movz/movk` con registro > x5 → instrucción desconocida (antes escribía fuera
+  de `x[6]` con un walker corrupto). Resto del intérprete verificado contra el generador (test x86
+  con ASan/UBSan, 20 dwords iguales) y el asm como Mach-O arm64.
+- La clave de caché del núcleo cambia (build-core.sh y src/): la próxima run recompila el núcleo (ccache).
+- Orden de builds: primero «vpconvert for visionOS» en VPEngine (d1b289f), después `visionos-vpengine`.
+
 ## Build VPEngine d073e70 (run 37905185196, dispatch 08:28 UTC): FALLÓ en «vpconvert and certificates» — sin IPA
 - Núcleo OK: `build-core.sh` con `GUEST_CPU=vpengine` compiló sin errores (`ci-logs/visionos-vpengine.txt`): `libastroquest_core.a` 111 MB, `libVPRuntime.dylib` 188 KB con 373 símbolos `_vp_`. Guardado en caché (`visionos-core-vpengine-<hash>`; la clave incluye `shadps4-arm64-main/src/**` → los commits posteriores la invalidan, la próxima run recompila el núcleo).
 - Fallo: el paso descarga `https://github.com/escojoncio/VPEngine/releases/download/vpconvert-visionos/vpconvert-visionos.tar.zst` con `curl -sSfL`; la run llegó ahí ~08:47 UTC y el asset no se subió hasta las 09:08:31 UTC (run «vpconvert for visionOS» d203e68 de VPEngine). Ahora responde 200 → relanzar por dispatch debería pasar ese paso. Los pasos «The app» (xcodegen + xcodebuild con las fuentes Swift de VPEngine) y la release nunca se han ejecutado: compilación de la parte Swift sin verificar.
