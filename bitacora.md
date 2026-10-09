@@ -5,7 +5,7 @@ Base: shadPS4 ARM64 (`shadps4-arm64-main/`) + FEXCore (x86-64 → ARM64) + Molte
 App visionOS en `visionos/` (SwiftUI + Compositor Services + ARKit + GameController).
 JIT: arena RWX preparada por StikDebug (protocolo `brk #0xf00d` + universal.js); la app hace detach al terminar.
 
-## Build «vibración rehecha» (commit siguiente, `[build]`): banco de GPU, vibración tras abrir el espacio, «Cerrar el lanzador al jugar»
+## Build 5e2d0e3 (run 37926320385): OK, `visionos-latest/AstroQuest.ipa` (sin probar) — «vibración rehecha»: banco de GPU, vibración tras abrir el espacio, «Cerrar el lanzador al jugar»
 Incluye ab5f2f9 (banco de GPU, ver abajo) y 54d91d2 (botón «Probar vibración», caché de pipelines fuera).
 - Hipótesis de la vibración: con `GCController.shouldMonitorBackgroundEvents = true` (PlayStationController.swift `start()`) los botones llegan aunque GameController tome la app por una en segundo plano (doc. de Apple: sin esa opción no reenvía nada a una app que no está al frente). Al cerrar el lanzador (`dismissWindow`) los motores paran con `applicationSuspended` y los nuevos fallan → probable que, sin ventanas, GameController/CoreHaptics vean la app en segundo plano aunque el espacio inmersivo esté abierto.
 - `PlayStationController.swift`:
