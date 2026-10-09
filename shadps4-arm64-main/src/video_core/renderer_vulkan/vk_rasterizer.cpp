@@ -516,8 +516,15 @@ const GraphicsPipeline* Rasterizer::PipelineForOpenPass(const GraphicsPipeline* 
         return nullptr;
     }
     // Two outputs blended into the first target (dual-source blending) go with one target only.
-    if (const auto* fs = pipeline->GetStages()[u32(Shader::LogicalStage::Fragment)];
-        fs != nullptr && fs->fs_info.dual_source_blending && open.num_color_attachments > 1) {
+    const auto& cb0_blend = key.blend_controls[0];
+    const bool dual_source =
+        cb0_blend.enable &&
+        (LiverpoolToVK::IsDualSourceBlendFactor(cb0_blend.color_src_factor) ||
+         LiverpoolToVK::IsDualSourceBlendFactor(cb0_blend.color_dst_factor) ||
+         (cb0_blend.separate_alpha_blend &&
+          (LiverpoolToVK::IsDualSourceBlendFactor(cb0_blend.alpha_src_factor) ||
+           LiverpoolToVK::IsDualSourceBlendFactor(cb0_blend.alpha_dst_factor))));
+    if (dual_source && open.num_color_attachments > 1) {
         return nullptr;
     }
     // Where the draw's pixel shader writes to a target the pass has and the draw has not, the
