@@ -90,6 +90,7 @@ struct FrameStats {
         PipelineBinds,      ///< Graphics pipeline binds asked for.
         PipelineBindsShort, ///< ... that found the pipeline bound already.
         Vertices,           ///< Vertices (or indices) drawn, instances counted.
+        KeptInPass,         ///< Draws made in the open pass with targets it already had.
         Count,
     };
     static void Add(Counter counter, u64 amount = 1);
@@ -444,6 +445,19 @@ public:
         return render_state;
     }
 
+    /// Whether a render pass is open.
+    bool IsRendering() const {
+        return is_rendering;
+    }
+
+    /// Counts the render passes begun: the one open is the same as before while this is.
+    u64 PassSerial() const {
+        return pass_serial;
+    }
+
+    /// Whether BeginRendering(requested) would go on in the open pass by itself.
+    bool KeepsPassFor(const RenderState& requested) const;
+
     /// Binds a graphics pipeline for the draws of the title, unless it is the one the last draw
     /// of this render pass was made with: a run of objects drawn with the same pipeline is
     /// common, and binding it again makes the driver send the GPU its whole state again.
@@ -542,6 +556,7 @@ private:
     std::jthread priority_pending_ops_thread;
     RenderState render_state;
     bool is_rendering = false;
+    u64 pass_serial{};
     u32 draws_since_flush{};
     bool flush_due{};
     /// What BindGraphicsPipeline bound last in the current render pass. Other code binds

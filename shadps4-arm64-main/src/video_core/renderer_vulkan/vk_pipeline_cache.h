@@ -89,6 +89,27 @@ public:
         targets_left_out = targets;
     }
 
+    /// The targets of a render pass that is open, as its pipelines were made for them: a draw
+    /// that uses fewer of them is made in it (Rasterizer::PipelineForOpenPass) with a pipeline
+    /// made for all of them, writing to none of those it has not got itself.
+    struct OpenPassTargets {
+        u32 num_color_attachments{};
+        std::array<Shader::PsColorBuffer, AmdGpu::NUM_COLOR_BUFFERS> color_buffers{};
+        std::array<u8, AmdGpu::NUM_COLOR_BUFFERS> color_samples{};
+        u8 num_samples{};
+        u8 depth_samples{};
+        AmdGpu::DepthBuffer::ZFormat z_format{};
+        AmdGpu::DepthBuffer::StencilFormat stencil_format{};
+        /// The colour targets (a bit each) that are the draw's own as well.
+        u8 own_colors{};
+    };
+
+    /// The graphics pipelines asked for from now on are made for those targets (nullptr: for
+    /// the draw's own, as usual).
+    void MakeForOpenPass(const OpenPassTargets* targets) {
+        open_pass_targets = targets;
+    }
+
     const ComputePipeline* GetComputePipeline();
 
     using Result = std::tuple<const Shader::Info*, vk::ShaderModule,
@@ -142,6 +163,7 @@ private:
     std::optional<Shader::Gcn::FetchShaderData> fetch_shader{};
     GraphicsPipelineKey graphics_key{};
     u8 targets_left_out{};
+    const OpenPassTargets* open_pass_targets{};
     ComputePipelineKey compute_key{};
     u32 num_new_pipelines{}; // new pipelines added to the cache since the game start
 

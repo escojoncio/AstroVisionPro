@@ -24,9 +24,12 @@
 #include <cstring>
 #include <memory>
 #include <mutex>
+#include <string>
 #include <thread>
 #include <unordered_map>
 #include <vector>
+
+#include <SDL3/SDL_hints.h>
 
 #include "common/logging/log.h"
 #include "core/libraries/audio/spatial_audio.h"
@@ -111,6 +114,10 @@ struct Voice {
     std::unique_ptr<Ring> ring;
     PHASESource* source{};
     PHASESoundEvent* event{};
+    // What its sound event is made of, to make it again (Recover).
+    NSString* event_id{};
+    NSString* node_id{};
+    PHASEMixerParameters* parameters{};
     // The bookkeeping below is the emulator's, under g_mutex.
     bool in_use{};
     u64 key{};
@@ -137,6 +144,76 @@ std::vector<int> g_object_voices;
 std::unordered_map<u64, int> g_objects;
 u64 g_tick = 0;
 int g_serial = 0;
+/// Blocks of sound PHASE has asked the voices for: while this does not move, nothing is heard.
+std::atomic<u64> g_pulls{0};
+
+/// The session the headset's audio needs. The title also opens the microphone (SDL's), and SDL
+/// sets the session up for what is open: with only a microphone of its own, "record" (which
+/// silences every output) after taking the session down. So the session is set up for playing
+/// and recording from the start, as SDL sets it up when told to (SDL_HINT_AUDIO_CATEGORY,
+/// SDL_coreaudio.m UpdateAudioSession), and SDL then finds it as it wants it and leaves it be.
+constexpr NSUInteger SessionOptions =
+    AVAudioSessionCategoryOptionMixWithOthers | AVAudioSessionCategoryOptionDefaultToSpeaker |
+    0x4 /* AVAudioSessionCategoryOptionAllowBluetooth */ |
+    AVAudioSessionCategoryOptionAllowBluetoothA2DP | AVAudioSessionCategoryOptionAllowAirPlay;
+
+void SetUpSession(AVAudioSession* session) {
+    NSError* error = nil;
+    if (![session.category isEqualToString:AVAudioSessionCategoryPlayAndRecord] ||
+        session.categoryOptions != SessionOptions) {
+        if (![session setCategory:AVAudioSessionCategoryPlayAndRecord
+                             mode:AVAudioSessionModeDefault
+                          options:SessionOptions
+                            error:&error]) {
+            LOG_WARNING(Lib_AudioOut, "SPATIAL_AUDIO: session not set up: {}",
+                        error.localizedDescription.UTF8String);
+        }
+    }
+    // The title turns the sound with the head already; the system must not do it again.
+    error = nil;
+    if (![session setIntendedSpatialExperience:AVAudioSessionSpatialExperienceBypassed
+                                        options:@{}
+                                          error:&error]) {
+        LOG_WARNING(Lib_AudioOut, "SPATIAL_AUDIO: system spatialization still on: {}",
+                    error.localizedDescription.UTF8String);
+    }
+}
+
+/// Makes the voice's sound event and starts it.
+bool StartEvent(Voice& voice) {
+    NSError* error = nil;
+    PHASESoundEvent* event = [[PHASESoundEvent alloc] initWithEngine:g_engine
+                                                     assetIdentifier:voice.event_id
+                                                     mixerParameters:voice.parameters
+                                                               error:&error];
+    if (event == nil) {
+        LOG_ERROR(Lib_AudioOut, "SPATIAL_AUDIO: no event: {}",
+                  error.localizedDescription.UTF8String);
+        return false;
+    }
+    PHASEPullStreamNode* pull = event.pullStreamNodes[voice.node_id];
+    if (pull == nil) {
+        LOG_ERROR(Lib_AudioOut, "SPATIAL_AUDIO: the event has no pull stream");
+        return false;
+    }
+    Ring* ring = voice.ring.get();
+    pull.renderBlock = ^OSStatus(BOOL* is_silence, const AudioTimeStamp*, AVAudioFrameCount frames,
+                                 AudioBufferList* output) {
+        float* planes[2] = {};
+        const u32 count = std::min<u32>(output->mNumberBuffers, 2);
+        for (u32 c = 0; c < count; ++c) {
+            planes[c] = static_cast<float*>(output->mBuffers[c].mData);
+        }
+        const u32 got = ring->Read(planes, count, frames);
+        *is_silence = got == 0 ? YES : NO;
+        g_pulls.fetch_add(1, std::memory_order_relaxed);
+        return noErr;
+    };
+    [event startWithCompletion:^(PHASESoundEventStartHandlerReason) {
+    }];
+    voice.event = event;
+    return true;
+}
 
 simd_float4x4 Placed(simd_float3 p) {
     // A source on the listener has no direction: keep it a metre away at least.
@@ -214,21 +291,6 @@ int MakeVoice(Kind kind) {
                   error.localizedDescription.UTF8String);
         return -1;
     }
-    PHASESoundEvent* event = [[PHASESoundEvent alloc] initWithEngine:g_engine
-                                                     assetIdentifier:event_id
-                                                     mixerParameters:parameters
-                                                               error:&error];
-    if (event == nil) {
-        LOG_ERROR(Lib_AudioOut, "SPATIAL_AUDIO: no event: {}",
-                  error.localizedDescription.UTF8String);
-        return -1;
-    }
-    PHASEPullStreamNode* pull = event.pullStreamNodes[node_id];
-    if (pull == nil) {
-        LOG_ERROR(Lib_AudioOut, "SPATIAL_AUDIO: the event has no pull stream");
-        return -1;
-    }
-
     auto voice = std::make_unique<Voice>();
     voice->kind = kind;
     voice->spatial = spatial;
@@ -236,21 +298,12 @@ int MakeVoice(Kind kind) {
     // A fifth of a second at most waits in a voice.
     voice->ring = std::make_unique<Ring>(channels, SampleRate / 5);
     voice->source = source;
-    voice->event = event;
-    Ring* ring = voice->ring.get();
-    pull.renderBlock = ^OSStatus(BOOL* is_silence, const AudioTimeStamp*, AVAudioFrameCount frames,
-                                 AudioBufferList* output) {
-        float* planes[2] = {};
-        const u32 count = std::min<u32>(output->mNumberBuffers, 2);
-        for (u32 c = 0; c < count; ++c) {
-            planes[c] = static_cast<float*>(output->mBuffers[c].mData);
-        }
-        const u32 got = ring->Read(planes, count, frames);
-        *is_silence = got == 0 ? YES : NO;
-        return noErr;
-    };
-    [event startWithCompletion:^(PHASESoundEventStartHandlerReason) {
-    }];
+    voice->event_id = event_id;
+    voice->node_id = node_id;
+    voice->parameters = parameters;
+    if (!StartEvent(*voice)) {
+        return -1;
+    }
 
     const int index = g_voice_count.load(std::memory_order_relaxed);
     g_voices[index] = std::move(voice);
@@ -290,7 +343,109 @@ int Take(Kind kind) {
     return index;
 }
 
+/// PHASE stopped asking for sound (the session was taken down under it, by SDL or the
+/// system): the session is set up and turned on again, the engine started again and every
+/// voice's sound event too. On a thread of its own (it takes a while), one at a time.
+std::atomic<bool> g_recovering{false};
+u32 g_recoveries = 0;
+
+void Recover(u64 stalled_ms) {
+    @autoreleasepool {
+        AVAudioSession* session = [AVAudioSession sharedInstance];
+        const std::string was_category = session.category.UTF8String ?: "?";
+        const std::string was_route =
+            session.currentRoute.outputs.firstObject.portType.UTF8String ?: "none";
+        SetUpSession(session);
+        NSError* error = nil;
+        const bool active = [session setActive:YES error:&error];
+        const std::string active_error =
+            active ? "" : (error.localizedDescription.UTF8String ?: "?");
+        error = nil;
+        bool started = true;
+        if (g_engine.renderingState == PHASERenderingStateStarted) {
+            [g_engine pause];
+        }
+        started = [g_engine startAndReturnError:&error];
+        const std::string start_error =
+            started ? "" : (error.localizedDescription.UTF8String ?: "?");
+        u32 resumed = 0;
+        u32 remade = 0;
+        // Voices are made under this lock (Take): none is half made while they are gone over.
+        std::scoped_lock make{g_make_mutex};
+        const int count = g_voice_count.load(std::memory_order_acquire);
+        for (int i = 0; i < count; ++i) {
+            Voice& voice = *g_voices[i];
+            if (voice.event == nil) {
+                continue;
+            }
+            switch (voice.event.renderingState) {
+            case PHASERenderingStateStarted:
+                break;
+            case PHASERenderingStatePaused:
+                [voice.event resume];
+                ++resumed;
+                break;
+            default:
+                [voice.event stopAndInvalidate];
+                if (StartEvent(voice)) {
+                    ++remade;
+                }
+                break;
+            }
+        }
+        ++g_recoveries;
+        if (g_recoveries <= 20 || g_recoveries % 50 == 0) {
+            LOG_WARNING(Lib_AudioOut,
+                        "SPATIAL_AUDIO: PHASE took no sound for {} ms (session {}, route {}): "
+                        "session on again {}{}, engine started {}{}; {} voices resumed, {} made "
+                        "again (time {})",
+                        stalled_ms, was_category, was_route, active ? "yes" : "no: ",
+                        active_error, started ? "yes" : "no: ", start_error, resumed, remade,
+                        g_recoveries);
+        }
+    }
+}
+
 } // namespace
+
+void Watch() {
+    if (!Available()) {
+        return;
+    }
+    using Clock = std::chrono::steady_clock;
+    static std::mutex mutex;
+    static Clock::time_point last_check{};
+    static Clock::time_point last_moved{};
+    static Clock::time_point last_try{};
+    static u64 last_pulls = 0;
+    std::unique_lock lock{mutex, std::try_to_lock};
+    if (!lock.owns_lock()) {
+        return;
+    }
+    const auto now = Clock::now();
+    if (now - last_check < std::chrono::milliseconds(100)) {
+        return;
+    }
+    last_check = now;
+    const u64 pulls = g_pulls.load(std::memory_order_relaxed);
+    if (pulls != last_pulls || last_moved.time_since_epoch().count() == 0) {
+        last_pulls = pulls;
+        last_moved = now;
+        return;
+    }
+    // Half a second without a single block asked for, and not tried for two.
+    if (now - last_moved < std::chrono::milliseconds(500) ||
+        now - last_try < std::chrono::seconds(2) || g_recovering.exchange(true)) {
+        return;
+    }
+    last_try = now;
+    const u64 stalled_ms = static_cast<u64>(
+        std::chrono::duration_cast<std::chrono::milliseconds>(now - last_moved).count());
+    std::thread([stalled_ms] {
+        Recover(stalled_ms);
+        g_recovering.store(false);
+    }).detach();
+}
 
 bool Start() {
     std::call_once(g_once, [] {
@@ -302,14 +457,9 @@ bool Start() {
         @autoreleasepool {
             NSError* error = nil;
             AVAudioSession* session = [AVAudioSession sharedInstance];
-            [session setCategory:AVAudioSessionCategoryPlayback error:&error];
-            // The title turns the sound with the head already; the system must not do it again.
-            if (![session setIntendedSpatialExperience:AVAudioSessionSpatialExperienceBypassed
-                                                options:@{}
-                                                  error:&error]) {
-                LOG_WARNING(Lib_AudioOut, "SPATIAL_AUDIO: system spatialization still on: {}",
-                            error.localizedDescription.UTF8String);
-            }
+            // SDL (the microphone) is to set the session up as it is set up here.
+            SDL_SetHint(SDL_HINT_AUDIO_CATEGORY, "playandrecord");
+            SetUpSession(session);
             [session setPreferredSampleRate:SampleRate error:nil];
             [session setPreferredIOBufferDuration:0.005 error:nil];
             [session setActive:YES error:nil];
@@ -346,6 +496,31 @@ bool Start() {
                 g_object_voices.push_back(voice);
             }
             g_available.store(!g_object_voices.empty(), std::memory_order_release);
+            // Changes of where the sound goes, for the log.
+            [[NSNotificationCenter defaultCenter]
+                addObserverForName:AVAudioSessionRouteChangeNotification
+                            object:nil
+                             queue:nil
+                        usingBlock:^(NSNotification* note) {
+                          const NSUInteger reason = [note.userInfo[AVAudioSessionRouteChangeReasonKey]
+                              unsignedIntegerValue];
+                          AVAudioSession* now = [AVAudioSession sharedInstance];
+                          LOG_INFO(Lib_AudioOut,
+                                   "SPATIAL_AUDIO: route changed (reason {}): {}, category {}",
+                                   reason,
+                                   now.currentRoute.outputs.firstObject.portType.UTF8String ?: "none",
+                                   now.category.UTF8String ?: "?");
+                        }];
+            [[NSNotificationCenter defaultCenter]
+                addObserverForName:AVAudioSessionInterruptionNotification
+                            object:nil
+                             queue:nil
+                        usingBlock:^(NSNotification* note) {
+                          const NSUInteger type = [note.userInfo[AVAudioSessionInterruptionTypeKey]
+                              unsignedIntegerValue];
+                          LOG_INFO(Lib_AudioOut, "SPATIAL_AUDIO: session interrupted ({})",
+                                   type == AVAudioSessionInterruptionTypeBegan ? "began" : "ended");
+                        }];
             LOG_INFO(Lib_AudioOut,
                      "SPATIAL_AUDIO: PHASE on, head-locked; {} voices for 3D objects; device "
                      "{} Hz, {} frames a buffer; route {}",

@@ -374,10 +374,11 @@ void FrameStats::EndFrame() {
     if (lookups > 0.0 || binds > 0.0) {
         LOG_INFO(Render_Vulkan,
                  "frame shortcuts: {:.0f} of {:.0f} image lookups ({:.1f} images added or "
-                 "removed), {:.0f} of {:.0f} pipeline binds; {:.0f} thousand vertices drawn",
+                 "removed), {:.0f} of {:.0f} pipeline binds; {:.0f} thousand vertices drawn; "
+                 "{:.1f} draws kept in the open pass with fewer targets",
                  per_frame(Counter::ImageLookupsShort), lookups,
                  per_frame(Counter::ImageRegistrations), per_frame(Counter::PipelineBindsShort),
-                 binds, per_frame(Counter::Vertices) / 1e3);
+                 binds, per_frame(Counter::Vertices) / 1e3, per_frame(Counter::KeptInPass));
     }
     c.frames = 0;
     c.since = now;
@@ -781,6 +782,22 @@ static bool IsAttachmentless(const RenderState& state) {
     return !state.depth_stencil_attachment.image_view;
 }
 
+bool Scheduler::KeepsPassFor(const RenderState& requested) const {
+    if (!is_rendering) {
+        return false;
+    }
+    if (render_state == requested) {
+        return true;
+    }
+    if (IsAttachmentless(render_state) && IsAttachmentless(requested) &&
+        render_state.num_color_attachments == requested.num_color_attachments &&
+        render_state.num_layers == requested.num_layers &&
+        requested.width <= render_state.width && requested.height <= render_state.height) {
+        return true;
+    }
+    return ContinuesPass(render_state, requested);
+}
+
 void Scheduler::BeginRendering(const RenderState& requested) {
     if (is_rendering && render_state == requested) {
         return;
@@ -806,6 +823,7 @@ void Scheduler::BeginRendering(const RenderState& requested) {
     }
     EndRendering();
     is_rendering = true;
+    ++pass_serial;
     render_state = new_state;
     bound_pipeline = nullptr;
 

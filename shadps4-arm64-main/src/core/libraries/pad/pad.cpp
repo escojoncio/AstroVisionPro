@@ -814,6 +814,14 @@ int PS4_SYSV_ABI scePadSetVibration(s32 handle, const OrbisPadVibrationParam* pP
     if (pParam != nullptr) {
         LOG_DEBUG(Lib_Pad, "scePadSetVibration called handle = {} data = {} , {}", handle,
                   pParam->smallMotor, pParam->largeMotor);
+        // The first ones that shake, and then one in a few hundred, for the log.
+        static u32 shaking = 0;
+        if (pParam->smallMotor != 0 || pParam->largeMotor != 0) {
+            if (++shaking <= 5 || shaking % 500 == 0) {
+                LOG_INFO(Lib_Pad, "VIBRATION: the title asks for small {} large {} (time {})",
+                         pParam->smallMotor, pParam->largeMotor, shaking);
+            }
+        }
         controller.SetVibration(pParam->smallMotor, pParam->largeMotor);
         return ORBIS_OK;
     }
@@ -821,7 +829,7 @@ int PS4_SYSV_ABI scePadSetVibration(s32 handle, const OrbisPadVibrationParam* pP
 }
 
 int PS4_SYSV_ABI scePadSetVibrationForce() {
-    LOG_ERROR(Lib_Pad, "(STUBBED) called");
+    LOG_ERROR(Lib_Pad, "(STUBBED) called (VIBRATION: a way of asking for it that is not passed on)");
     return ORBIS_OK;
 }
 
