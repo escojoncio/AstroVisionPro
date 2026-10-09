@@ -67,6 +67,12 @@ struct AstroSettings {
     /// A draw that uses fewer of the targets of the render pass that is open is made in that pass
     /// instead of ending it (SHADPS4_MERGE_PASSES).
     var mergePasses = true
+    /// The pipelines the game used are kept and made again before its first frame
+    /// (SHADPS4_PIPELINE_CACHE). Experimental.
+    var pipelineCache = false
+    /// A test of where the GPU's time goes: "" none, "geometry" every draw cut to 3 vertices
+    /// (SHADPS4_DBG_DRAW_VERTICES=3; the picture breaks).
+    var gpuTest = ""
     /// The headset's 3D audio, as PlayStation VR renders it: each of the title's 3D sounds and
     /// surround speakers rendered by Apple's PHASE, head-locked (SHADPS4_SPATIAL_AUDIO).
     var spatialAudio = true
@@ -165,6 +171,8 @@ struct AstroSettings {
         case "gs_in_pass": gsInPass = flag
         case "light_barriers": lightBarriers = flag
         case "merge_passes": mergePasses = flag
+        case "pipeline_cache": pipelineCache = flag
+        case "gpu_test": gpuTest = value
         case "smaa": edgeSmoothing = flag
         case "spatial_audio": spatialAudio = flag
         case "pass_diagnostics": passDiagnostics = flag
@@ -232,6 +240,10 @@ struct AstroSettings {
         env.append("KK_GS_IN_PASS=\(gsInPass ? 1 : 0)")
         env.append("KK_LIGHT_BARRIERS=\(lightBarriers ? 1 : 0)")
         env.append("SHADPS4_MERGE_PASSES=\(mergePasses ? 1 : 0)")
+        env.append("SHADPS4_PIPELINE_CACHE=\(pipelineCache ? 1 : 0)")
+        if gpuTest == "geometry" {
+            env.append("SHADPS4_DBG_DRAW_VERTICES=3")
+        }
         env.append("SHADPS4_SPATIAL_AUDIO=\(spatialAudio ? 1 : 0)")
         if passDiagnostics {
             env.append("SHADPS4_FRAME_STATS=2")

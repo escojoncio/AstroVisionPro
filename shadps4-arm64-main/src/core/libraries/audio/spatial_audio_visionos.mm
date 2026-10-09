@@ -182,6 +182,13 @@ void SetUpSession(AVAudioSession* session) {
                         error.localizedDescription.UTF8String);
         }
     }
+    // The controller's rumble is haptics: the system leaves them out while the microphone
+    // records unless told otherwise (the title keeps the microphone open the whole game).
+    error = nil;
+    if (![session setAllowHapticsAndSystemSoundsDuringRecording:YES error:&error]) {
+        LOG_WARNING(Lib_AudioOut, "SPATIAL_AUDIO: haptics still off while recording: {}",
+                    error.localizedDescription.UTF8String);
+    }
     // The title turns the sound with the head already; the system must not do it again.
     error = nil;
     if (![session setIntendedSpatialExperience:AVAudioSessionSpatialExperienceBypassed

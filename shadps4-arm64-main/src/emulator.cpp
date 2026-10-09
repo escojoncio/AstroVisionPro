@@ -364,6 +364,13 @@ void Emulator::Run(std::filesystem::path file, std::vector<std::string> args,
     LOG_INFO(Config, "Vulkan hostMarkers: {}", EmulatorSettings.IsVkHostMarkersEnabled());
     LOG_INFO(Config, "Vulkan guestMarkers: {}", EmulatorSettings.IsVkGuestMarkersEnabled());
     LOG_INFO(Config, "Vulkan rdocEnable: {}", EmulatorSettings.IsRenderdocEnabled());
+#ifdef SHADPS4_VISIONOS
+    // SHADPS4_PIPELINE_CACHE=1 (the app's «Guardar y precargar shaders»): the pipelines a game
+    // used are kept and made again when it starts, before its first frame.
+    if (const char* value = std::getenv("SHADPS4_PIPELINE_CACHE"); value != nullptr && *value) {
+        EmulatorSettings.SetPipelineCacheEnabled(value[0] != '0', true);
+    }
+#endif
     LOG_INFO(Config, "Vulkan PipelineCacheEnabled: {}", EmulatorSettings.IsPipelineCacheEnabled());
     LOG_INFO(Config, "Vulkan PipelineCacheArchived: {}",
              EmulatorSettings.IsPipelineCacheArchived());

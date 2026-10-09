@@ -458,7 +458,13 @@ PipelineCache::PipelineCache(const Instance& instance_, Scheduler& scheduler_,
     }
     if (async_pipelines) {
         const u32 cores = std::max(1u, std::thread::hardware_concurrency());
+#if defined(SHADPS4_VISIONOS)
+        // A level coming in brings dozens of new pipelines at once: half the cores (the game's
+        // own threads wait on loading then).
+        const u32 count = std::clamp(cores / 2, 2u, 4u);
+#else
         const u32 count = std::clamp(cores / 3, 2u, 4u);
+#endif
         workers = std::make_unique<PipelineWorkers>(count);
         LOG_INFO(Render_Vulkan,
                  "Graphics pipelines are made on {} threads of their own; a draw whose pipeline "
