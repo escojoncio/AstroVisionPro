@@ -19,6 +19,7 @@
 import CoreHaptics
 import Foundation
 import GameController
+import UIKit
 
 final class PlayStationController: @unchecked Sendable {
     static let shared = PlayStationController()
@@ -65,6 +66,12 @@ final class PlayStationController: @unchecked Sendable {
     private var lastMotionTime: TimeInterval = 0
     private var lastMotionWake: TimeInterval = 0
     private var motionWakes: UInt = 0
+    /// A motor's engine was stopped because the system took the app for one in the background:
+    /// the motors are made anew when it is active again.
+    private var rumbleSuspended = false
+    /// Times the motors were made anew, and app or scene changes logged (a few go to the log).
+    private var rumbleRemakes: UInt = 0
+    private var sceneReports: UInt = 0
     var onStatusChange: ((Status?) -> Void)?
 
     private init() {}
@@ -79,8 +86,41 @@ final class PlayStationController: @unchecked Sendable {
         observers.append(center.addObserver(forName: .GCControllerDidDisconnect, object: nil, queue: .main) { [weak self] _ in
             self?.choose()
         })
+        // Rumble stops when the system takes the app for one in the background (the launcher
+        // closing while the game's space opens): made anew when the app or a scene is active.
+        for name in [UIApplication.didBecomeActiveNotification, UIScene.didActivateNotification,
+                     UIScene.didEnterBackgroundNotification, Notification.Name.GCControllerDidBecomeCurrent,
+                     Notification.Name.GCControllerDidStopBeingCurrent] {
+            observers.append(center.addObserver(forName: name, object: nil, queue: .main) { [weak self] note in
+                let changed = note.name
+                MainActor.assumeIsolated {
+                    self?.appChanged(changed)
+                }
+            })
+        }
         GCController.startWirelessControllerDiscovery {}
         choose()
+    }
+
+    @MainActor
+    private func appChanged(_ name: Notification.Name) {
+        let active = name == UIApplication.didBecomeActiveNotification || name == UIScene.didActivateNotification
+            || name == .GCControllerDidBecomeCurrent
+        lock.lock()
+        sceneReports &+= 1
+        let report = sceneReports
+        // One remake for the several notifications that come together.
+        let suspended = rumbleSuspended && active
+        if suspended {
+            rumbleSuspended = false
+        }
+        lock.unlock()
+        if report <= 40 {
+            LogFiles.log("App: \(name.rawValue); \(Self.appState())")
+        }
+        if suspended {
+            remakeRumble(after: 0.3, reason: "\(name.rawValue) after the engines were suspended")
+        }
     }
 
     var status: Status? {
@@ -223,7 +263,8 @@ final class PlayStationController: @unchecked Sendable {
             for (_, button) in sense.physicalInputProfile.buttons where button.isBoundToSystemGesture {
                 button.preferredSystemGestureState = .disabled
             }
-            if let haptics = sense.haptics, let motor = RumbleMotor(haptics: haptics, locality: .default) {
+            if sense.haptics != nil {
+                let motor = makeSenseMotor(for: sense)
                 lock.lock()
                 senseMotors[ObjectIdentifier(sense)] = motor
                 lock.unlock()
@@ -248,29 +289,167 @@ final class PlayStationController: @unchecked Sendable {
                 self?.motionChanged(motion)
             }
         }
-        // Rumble: the low frequency motor in the left grip, the high frequency one in the right,
-        // as SDL drives a PlayStation controller on Apple systems. A controller that has no
-        // motor of each grip to give gets one for both grips (or its only one) for the two.
-        if let haptics = controller.haptics {
-            let localities = haptics.supportedLocalities.map { $0.rawValue }.sorted().joined(separator: ", ")
-            var low = RumbleMotor(haptics: haptics, locality: .leftHandle)
-            var high = RumbleMotor(haptics: haptics, locality: .rightHandle)
-            var how = "a motor in each grip"
-            if low == nil || high == nil {
-                let both = RumbleMotor(haptics: haptics, locality: .handles)
-                    ?? RumbleMotor(haptics: haptics, locality: .default)
-                low = low ?? both
-                high = high ?? both
-                how = both != nil ? "one motor for both grips" : "no motor"
-            }
-            LogFiles.log("Controller rumble: \(how) (it has: \(localities.isEmpty ? "none" : localities))")
-            lock.lock()
-            lowFrequency = low
-            highFrequency = high
-            lock.unlock()
-        } else {
-            LogFiles.log("Controller rumble: the controller offers no haptics")
+        makeRumble(for: controller)
+    }
+
+    /// Rumble: the low frequency motor in the left grip, the high frequency one in the right,
+    /// as SDL drives a PlayStation controller on Apple systems. A controller that has no motor of
+    /// each grip to give gets one for both grips (or its only one) for the two. The motors take
+    /// the controller's haptics anew each time they make an engine.
+    private func makeRumble(for controller: GCController) {
+        guard let motors = rumbleMotors(for: controller) else { return }
+        lock.lock()
+        let stillChosen = self.controller === controller
+        if stillChosen {
+            lowFrequency = motors.low
+            highFrequency = motors.high
+            // What the game asks for now is sent again to the new motors (applyFeedback compares
+            // with this).
+            appliedFeedback = AstroPadFeedback()
         }
+        lock.unlock()
+        if !stillChosen {
+            motors.low.stop()
+            motors.high.stop()
+        }
+    }
+
+    /// The controller's motors (the same one twice when it has one for both grips), or nil when
+    /// it offers no haptics now. Which motors there are is decided by what the controller says it
+    /// has, not by whether an engine could be made just now: a motor without an engine makes one
+    /// when it is next asked to rumble (setIntensity).
+    private func rumbleMotors(for controller: GCController) -> (low: RumbleMotor, high: RumbleMotor)? {
+        guard let haptics = controller.haptics else {
+            LogFiles.log("Controller rumble: the controller offers no haptics")
+            return nil
+        }
+        let source: () -> GCDeviceHaptics? = { [weak controller] in controller?.haptics }
+        let onStopped: (CHHapticEngine.StoppedReason) -> Void = { [weak self] reason in
+            self?.rumbleStopped(reason)
+        }
+        let has = haptics.supportedLocalities
+        let localities = has.map { $0.rawValue }.sorted().joined(separator: ", ")
+        let low: RumbleMotor
+        let high: RumbleMotor
+        let how: String
+        if has.contains(.leftHandle) && has.contains(.rightHandle) {
+            low = RumbleMotor(source: source, locality: .leftHandle, onStopped: onStopped)
+            high = RumbleMotor(source: source, locality: .rightHandle, onStopped: onStopped)
+            how = "a motor in each grip"
+        } else {
+            let both = RumbleMotor(source: source, locality: has.contains(.handles) ? .handles : .default,
+                                   onStopped: onStopped)
+            low = both
+            high = both
+            how = "one motor for both grips"
+        }
+        LogFiles.log("Controller rumble: \(how) (it has: \(localities.isEmpty ? "none" : localities)); engines \(low.hasEngine ? "on" : "off")/\(high.hasEngine ? "on" : "off")")
+        return (low, high)
+    }
+
+    private func makeSenseMotor(for sense: GCController) -> RumbleMotor {
+        RumbleMotor(source: { [weak sense] in sense?.haptics }, locality: .default,
+                    onStopped: { [weak self] reason in self?.rumbleStopped(reason) })
+    }
+
+    /// A motor's engine stopped by itself. Stopped because the system took the app for one in
+    /// the background (applicationSuspended), the motors are made anew when the app is active
+    /// again (start()'s observers).
+    private func rumbleStopped(_ reason: CHHapticEngine.StoppedReason) {
+        guard reason == .applicationSuspended else { return }
+        lock.lock()
+        rumbleSuspended = true
+        lock.unlock()
+    }
+
+    /// New rumble motors for the controllers in use, `delay` seconds from now (on the main thread).
+    /// The engines CoreHaptics stopped when the launcher went cannot be started again; and those
+    /// made from the same haptics object kept failing at once (log 2026-10-09 13:08).
+    func remakeRumble(after delay: TimeInterval, reason: String) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            MainActor.assumeIsolated {
+                self?.remakeRumbleNow(reason: reason)
+            }
+        }
+    }
+
+    @MainActor
+    private func remakeRumbleNow(reason: String) {
+        lock.lock()
+        let chosen = controller
+        let senses = [senseLeft, senseRight].compactMap { $0 }
+        rumbleSuspended = false
+        rumbleRemakes &+= 1
+        let remake = rumbleRemakes
+        lock.unlock()
+        if remake <= 10 {
+            LogFiles.log("Controller rumble: motors made anew (\(reason)); \(Self.appState())")
+        }
+        // Made before the old ones go: if the controller offers no haptics right now, the old
+        // motors stay (they make their engines anew themselves when the game asks for rumble).
+        var replaced: [RumbleMotor] = []
+        if let chosen, let motors = rumbleMotors(for: chosen) {
+            lock.lock()
+            if controller === chosen {
+                replaced += [lowFrequency, highFrequency].compactMap { $0 }
+                lowFrequency = motors.low
+                highFrequency = motors.high
+                appliedFeedback = AstroPadFeedback()
+                lock.unlock()
+            } else {
+                lock.unlock()
+                replaced += [motors.low, motors.high]
+            }
+        }
+        for sense in senses where sense.haptics != nil {
+            let motor = makeSenseMotor(for: sense)
+            let id = ObjectIdentifier(sense)
+            lock.lock()
+            if senseLeft === sense || senseRight === sense {
+                if let old = senseMotors[id] {
+                    replaced.append(old)
+                }
+                senseMotors[id] = motor
+                appliedFeedback = AstroPadFeedback()
+                lock.unlock()
+            } else {
+                lock.unlock()
+                replaced.append(motor)
+            }
+        }
+        // Outside the lock: a motor's stop takes its own lock (and CoreHaptics' handlers take it).
+        var stopped = Set<ObjectIdentifier>()
+        for motor in replaced where stopped.insert(ObjectIdentifier(motor)).inserted {
+            motor.stop()
+        }
+    }
+
+    /// The app's and its scenes' states, for the log: what GameController and CoreHaptics see
+    /// when they take the app for one in the background.
+    @MainActor
+    static func appState() -> String {
+        func name(_ state: UIScene.ActivationState) -> String {
+            switch state {
+            case .foregroundActive: return "foreground active"
+            case .foregroundInactive: return "foreground inactive"
+            case .background: return "background"
+            case .unattached: return "unattached"
+            @unknown default: return "?"
+            }
+        }
+        let app: String
+        switch UIApplication.shared.applicationState {
+        case .active: app = "active"
+        case .inactive: app = "inactive"
+        case .background: app = "background"
+        @unknown default: app = "?"
+        }
+        let scenes = UIApplication.shared.connectedScenes
+            .map { "\($0.session.role.rawValue) \(name($0.activationState))" }
+            .sorted()
+            .joined(separator: ", ")
+        let current = GCController.current.map { $0.vendorName ?? $0.productCategory } ?? "none"
+        return "app \(app); scenes: \(scenes.isEmpty ? "none" : scenes); current controller: \(current)"
     }
 
     /// The motion sensors, in the frame and units the emulator was written against (SDL's
@@ -369,7 +548,8 @@ final class PlayStationController: @unchecked Sendable {
         let high = highFrequency
         let name = controller?.vendorName ?? "none"
         lock.unlock()
-        LogFiles.log("Controller rumble test on \(name): motors \(low != nil ? "yes" : "no")/\(high != nil ? "yes" : "no")")
+        let state = Thread.isMainThread ? MainActor.assumeIsolated { Self.appState() } : "?"
+        LogFiles.log("Controller rumble test on \(name): motors \(low != nil ? "yes" : "no")/\(high != nil ? "yes" : "no"); \(state)")
         low?.setIntensity(1.0)
         if high !== low {
             high?.setIntensity(1.0)
@@ -533,8 +713,11 @@ final class PlayStationController: @unchecked Sendable {
         astro_core_pad_state(&state)
 
         // Rumble: the game's large motor in the left controller, the small one in the right.
+        // Read every refresh, not only when the game changes it: motors made anew start from zero
+        // (appliedFeedback reset) and must get what the game asks for now. What follows only acts
+        // on differences.
         var wanted = AstroPadFeedback()
-        guard astro_core_pad_feedback(&wanted) else { return }
+        _ = astro_core_pad_feedback(&wanted)
         lock.lock()
         let previous = appliedFeedback
         appliedFeedback = wanted
@@ -550,8 +733,11 @@ final class PlayStationController: @unchecked Sendable {
     }
 
     private func applyFeedback(_ controller: GCController) {
+        // Read every refresh, not only when the game changes it: motors made anew start from zero
+        // (appliedFeedback reset) and must get what the game asks for now. What follows only acts
+        // on differences.
         var wanted = AstroPadFeedback()
-        guard astro_core_pad_feedback(&wanted) else { return }
+        _ = astro_core_pad_feedback(&wanted)
         lock.lock()
         let previous = appliedFeedback
         appliedFeedback = wanted
@@ -591,8 +777,13 @@ final class PlayStationController: @unchecked Sendable {
 /// One of the controller's rumble motors, as a CoreHaptics engine playing one endless pattern
 /// whose strength is changed (what SDL does for a PlayStation controller on Apple systems).
 final class RumbleMotor: @unchecked Sendable {
-    private let haptics: GCDeviceHaptics
+    /// The controller's haptics as they are now: every engine is made from what this gives then,
+    /// not from the object there was when the motor was made (log 2026-10-09 13:08: after the
+    /// launcher closed, every engine made from the kept one failed at once).
+    private let source: () -> GCDeviceHaptics?
     private let locality: GCHapticsLocality
+    /// Told when the motor's engine stops by itself (on CoreHaptics' queue), with the reason.
+    private let onStopped: ((CHHapticEngine.StoppedReason) -> Void)?
     private var engine: CHHapticEngine?
     private var player: CHHapticAdvancedPatternPlayer?
     private var active = false
@@ -605,19 +796,32 @@ final class RumbleMotor: @unchecked Sendable {
     private var failures: UInt = 0
     private var rebuilds: UInt = 0
 
-    init?(haptics: GCDeviceHaptics, locality: GCHapticsLocality) {
-        self.haptics = haptics
+    /// The motor starts with an engine when the system gives one now; without one it makes it when
+    /// it is asked to rumble (setIntensity).
+    init(source: @escaping () -> GCDeviceHaptics?, locality: GCHapticsLocality,
+         onStopped: ((CHHapticEngine.StoppedReason) -> Void)? = nil) {
+        self.source = source
         self.locality = locality
-        guard let engine = makeEngine() else {
-            return nil
-        }
-        self.engine = engine
+        self.onStopped = onStopped
+        engine = makeEngine()
+    }
+
+    var hasEngine: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return engine != nil
     }
 
     /// An engine for the motor, started; nil when the system gives none. Its connection to the
     /// haptics server can go (the audio session changing under it is one way): then a new one
     /// is made (setIntensity).
     private func makeEngine(log: Bool = true) -> CHHapticEngine? {
+        guard let haptics = source() else {
+            if log {
+                LogFiles.log("Controller rumble: the controller has no haptics now")
+            }
+            return nil
+        }
         guard let engine = haptics.createEngine(withLocality: locality) else {
             if log {
                 LogFiles.log("Controller rumble: no haptic engine for \(locality.rawValue)")
@@ -629,13 +833,19 @@ final class RumbleMotor: @unchecked Sendable {
         engine.stoppedHandler = { [weak self, weak engine] reason in
             guard let self else { return }
             self.lock.lock()
+            // Only the motor's engine of now: one replaced or stopped on purpose says nothing.
+            let mine = engine != nil && self.engine === engine && self.retryAfter != .greatestFiniteMagnitude
             if self.engine === engine {
                 self.player = nil
                 self.engine = nil
                 self.active = false
             }
+            let onStopped = self.onStopped
             self.lock.unlock()
             LogFiles.log("Controller rumble: the haptic engine stopped (reason \(reason.rawValue))")
+            if mine {
+                onStopped?(reason)
+            }
         }
         engine.resetHandler = { [weak self, weak engine] in
             guard let self else { return }

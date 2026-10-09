@@ -40,6 +40,9 @@ final class AppModel {
     /// Opens the launcher window again (it is closed while the game is shown, so that nothing
     /// but the game is in view). Kept from the launcher's environment.
     var openLauncher: OpenWindowAction?
+    /// The launcher was closed when the game's space opened (settings «close_launcher»): only
+    /// then is it opened again when the space closes, or there would be two.
+    var launcherClosed = false
     /// The launcher's check (Diagnostics.swift), redone when the app comes back to the front.
     var diagnostics = Diagnostics.run()
 
@@ -175,7 +178,10 @@ final class AppModel {
     func immersiveEnded() {
         LogFiles.log("Immersive space closed")
         immersiveOpen = false
-        openLauncher?(id: Self.launcherID)
+        if launcherClosed {
+            launcherClosed = false
+            openLauncher?(id: Self.launcherID)
+        }
     }
 
     static let launcherID = "launcher"

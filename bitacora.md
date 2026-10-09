@@ -5,6 +5,22 @@ Base: shadPS4 ARM64 (`shadps4-arm64-main/`) + FEXCore (x86-64 → ARM64) + Molte
 App visionOS en `visionos/` (SwiftUI + Compositor Services + ARKit + GameController).
 JIT: arena RWX preparada por StikDebug (protocolo `brk #0xf00d` + universal.js); la app hace detach al terminar.
 
+## Build «vibración rehecha» (commit siguiente, `[build]`): banco de GPU, vibración tras abrir el espacio, «Cerrar el lanzador al jugar»
+Incluye ab5f2f9 (banco de GPU, ver abajo) y 54d91d2 (botón «Probar vibración», caché de pipelines fuera).
+- Hipótesis de la vibración: con `GCController.shouldMonitorBackgroundEvents = true` (PlayStationController.swift `start()`) los botones llegan aunque GameController tome la app por una en segundo plano (doc. de Apple: sin esa opción no reenvía nada a una app que no está al frente). Al cerrar el lanzador (`dismissWindow`) los motores paran con `applicationSuspended` y los nuevos fallan → probable que, sin ventanas, GameController/CoreHaptics vean la app en segundo plano aunque el espacio inmersivo esté abierto.
+- `PlayStationController.swift`:
+  - `RumbleMotor` ya no es failable: `init(source:locality:onStopped:)`; `source` = cierre que devuelve el `controller.haptics` actual (cada motor nuevo se hace desde él, no desde el `GCDeviceHaptics` guardado); sin motor al crearlo, lo hace en `setIntensity` (reintento cada 0.5 s). `hasEngine`. `stoppedHandler` llama a `onStopped` solo si es el motor vigente y no se paró a propósito (`retryAfter != inf`).
+  - `rumbleMotors(for:)`: un motor por asa si `supportedLocalities` tiene `leftHandle` y `rightHandle`; si no, uno (`.handles` o `.default`). `makeRumble(for:)` los instala; `makeSenseMotor(for:)` para los Sense.
+  - `remakeRumble(after:reason:)` → `remakeRumbleNow` (main): crea los nuevos antes de parar los viejos (si el mando no da hápticos en ese momento se quedan los viejos), pone `appliedFeedback` a cero; log `Controller rumble: motors made anew (<motivo>); app …; scenes: …; current controller: …` (10 primeras).
+  - `rumbleStopped`: con `applicationSuspended` marca `rumbleSuspended`; observadores de `UIApplication.didBecomeActive`, `UIScene.didActivate`, `UIScene.didEnterBackground`, `GCControllerDidBecomeCurrent`/`DidStopBeingCurrent` → log `App: <notificación>; app <estado>; scenes: <rol estado, …>; current controller: …` (40 primeras) y, si estaba suspendido, rehacer a los 0.3 s (una vez por ráfaga).
+  - `applyFeedback` y `pollSense`: leen `astro_core_pad_feedback` en cada refresco (antes solo cuando el juego cambiaba lo pedido → tras rehacer los motores no se reenviaba la vibración en curso).
+  - `testRumble` añade el estado de la app y escenas al log.
+- `HomeView.swift` `open()`: `remakeRumble(after: 1.0, …)` tras abrir el espacio; cierra el lanzador solo con `closeLauncher` (y marca `model.launcherClosed`). `AppModel.immersiveEnded` reabre el lanzador solo si se cerró.
+- Ajuste nuevo `close_launcher` (por defecto 1) → «Cerrar el lanzador al jugar» en Ajustes › Juego. Desactivado = prueba decisiva: si con la ventana abierta vibra, la causa es quedarse sin ventanas.
+- `vk_rasterizer.cpp`: `#include <atomic>`/`<chrono>` directos; fin del banco con `compare_exchange_strong` (un `Start()` a la vez no se pierde).
+- Revisión adversarial aplicada: motores que podían quedar a nil para siempre tras rehacerlos, vibración en curso no reenviada, lanzador duplicado al salir con `close_launcher=0`, carrera fin/Start del banco, includes.
+- Qué probar: (1) en el lanzador, «Probar vibración del mando» → `Controller rumble test …`; (2) jugar con «Cerrar el lanzador al jugar» activado y buscar `motors made anew`, `App:` y `could not play`; (3) si sigue sin vibrar, desactivarlo y probar el botón con la ventana abierta durante la partida; (4) en el mundo, quieto, L3+R3 → 11 pasos de 10 s: leer `GPU_BENCH: step i` y el `GPU_TIME` siguiente.
+
 ## Build VPEngine d073e70 (run 37905185196, dispatch 08:28 UTC): FALLÓ en «vpconvert and certificates» — sin IPA
 - Núcleo OK: `build-core.sh` con `GUEST_CPU=vpengine` compiló sin errores (`ci-logs/visionos-vpengine.txt`): `libastroquest_core.a` 111 MB, `libVPRuntime.dylib` 188 KB con 373 símbolos `_vp_`. Guardado en caché (`visionos-core-vpengine-<hash>`; la clave incluye `shadps4-arm64-main/src/**` → los commits posteriores la invalidan, la próxima run recompila el núcleo).
 - Fallo: el paso descarga `https://github.com/escojoncio/VPEngine/releases/download/vpconvert-visionos/vpconvert-visionos.tar.zst` con `curl -sSfL`; la run llegó ahí ~08:47 UTC y el asset no se subió hasta las 09:08:31 UTC (run «vpconvert for visionOS» d203e68 de VPEngine). Ahora responde 200 → relanzar por dispatch debería pasar ese paso. Los pasos «The app» (xcodegen + xcodebuild con las fuentes Swift de VPEngine) y la release nunca se han ejecutado: compilación de la parte Swift sin verificar.
@@ -38,11 +54,11 @@ JIT: arena RWX preparada por StikDebug (protocolo `brk #0xf00d` + universal.js);
 - Carga del mundo: ~600 draws saltados por pipelines en cola (cada uno 20–110 ms, hasta ~3 s en cola). El usuario rechaza cualquier congelación de la imagen (se probó y revirtió una espera de hasta 0.3 s/pipeline en ráfagas; no subir). Camino válido: precarga real (arreglar la caché de arriba) o compilar más rápido.
 - Rendimiento: sin cambios (~29–31 ms/frame).
 
-## Sin compilar (commit [skip ci]): app
+## App (commit 54d91d2, compilado en la build «vibración rehecha» de arriba)
 - `AstroSettings.swift`: `SHADPS4_PIPELINE_CACHE=0` siempre; `SettingsView.swift`: quitado «Guardar y precargar shaders».
 - `SettingsView.swift` (sección Juego): botón «Probar vibración del mando» → `PlayStationController.testRumble()` (ambos motores al 100 % 0.6 s, log `Controller rumble test …`). `RumbleMotor.apply()` registra dominio y código del `NSError` (10 primeros).
 
-## Sin build aún (commit sin [build]): banco de pruebas de GPU con L3+R3
+## Banco de pruebas de GPU con L3+R3 (commit ab5f2f9, compilado en la build «vibración rehecha» de arriba)
 - `video_core/renderer_vulkan/gpu_bench.h` + implementación en `vk_rasterizer.cpp` (`GpuBench::Start/Current`): 11 pasos de 10 s (normal, sin píxeles = rasterizer discard en `UpdatePrimitiveState`, 3 vértices por draw, sin pasadas solo-profundidad, sin draws con GS, ×2, normal). Log `GPU_BENCH: step i of n: …`; leer el `GPU_TIME` posterior a cada paso. `Rasterizer::BenchLeavesOut` omite el draw (Draw y DrawIndirect; el límite de vértices solo en Draw).
 - `platform/visionos/astro_core.mm` `astro_core_pad_state`: L3+R3 a la vez → `GpuBench::Start()`.
 - App: quitado el selector «Prueba de GPU» (solo se aplicaba al arrancar).
