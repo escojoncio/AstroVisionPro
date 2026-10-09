@@ -174,6 +174,12 @@ Incluye ab5f2f9 (banco de GPU, ver abajo) y 54d91d2 (botón «Probar vibración�
 - Revisión adversarial aplicada: motores que podían quedar a nil para siempre tras rehacerlos, vibración en curso no reenviada, lanzador duplicado al salir con `close_launcher=0`, carrera fin/Start del banco, includes.
 - Qué probar: (1) en el lanzador, «Probar vibración del mando» → `Controller rumble test …`; (2) jugar con «Cerrar el lanzador al jugar» activado y buscar `motors made anew`, `App:` y `could not play`; (3) si sigue sin vibrar, desactivarlo y probar el botón con la ventana abierta durante la partida; (4) en el mundo, quieto, L3+R3 → 11 pasos de 10 s: leer `GPU_BENCH: step i` y el `GPU_TIME` siguiente.
 
+## Séptima prueba (consola 00:13): el sistema acepta la firma del pack; el eboot no se engancha
+- Firma aceptada (variante `req4k`), pack cargado sin JIT, libc y fios2 enganchados. El eboot no: `KnownTitle` reescribe su código al cargar (física; tamaños si resolución > 1440).
+- `src/core/known_title.cpp`: `ComputeLarger(value)`, `ParseSettings(get)` (GetLarger/GetSettings siguen cacheando con getenv), `ApplyCodeChanges(image, build, larger, settings, log)` usado por `OnGameLoaded` y por el nuevo `extern "C" astro_core_title_code_patches(image, size, env, count)` (declarado en `src/platform/visionos/astro_core.h`): mismos cambios sobre la imagen que traduce VPEngine, con el entorno de los ajustes.
+- `visionos/App/Core/AppModel.swift`: `titlePatcher(settings.environment)` → `VPConversion.patchImage` (en init y al pulsar Convertir), solo para el módulo `eboot`.
+- Cambiar ajustes que tocan código tras convertir → volver a convertir (rápido: solo piezas afectadas).
+
 ## Sexta prueba (consola 23:40): el certificado SÍ está en el perfil — firma del pack en variantes
 - Detalle en la bitácora de VPEngine («Sexta prueba»). Descartado el certificado: el de iloader firmó la app y está en su perfil. El pack se firma ahora con el bundle id de la app y, en orden, con los requisitos de la propia app (4 KiB / 16 KiB) o sin ellos; la variante aceptada se recuerda. Sin cambios en este repo salvo esta nota; la build recoge VPEngine main.
 
