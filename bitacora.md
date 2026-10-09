@@ -5,6 +5,17 @@ Base: shadPS4 ARM64 (`shadps4-arm64-main/`) + FEXCore (x86-64 → ARM64) + Molte
 App visionOS en `visionos/` (SwiftUI + Compositor Services + ARKit + GameController).
 JIT: arena RWX preparada por StikDebug (protocolo `brk #0xf00d` + universal.js); la app hace detach al terminar.
 
+## Build 2a1c07f (run 37966838780): OK, KK recompilado; `visionos-latest/AstroQuest.ipa` (sin probar) — memoria de GS liberada entre pasadas
+- Test de b1f8e15 (log 2026-10-09 19:18, mundo, light_barriers=0): `KK_CENSUS` a 30 fps: ~1290 pasadas de Vulkan/s (43/frame) → ~1470 encoders de render/s (49/frame). **Los 6 encoders de más por frame salen todos de `kk_cmd_draw.c:1071` = `kk_heap()`**: `kk_cmd_buffer_dirty_all_gfx` (llamado en cada `cs_start_render`) ponía `uses_heap=false`, y el primer `kk_heap()` de cada encoder (GS en pasada) hacía `cs_get_compute` para poner a 0 `poly_heap.bottom` → corte de la pasada. Compute por frame: 6 de ese reset, 4 `copy_image` (`kk_cmd_copy.c:300`), 2 `CmdCopyBuffer2` (`kk_cmd_copy.c:29`), 3 `kk_dispatch_precomp` (`kk_cmd_buffer.c:998`), 1 dispatch del juego (`kk_cmd_dispatch.c:83`); fuera de pasadas salvo el reset. `KK_GS_IN_PASS`: 0 draws GS por cálculo. Al final thermal serious → 45 Hz, 22.5 fps, GPU ~26.5 ms/frame.
+- Parche KK (`visionos/patches/kosmickrisp-visionos.patch`):
+  - `kk_cmd_buffer.h`: campo `heap_dirty`; `kk_cmd_buffer_dirty_all_gfx` solo pone `uses_heap=false` si `!kk_heap_between_passes()`; declara `kk_heap_between_passes`, `kk_heap_free_between_encoders`.
+  - `kk_cmd_draw.c`: `kk_heap()` marca `heap_dirty`; `kk_heap_between_passes()` (`KK_HEAP_BETWEEN_PASSES`, activo salvo `0`); `kk_heap_free_between_encoders()` (sin render abierto: `cs_get_compute` + `kk_cmd_write(bottom=0)` + barrera DISPATCH); `#include <stdlib.h>`.
+  - `kk_cmd_buffer.c` `cs_start_render`: tras `cs_end`, si `heap_dirty` → liberar y `cs_end` antes de crear el render encoder. Reset del cmd buffer limpia `heap_dirty`.
+  - Revisión adversarial (Sonnet): sin defectos graves; reset redundante tras unroll/teselación por cálculo (inocuo).
+- App: `heap_between_passes` (por defecto 1) → `KK_HEAP_BETWEEN_PASSES`; interruptor «Memoria de geometry shaders entre pasadas» en Ajustes › Gráficos.
+- Qué mirar: `KK_CENSUS` (encoders de render ≈ pasadas de Vulkan, sin cortes en `kk_cmd_draw.c:1071`; aparece el compute del nuevo sitio), `GPU_TIME` ms/frame en el mundo frente a ~31 (90 Hz) / ~26.5 (45 Hz), efectos y partículas sin parpadeos.
+- Siguientes candidatos: `copy_image` ×4 y `CmdCopyBuffer2` ×2 por frame en encoders de cálculo propios (agrupar con el anterior/siguiente o blit), `kk_dispatch_precomp` ×3.
+
 ## Build b1f8e15 (run 37963451616): OK, KK recompilado con el censo; `visionos-latest/AstroQuest.ipa` (sin probar) — censo de encoders de KosmicKrisp
 - `visionos/patches/kosmickrisp-visionos.patch` (regenerado sobre Mesa `b628375`, se aplica limpio):
   - `kk_cmd_buffer.h`: `cs_get_compute` pasa a macro → `cs_get_compute_at(cmd, __FILE__ ":" __LINE__)`; declara `kk_census`, `kk_census_note(site, cut)`, `kk_census_note_pass`.
