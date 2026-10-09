@@ -304,7 +304,7 @@ constexpr s64 CensusNs = 4'000'000'000;
 constexpr s64 ShaderStepNs = 3'000'000'000;
 // A step's first half second goes untimed: the frames the GPU was still on are the last step's.
 constexpr s64 SettleNs = 500'000'000;
-constexpr size_t MaxCandidates = 10;
+constexpr size_t MaxCandidates = 8;
 // After the last step, the GPU's times for it come in a few frames late.
 constexpr s64 ReportDelayNs = 1'000'000'000;
 
@@ -314,28 +314,34 @@ struct ShaderCount {
     u64 vs_hash{};
     bool has_gs{};
 };
-struct StepTime {
-    double ms{};
-    u64 buffers{};
+/// What a step measures.
+struct Step {
+    enum Kind { Base, NoPixels, Out, All } kind{Base};
+    int candidate{-1};
 };
-/// What a step of the shader test leaves out: kOut + candidate, kAll, or nothing (kBase).
-constexpr int kBase = -1;
-constexpr int kAll = -2;
+struct StepTime {
+    double ms{};       // the timer's command buffers with a usable time
+    double scene_ms{}; // the scene passes in them (ShaderDraw's kind)
+    u64 buffers{};
+    u64 unusable{}; // command buffers without a usable whole time (their passes still count)
+};
 
 struct ShaderTest {
     std::mutex mutex;
     std::atomic<s64> started{0};
     std::atomic<int> logged_step{-2};
     std::atomic<int> num_steps{-1}; // steps.size() once chosen
-    bool counted{};   // the candidates are chosen
+    bool counted{};                 // the candidates are chosen
     bool reported{};
     std::unordered_map<u64, ShaderCount> census;
     std::vector<std::pair<u64, ShaderCount>> candidates;
-    std::vector<int> steps; // what each step leaves out
-    std::atomic<u64> out_hash{0};
-    std::atomic<bool> one_out{false}; // out_hash is left out (a hash may be 0: no pixel shader)
+    std::vector<Step> steps;
+    // What the step now on does to the draws of the pixel shader `hash` (a hash may be 0).
+    std::atomic<u64> hash{0};
+    std::atomic<int> action{int(DrawAction::Draw)};
     std::atomic<bool> all_out{false};
     std::unordered_map<u32, std::vector<StepTime>> times; // by timer
+    std::vector<u64> frames;                               // presented in each step's timed part
 };
 ShaderTest g_shaders;
 
@@ -353,6 +359,29 @@ bool UseStageTest() {
     return stages;
 }
 
+std::string Describe(const ShaderTest& t, int candidate) {
+    const auto& [hash, c] = t.candidates[size_t(candidate)];
+    const double seconds = double(CensusNs) / 1e9;
+    return fmt::format("fs {:#x} (vs {:#x}{}; {:.0f} draws/s, {:.0f} k vertices/s)", hash,
+                       c.vs_hash, c.has_gs ? ", GS" : "", double(c.draws) / seconds,
+                       double(c.vertices) / seconds / 1000.0);
+}
+
+std::string StepName(const ShaderTest& t, const Step& step) {
+    switch (step.kind) {
+    case Step::Base:
+        return "as they are";
+    case Step::All:
+        return fmt::format("without all {}", t.candidates.size());
+    case Step::NoPixels:
+        return fmt::format("fs {:#x} without its pixels (vertices only)",
+                           t.candidates[size_t(step.candidate)].first);
+    case Step::Out:
+        return fmt::format("without fs {:#x}", t.candidates[size_t(step.candidate)].first);
+    }
+    return "?";
+}
+
 /// Chooses what to leave out from the count (the mutex held).
 void ChooseCandidates(ShaderTest& t) {
     std::vector<std::pair<u64, ShaderCount>> all(t.census.begin(), t.census.end());
@@ -362,47 +391,54 @@ void ChooseCandidates(ShaderTest& t) {
             if (chosen.size() >= up_to) {
                 break;
             }
-            if (std::ranges::find_if(chosen, [&](const auto& c) { return c.first == entry.first; }) ==
-                chosen.end()) {
+            if (std::ranges::find_if(chosen, [&](const auto& c) {
+                    return c.first == entry.first;
+                }) == chosen.end()) {
                 chosen.push_back(entry);
             }
         }
     };
-    std::ranges::sort(all, [](const auto& a, const auto& b) { return a.second.draws > b.second.draws; });
-    add(MaxCandidates / 2 + 1);
+    std::ranges::sort(all, [](const auto& a, const auto& b) {
+        return a.second.draws > b.second.draws;
+    });
+    add(MaxCandidates / 2);
     std::ranges::sort(all, [](const auto& a, const auto& b) {
         return a.second.vertices > b.second.vertices;
     });
     add(MaxCandidates);
     t.candidates = std::move(chosen);
+    // [B, P0, O0, B, P1, O1, ..., B, All, B]: every step that leaves something out has a step as
+    // they are near it on each side.
     t.steps.clear();
     for (size_t i = 0; i < t.candidates.size(); ++i) {
-        t.steps.push_back(kBase);
-        t.steps.push_back(int(i));
+        t.steps.push_back({Step::Base, -1});
+        t.steps.push_back({Step::NoPixels, int(i)});
+        t.steps.push_back({Step::Out, int(i)});
     }
     if (!t.candidates.empty()) {
-        t.steps.push_back(kBase);
-        t.steps.push_back(kAll);
-        t.steps.push_back(kBase);
+        t.steps.push_back({Step::Base, -1});
+        t.steps.push_back({Step::All, -1});
+        t.steps.push_back({Step::Base, -1});
     }
     t.times.clear();
+    t.frames.assign(t.steps.size(), 0);
 
     u64 total_draws = 0;
+    u64 total_vertices = 0;
     for (const auto& [hash, count] : t.census) {
         total_draws += count.draws;
+        total_vertices += count.vertices;
     }
     const double seconds = double(CensusNs) / 1e9;
     std::string text;
     for (size_t i = 0; i < t.candidates.size(); ++i) {
-        const auto& [hash, c] = t.candidates[i];
-        text += fmt::format("{}fs {:#x} (vs {:#x}{}) {:.0f} draws/s, {:.0f} k vertices/s",
-                            i == 0 ? "" : "; ", hash, c.vs_hash, c.has_gs ? ", GS" : "",
-                            double(c.draws) / seconds, double(c.vertices) / seconds / 1000.0);
+        text += (i == 0 ? "" : "; ") + Describe(t, int(i));
     }
     LOG_INFO(Render_Vulkan,
-             "GPU_SHADER_BENCH: counted {} pixel shaders in the scene passes, {:.0f} draws/s; "
-             "{} steps of {} s follow, leaving out: {}",
-             t.census.size(), double(total_draws) / seconds, t.steps.size(),
+             "GPU_SHADER_BENCH: counted {} pixel shaders in the scene passes, {:.0f} draws/s, "
+             "{:.0f} k vertices/s; {} steps of {} s follow, for: {}",
+             t.census.size(), double(total_draws) / seconds,
+             double(total_vertices) / seconds / 1000.0, t.steps.size(),
              ShaderStepNs / 1'000'000'000, text.empty() ? "nothing (no scene draws seen)" : text);
 }
 
@@ -437,76 +473,108 @@ void ReportShaders(ShaderTest& t) {
                                 "or no scene draws");
         return;
     }
-    const auto mean = [&](size_t step) -> double {
-        if (step >= times->size() || (*times)[step].buffers == 0) {
-            return -1.0;
-        }
-        return (*times)[step].ms / double((*times)[step].buffers);
+    // Per frame shown: a frame's command buffers may be two (one with next to no work, whose
+    // time the driver sometimes gives as unusable), so the time a frame is what all of a step's
+    // timed command buffers took over the frames presented meanwhile.
+    struct PerFrame {
+        double total{-1.0};
+        double scene{-1.0};
     };
-    // The steps as they are: their spread is how far apart two equal steps come out.
-    double base_low = 1e9;
-    double base_high = 0.0;
-    double base_sum = 0.0;
-    int base_count = 0;
-    for (size_t k = 0; k < t.steps.size(); ++k) {
-        const double ms = mean(k);
-        if (t.steps[k] == kBase && ms >= 0.0) {
-            base_low = std::min(base_low, ms);
-            base_high = std::max(base_high, ms);
-            base_sum += ms;
-            ++base_count;
-        }
-    }
-    struct Row {
-        std::string what;
-        double base;
-        double out;
-        u64 buffers;
-    };
-    std::vector<Row> rows;
-    const double seconds = double(CensusNs) / 1e9;
-    for (size_t k = 0; k < t.steps.size(); ++k) {
-        if (t.steps[k] == kBase) {
-            continue;
-        }
-        const double before = k > 0 ? mean(k - 1) : -1.0;
-        const double after = mean(k + 1);
-        const double base = before >= 0.0 && after >= 0.0 ? (before + after) / 2.0
-                                                           : std::max(before, after);
-        std::string what;
-        if (t.steps[k] == kAll) {
-            what = fmt::format("all {} at once", t.candidates.size());
-        } else {
-            const auto& [hash, c] = t.candidates[size_t(t.steps[k])];
-            what = fmt::format("fs {:#x} (vs {:#x}{}; {:.0f} draws/s, {:.0f} k vertices/s)", hash,
-                               c.vs_hash, c.has_gs ? ", GS" : "", double(c.draws) / seconds,
-                               double(c.vertices) / seconds / 1000.0);
-        }
-        rows.push_back({std::move(what), base, mean(k), k < times->size() ? (*times)[k].buffers : 0});
-    }
-    std::ranges::sort(rows, [](const Row& a, const Row& b) {
-        return (a.base - a.out) > (b.base - b.out);
-    });
-    LOG_INFO(Render_Vulkan,
-             "GPU_SHADER_BENCH: result: as they are {:.2f} ms a command buffer (from {:.2f} to "
-             "{:.2f} over {} steps: differences smaller than that spread are noise)",
-             base_count > 0 ? base_sum / base_count : -1.0, base_count > 0 ? base_low : -1.0,
-             base_high, base_count);
-    for (const Row& row : rows) {
-        if (row.base < 0.0 || row.out < 0.0) {
-            LOG_INFO(Render_Vulkan, "GPU_SHADER_BENCH: without {}: no time measured", row.what);
-            continue;
+    const double timed_seconds = double(ShaderStepNs - SettleNs) / 1e9;
+    std::vector<PerFrame> per(t.steps.size());
+    for (size_t k = 0; k < t.steps.size() && k < times->size(); ++k) {
+        const u64 frames = t.frames[k];
+        const StepTime& st = (*times)[k];
+        if (frames > 0 && st.buffers > 0) {
+            per[k] = {st.ms / double(frames), st.scene_ms / double(frames)};
         }
         LOG_INFO(Render_Vulkan,
-                 "GPU_SHADER_BENCH: without {}: {:.2f} ms against {:.2f} = {:+.2f} ms ({:+.0f}%), "
-                 "{} command buffers",
-                 row.what, row.out, row.base, row.out - row.base,
-                 row.base > 0.0 ? (row.out - row.base) * 100.0 / row.base : 0.0, row.buffers);
+                 "GPU_SHADER_BENCH: step {} ({}): {:.1f} fps, GPU {:.2f} ms a frame, scene "
+                 "passes {:.2f} ms ({} command buffers, {} without a usable whole time)",
+                 k + 1, StepName(t, t.steps[k]), double(frames) / timed_seconds, per[k].total,
+                 per[k].scene, st.buffers, st.unusable);
+    }
+    // The steps as they are: their spread is how far apart two equal steps come out.
+    double low = 1e9;
+    double high = 0.0;
+    for (size_t k = 0; k < t.steps.size(); ++k) {
+        if (t.steps[k].kind == Step::Base && per[k].total >= 0.0) {
+            low = std::min(low, per[k].total);
+            high = std::max(high, per[k].total);
+        }
+    }
+    // A step's base: the mean of the nearest steps as they are before and after it.
+    const auto base = [&](size_t k) -> PerFrame {
+        PerFrame before{};
+        PerFrame after{};
+        for (size_t j = k; j-- > 0;) {
+            if (t.steps[j].kind == Step::Base) {
+                before = per[j];
+                break;
+            }
+        }
+        for (size_t j = k + 1; j < t.steps.size(); ++j) {
+            if (t.steps[j].kind == Step::Base) {
+                after = per[j];
+                break;
+            }
+        }
+        if (before.total < 0.0) {
+            return after;
+        }
+        if (after.total < 0.0) {
+            return before;
+        }
+        return {(before.total + after.total) / 2.0, (before.scene + after.scene) / 2.0};
+    };
+    LOG_INFO(Render_Vulkan,
+             "GPU_SHADER_BENCH: result (ms a frame; steps as they are from {:.2f} to {:.2f}: "
+             "smaller differences are noise):",
+             low, high);
+    const auto saving = [](const PerFrame& b, const PerFrame& x) {
+        return b.total >= 0.0 && x.total >= 0.0 ? b.total - x.total : 0.0;
+    };
+    struct Row {
+        size_t pixels_step;
+        size_t out_step;
+    };
+    std::vector<Row> rows;
+    size_t all_step = t.steps.size();
+    for (size_t k = 0; k < t.steps.size(); ++k) {
+        if (t.steps[k].kind == Step::Out && k > 0 && t.steps[k - 1].kind == Step::NoPixels) {
+            rows.push_back({k - 1, k});
+        } else if (t.steps[k].kind == Step::All) {
+            all_step = k;
+        }
+    }
+    std::ranges::sort(rows, [&](const Row& a, const Row& b) {
+        return saving(base(a.out_step), per[a.out_step]) >
+               saving(base(b.out_step), per[b.out_step]);
+    });
+    const auto line = [&](size_t k) {
+        const PerFrame b = base(k);
+        const PerFrame x = per[k];
+        if (b.total < 0.0 || x.total < 0.0) {
+            return std::string{"no time measured"};
+        }
+        return fmt::format("GPU {:.2f} against {:.2f} = {:+.2f} ms, scene passes {:.2f} against "
+                           "{:.2f} = {:+.2f} ms",
+                           x.total, b.total, x.total - b.total, x.scene, b.scene,
+                           x.scene - b.scene);
+    };
+    for (const Row& row : rows) {
+        const int candidate = t.steps[row.out_step].candidate;
+        LOG_INFO(Render_Vulkan, "GPU_SHADER_BENCH: {}: without it {}; without its pixels {}",
+                 Describe(t, candidate), line(row.out_step), line(row.pixels_step));
+    }
+    if (all_step < t.steps.size()) {
+        LOG_INFO(Render_Vulkan, "GPU_SHADER_BENCH: all {} at once: {}", t.candidates.size(),
+                 line(all_step));
     }
 }
 
-/// Moves the shader test on: chooses the candidates after the count, sets what is left out,
-/// logs each step and the result.
+/// Moves the shader test on: chooses the candidates after the count, sets what is done to the
+/// draws, logs each step and the result.
 void AdvanceShaderTest() {
     ShaderTest& t = g_shaders;
     const s64 started = t.started.load(std::memory_order_acquire);
@@ -539,24 +607,25 @@ void AdvanceShaderTest() {
     }
     const int seen = t.logged_step.load(std::memory_order_relaxed);
     if (size_t(step) < t.steps.size()) {
-        const int what = t.steps[size_t(step)];
-        t.out_hash.store(what >= 0 ? t.candidates[size_t(what)].first : 0,
-                         std::memory_order_relaxed);
-        t.one_out.store(what >= 0, std::memory_order_relaxed);
-        t.all_out.store(what == kAll, std::memory_order_relaxed);
+        const Step& what = t.steps[size_t(step)];
+        DrawAction action = DrawAction::Draw;
+        u64 hash = 0;
+        if (what.kind == Step::NoPixels || what.kind == Step::Out) {
+            hash = t.candidates[size_t(what.candidate)].first;
+            action = what.kind == Step::Out ? DrawAction::Skip : DrawAction::NoPixels;
+        }
+        t.hash.store(hash, std::memory_order_relaxed);
+        t.action.store(int(action), std::memory_order_relaxed);
+        t.all_out.store(what.kind == Step::All, std::memory_order_relaxed);
         if (step != seen) {
             t.logged_step.store(step, std::memory_order_relaxed);
             LOG_INFO(Render_Vulkan, "GPU_SHADER_BENCH: step {} of {}: {}", step + 1,
-                     t.steps.size(),
-                     what == kBase  ? std::string{"as they are"}
-                     : what == kAll ? std::string{"without all of them"}
-                                    : fmt::format("without fs {:#x}",
-                                                  t.candidates[size_t(what)].first));
+                     t.steps.size(), StepName(t, what));
         }
         return;
     }
-    t.out_hash.store(0, std::memory_order_relaxed);
-    t.one_out.store(false, std::memory_order_relaxed);
+    t.hash.store(0, std::memory_order_relaxed);
+    t.action.store(int(DrawAction::Draw), std::memory_order_relaxed);
     t.all_out.store(false, std::memory_order_relaxed);
     if (seen < int(t.steps.size())) {
         t.logged_step.store(int(t.steps.size()), std::memory_order_relaxed);
@@ -576,11 +645,11 @@ bool ShaderTestRunning() {
     return g_shaders.started.load(std::memory_order_relaxed) != 0;
 }
 
-bool ShaderDraw(bool scene_pass, u64 fs_hash, u64 vs_hash, bool has_gs, u64 vertices) {
+DrawAction ShaderDraw(bool scene_pass, u64 fs_hash, u64 vs_hash, bool has_gs, u64 vertices) {
     ShaderTest& t = g_shaders;
     const s64 started = t.started.load(std::memory_order_acquire);
     if (started == 0 || !scene_pass) {
-        return false;
+        return DrawAction::Draw;
     }
     if (ShaderStepAt(started, NowNs()) < 0) {
         std::scoped_lock lock{t.mutex};
@@ -591,16 +660,20 @@ bool ShaderDraw(bool scene_pass, u64 fs_hash, u64 vs_hash, bool has_gs, u64 vert
             count.vs_hash = vs_hash;
             count.has_gs = count.has_gs || has_gs;
         }
-        return false;
+        return DrawAction::Draw;
     }
     if (t.all_out.load(std::memory_order_relaxed)) {
         std::scoped_lock lock{t.mutex};
         return std::ranges::find_if(t.candidates, [&](const auto& c) {
                    return c.first == fs_hash;
-               }) != t.candidates.end();
+               }) != t.candidates.end()
+                   ? DrawAction::Skip
+                   : DrawAction::Draw;
     }
-    return t.one_out.load(std::memory_order_relaxed) &&
-           t.out_hash.load(std::memory_order_relaxed) == fs_hash;
+    const auto action = DrawAction(t.action.load(std::memory_order_relaxed));
+    return action != DrawAction::Draw && t.hash.load(std::memory_order_relaxed) == fs_hash
+               ? action
+               : DrawAction::Draw;
 }
 
 int TimingTag() {
@@ -614,7 +687,7 @@ int TimingTag() {
     return step >= 0 && into >= SettleNs ? step : -1;
 }
 
-void NoteGpuTime(u32 timer, int tag, double ms) {
+void NoteGpuTime(u32 timer, int tag, double ms, double scene_ms) {
     ShaderTest& t = g_shaders;
     if (tag < 0 || t.started.load(std::memory_order_acquire) == 0) {
         return;
@@ -625,8 +698,28 @@ void NoteGpuTime(u32 timer, int tag, double ms) {
     }
     auto& steps = t.times[timer];
     steps.resize(t.steps.size());
-    steps[size_t(tag)].ms += ms;
+    if (ms >= 0.0) {
+        steps[size_t(tag)].ms += ms;
+    } else {
+        ++steps[size_t(tag)].unusable;
+    }
+    steps[size_t(tag)].scene_ms += scene_ms;
     ++steps[size_t(tag)].buffers;
+}
+
+void NoteFrame() {
+    ShaderTest& t = g_shaders;
+    if (t.started.load(std::memory_order_relaxed) == 0) {
+        return;
+    }
+    const int tag = TimingTag();
+    if (tag < 0) {
+        return;
+    }
+    std::scoped_lock lock{t.mutex};
+    if (size_t(tag) < t.frames.size()) {
+        ++t.frames[size_t(tag)];
+    }
 }
 
 namespace {
@@ -639,8 +732,9 @@ void StartShaderTest() {
     t.candidates.clear();
     t.steps.clear();
     t.times.clear();
-    t.out_hash.store(0, std::memory_order_relaxed);
-    t.one_out.store(false, std::memory_order_relaxed);
+    t.frames.clear();
+    t.hash.store(0, std::memory_order_relaxed);
+    t.action.store(int(DrawAction::Draw), std::memory_order_relaxed);
     t.all_out.store(false, std::memory_order_relaxed);
     t.logged_step.store(-2, std::memory_order_relaxed);
     t.num_steps.store(-1, std::memory_order_relaxed);
@@ -648,7 +742,7 @@ void StartShaderTest() {
     LOG_INFO(Render_Vulkan,
              "GPU_SHADER_BENCH: started: {} s counting the scene's pixel shaders, then up to {} "
              "steps of {} s; keep still",
-             CensusNs / 1'000'000'000, MaxCandidates * 2 + 3, ShaderStepNs / 1'000'000'000);
+             CensusNs / 1'000'000'000, MaxCandidates * 3 + 3, ShaderStepNs / 1'000'000'000);
 }
 } // namespace
 
@@ -830,8 +924,12 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
     FrameStats::Add(FrameStats::Counter::Vertices,
                     u64{num_vertices} * regs.num_instances.NumInstances());
 
-    if (BenchLeavesOut(bench, pipeline,
-                       u64{num_vertices} * regs.num_instances.NumInstances())) {
+    bool pixels_out = false;
+    const bool left_out = BenchLeavesOut(
+        bench, pipeline, u64{num_vertices} * regs.num_instances.NumInstances(), pixels_out);
+    pixels_out = pixels_out && !left_out;
+    const bool discard_before = BenchPixelsOut(pixels_out);
+    if (left_out) {
         // (GpuBench) not drawn.
     } else if (is_indexed) {
         cmdbuf.drawIndexed(num_vertices, regs.num_instances.NumInstances(), 0,
@@ -840,13 +938,34 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
         cmdbuf.draw(num_vertices, regs.num_instances.NumInstances(), vertex_offset,
                     instance_offset);
     }
+    BenchPixelsBack(pixels_out, discard_before);
 
     ResetBindings();
     RetireIsolatedReadConstSnapshots();
 }
 
+bool Rasterizer::BenchPixelsOut(bool pixels_out) {
+    auto& dynamic_state = scheduler.GetDynamicState();
+    const bool before = dynamic_state.IsRasterizerDiscardEnabled();
+    if (pixels_out) {
+        // (GpuBench) this draw's vertices only: rasterizer discard for it alone.
+        dynamic_state.SetRasterizerDiscardEnabled(true);
+        dynamic_state.Commit(instance, scheduler.CommandBuffer());
+    }
+    return before;
+}
+
+void Rasterizer::BenchPixelsBack(bool pixels_out, bool discard_before) {
+    if (pixels_out) {
+        auto& dynamic_state = scheduler.GetDynamicState();
+        dynamic_state.SetRasterizerDiscardEnabled(discard_before);
+        dynamic_state.Commit(instance, scheduler.CommandBuffer());
+    }
+}
+
 bool Rasterizer::BenchLeavesOut(GpuBench::Mode mode, const GraphicsPipeline* pipeline,
-                                u64 vertices) const {
+                                u64 vertices, bool& pixels_out) const {
+    pixels_out = false;
     if (GpuBench::ShaderTestRunning()) {
         // A scene pass: depth and a colour target, at least 1024 wide (not the shadow maps, the
         // depth prepass or the post-processing at the picture's size without depth).
@@ -860,9 +979,12 @@ bool Rasterizer::BenchLeavesOut(GpuBench::Mode mode, const GraphicsPipeline* pip
             }
         }
         const auto& hashes = pipeline->GetGraphicsKey().stage_hashes;
-        return GpuBench::ShaderDraw(scene, hashes[u32(Shader::LogicalStage::Fragment)],
-                                    hashes[u32(Shader::LogicalStage::Vertex)],
-                                    hashes[u32(Shader::LogicalStage::Geometry)] != 0, vertices);
+        const auto action = GpuBench::ShaderDraw(
+            scene, hashes[u32(Shader::LogicalStage::Fragment)],
+            hashes[u32(Shader::LogicalStage::Vertex)],
+            hashes[u32(Shader::LogicalStage::Geometry)] != 0, vertices);
+        pixels_out = action == GpuBench::DrawAction::NoPixels;
+        return action == GpuBench::DrawAction::Skip;
     }
     if (mode == GpuBench::Mode::NoGeometryShaders) {
         return pipeline->GetGraphicsKey().stage_hashes[u32(Shader::LogicalStage::Geometry)] != 0;
@@ -1193,7 +1315,11 @@ void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u3
     const auto cmdbuf = scheduler.CommandBuffer();
     scheduler.BindGraphicsPipeline(draw_pipeline->Handle());
 
-    if (BenchLeavesOut(GpuBench::Current(), pipeline, 0)) {
+    bool pixels_out = false;
+    const bool left_out = BenchLeavesOut(GpuBench::Current(), pipeline, 0, pixels_out);
+    pixels_out = pixels_out && !left_out;
+    const bool discard_before = BenchPixelsOut(pixels_out);
+    if (left_out) {
         // (GpuBench) not drawn.
     } else if (is_indexed) {
         ASSERT(sizeof(VkDrawIndexedIndirectCommand) == stride);
@@ -1214,6 +1340,7 @@ void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u3
             cmdbuf.drawIndirect(buffer->Handle(), base, max_count, stride);
         }
     }
+    BenchPixelsBack(pixels_out, discard_before);
 
     ResetBindings();
     RetireIsolatedReadConstSnapshots();
