@@ -110,6 +110,9 @@ struct SettingsView: View {
                     Text(L("Mando y manos", "Controller and hands"))
                 }
 
+#if VPENGINE
+                VPEngineSection()
+#endif
                 StorageSection()
 
                 Section {

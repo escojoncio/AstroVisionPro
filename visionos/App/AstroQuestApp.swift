@@ -14,10 +14,23 @@ struct AstroQuestApp: App {
     @State private var model = AppModel()
     @State private var immersion: ImmersionStyle = .full
 
+#if VPENGINE
+    init() {
+        // Before the app finishes launching: what runs when visionOS grants background time to
+        // go on with a conversion.
+        VPConversion.registerBackgroundTask()
+    }
+#endif
+
     var body: some Scene {
         WindowGroup(id: AppModel.launcherID) {
             LauncherView()
                 .environment(model)
+#if VPENGINE
+                .onOpenURL { url in
+                    model.handleOpenURL(url)
+                }
+#endif
         }
         .defaultSize(width: 1280, height: 760)
 

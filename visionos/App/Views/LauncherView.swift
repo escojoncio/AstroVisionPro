@@ -41,6 +41,13 @@ struct LauncherView: View {
                 model.findGame()
                 model.refreshDiagnostics()
             }
+#if VPENGINE
+            switch phase {
+            case .active: model.conversion.appBecameActive()
+            case .background: model.conversion.appEnteredBackground()
+            default: break
+            }
+#endif
         }
     }
 }

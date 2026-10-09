@@ -5,6 +5,7 @@
 #include <atomic>
 #include <cerrno>
 #include <cstring>
+#include <cstdlib>
 #include <memory>
 #include <mutex>
 #include <unordered_map>
@@ -51,6 +52,10 @@ PFN_SrtWalker RegisterWalkerCode(const u8* ptr, size_t size) {
     g_srt_codegen.db(ptr, size);
     g_srt_codegen.ready();
     return func_addr;
+}
+
+void RunWalker(PFN_SrtWalker walker, const u32* user_data, u32* flat_dst) {
+    walker(user_data, flat_dst);
 }
 
 } // namespace Shader
@@ -346,11 +351,14 @@ struct SrtCodeMapping {
     size_t size{};
 
     bool in_jit_arena{};
+    bool in_heap{}; // an interpreted walker (no executable memory)
 
     ~SrtCodeMapping() {
         if (data != nullptr) {
             if (in_jit_arena) {
                 Common::JitArena::Free(data);
+            } else if (in_heap) {
+                std::free(data);
             } else {
                 munmap(data, size);
             }
@@ -492,9 +500,103 @@ struct PassInfo {
     }
 };
 
+#ifdef __APPLE__
+// No executable memory (visionOS without JIT, e.g. with VPEngine's ahead-of-time guest CPU): the
+// walker's few instructions are interpreted instead of run. Its loads from guest memory go through
+// these two functions, made of the same load instructions as a generated walker, so that
+// SrtWalkerSignalHandler turns a fault in them into a zero just as it does for generated code.
+extern "C" u64 shadps4_srt_load64(u64 base, u64 offset);
+extern "C" u32 shadps4_srt_load32(u64 base, u64 offset);
+extern "C" const u8 shadps4_srt_safe_begin[];
+extern "C" const u8 shadps4_srt_safe_end[];
+asm(R"(
+    .text
+    .p2align 2
+    .globl _shadps4_srt_safe_begin
+_shadps4_srt_safe_begin:
+    .globl _shadps4_srt_load64
+_shadps4_srt_load64:
+    mov x2, x0
+    mov x4, x1
+    ldr x2, [x2, x4]
+    mov x0, x2
+    ret
+    .globl _shadps4_srt_load32
+_shadps4_srt_load32:
+    mov x2, x0
+    mov x4, x1
+    ldr w3, [x2, x4]
+    mov w0, w3
+    ret
+    .globl _shadps4_srt_safe_end
+_shadps4_srt_safe_end:
+    nop
+)");
+
+std::atomic_bool g_srt_interpret{};
+
+void InterpretWalker(const u32* code, const u32* user_data, u32* flat_dst) {
+    u64 x[6]{reinterpret_cast<u64>(user_data), reinterpret_cast<u64>(flat_dst), 0, 0, 0, 0};
+    u64 stack[64];
+    size_t depth = 0;
+    for (size_t pc = 0;; ++pc) {
+        const u32 insn = code[pc];
+        if (insn == Arm64Ret) {
+            return;
+        } else if (insn == Arm64MovX2X0) {
+            x[2] = x[0];
+        } else if (insn == Arm64PushX2) {
+            ASSERT(depth < std::size(stack));
+            stack[depth++] = x[2];
+        } else if (insn == Arm64PopX2) {
+            ASSERT(depth > 0);
+            x[2] = stack[--depth];
+        } else if (insn == Arm64LoadPointer) {
+            x[2] = shadps4_srt_load64(x[2], x[4]);
+        } else if (insn == Arm64MaskPointer) {
+            x[2] &= 0xFFFFFFFFFFFFULL;
+        } else if (insn == Arm64LoadDataRegisterOffset) {
+            x[3] = shadps4_srt_load32(x[2], x[4]);
+        } else if ((insn & 0xffc003ffu) == 0xb9400043u) {
+            x[3] = shadps4_srt_load32(x[2], static_cast<u64>((insn >> 10) & 0xfff) * sizeof(u32));
+        } else if (insn == Arm64StoreDataRegisterOffset) {
+            std::memcpy(reinterpret_cast<u8*>(x[1] + x[5]), &x[3], sizeof(u32));
+        } else if ((insn & 0xffc003ffu) == 0xb9000023u) {
+            std::memcpy(reinterpret_cast<u8*>(x[1]) + ((insn >> 10) & 0xfff) * sizeof(u32), &x[3], sizeof(u32));
+        } else if ((insn & 0xffe00000u) == 0xd2800000u) { // movz xN, #imm16
+            x[insn & 31] = (insn >> 5) & 0xffff;
+        } else if ((insn & 0xff800000u) == 0xf2800000u) { // movk xN, #imm16, lsl #(16 * hw)
+            const u32 shift = ((insn >> 21) & 3) * 16;
+            u64& r = x[insn & 31];
+            r = (r & ~(0xffffULL << shift)) | (static_cast<u64>((insn >> 5) & 0xffff) << shift);
+        } else {
+            LOG_CRITICAL(Render_Recompiler, "SRT walker interpreter: unknown instruction {:#010x}", insn);
+            return;
+        }
+    }
+}
+
+void RegisterInterpreterSignals() {
+    std::call_once(g_srt_signal_once, [] {
+        constexpr u32 priority = 1;
+        Core::Signals::Instance()->RegisterAccessViolationHandler(SrtWalkerSignalHandler, priority);
+    });
+}
+#endif
+
 } // namespace
 
 namespace Shader {
+
+void RunWalker(PFN_SrtWalker walker, const u32* user_data, u32* flat_dst) {
+#ifdef __APPLE__
+    if (g_srt_interpret.load(std::memory_order_relaxed)) {
+        InterpretWalker(reinterpret_cast<const u32*>(walker), user_data, flat_dst);
+        return;
+    }
+#endif
+    walker(user_data, flat_dst);
+}
 
 PFN_SrtWalker RegisterWalkerCode(const u8* ptr, size_t size) {
     if (!IsArm64SrtWalker(ptr, size)) {
@@ -518,6 +620,34 @@ PFN_SrtWalker RegisterWalkerCode(const u8* ptr, size_t size) {
     const size_t page_size = static_cast<size_t>(page_size_result);
     const size_t mapping_size = (size + page_size - 1) & ~(page_size - 1);
     auto mapping = std::make_unique<SrtCodeMapping>();
+#ifdef __APPLE__
+    if (!Common::JitArena::Available()) {
+        // No executable memory: the walker is kept as data and interpreted (RunWalker). The
+        // loads it makes fault safely in shadps4_srt_load64/32, whose code is the range the
+        // signal handler knows (registered once).
+        static bool safe_loads_registered = false;
+        if (!safe_loads_registered) {
+            g_srt_code_ranges[range_index] = {reinterpret_cast<uintptr_t>(shadps4_srt_safe_begin),
+                                              reinterpret_cast<uintptr_t>(shadps4_srt_safe_end)};
+            g_srt_code_range_count.store(range_index + 1, std::memory_order_release);
+            safe_loads_registered = true;
+            RegisterInterpreterSignals();
+            LOG_INFO(Render_Recompiler, "No executable memory: SRT walkers are interpreted");
+        }
+        mapping->data = static_cast<u8*>(std::malloc(size));
+        if (mapping->data == nullptr) {
+            LOG_CRITICAL(Render_Recompiler, "Unable to allocate an interpreted SRT walker");
+            std::abort();
+        }
+        std::memcpy(mapping->data, ptr, size);
+        mapping->size = size;
+        mapping->in_heap = true;
+        g_srt_interpret.store(true, std::memory_order_relaxed);
+        auto* walker = reinterpret_cast<PFN_SrtWalker>(mapping->data);
+        g_srt_code_mappings.push_back(std::move(mapping));
+        return walker;
+    }
+#endif
     if (Common::JitArena::Available()) {
         // visionOS: written through the arena's writable mapping, run from its executable one.
         const auto block = Common::JitArena::Allocate(size);
@@ -669,6 +799,10 @@ namespace Shader {
 
 PFN_SrtWalker RegisterWalkerCode(const u8* ptr, size_t size) {
     UNREACHABLE_MSG("RegisterWalkerCode unimplemented for target architecture.");
+}
+
+void RunWalker(PFN_SrtWalker walker, const u32* user_data, u32* flat_dst) {
+    walker(user_data, flat_dst);
 }
 
 namespace Optimization {
