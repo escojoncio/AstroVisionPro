@@ -12,6 +12,21 @@ JIT: arena RWX preparada por StikDebug (protocolo `brk #0xf00d` + universal.js);
 - Audio espacial OK. Al abrir el micro (SDL) `Recover: PHASE took no sound for 560 ms … session on again` → corte breve: SDL sigue desactivando la sesión (sus opciones calculadas ≠ las que devuelve el sistema).
 - Bug visual al entrar al mundo (mapa entero ~1 s antes del efecto de construcción): ~130 pipelines compilados en cada partida (caché de pipelines de shadPS4 desactivada: `PipelineCacheEnabled: false`), ~50 al entrar al mundo; los draws sin pipeline listo se saltan.
 
+## Test de c494416 (log 2026-10-09 12:32)
+- GPU igual (~29–31 ms/frame en el mundo a 30 fps; a 45 Hz de pantalla 22.5 fps con GPU 60–63 %): mover los timestamps dentro de la pasada no cambió nada → descartados ancho de banda, barreras entre pasadas y medidor.
+- SMAA activo (`Antialiasing (SMAA): on, 2880x1536`, todos los frames): el usuario no ve mejora → el defecto visible es la ampliación ~2.5× de 1440/ojo al visor y el parpadeo de detalle fino, no escalones de borde.
+- Micro propio: sin corte audible (`MICROPHONE: 48000 Hz, 1 channels`; puerto 128 frames, 2 canales, 48 kHz).
+- Vibración: sigue fallando ("No se ha podido establecer comunicación…", motor rehecho y `stopped (reason -1)`). Causa probable: el sistema desactiva hápticos mientras se graba (el juego mantiene el micro abierto) salvo `setAllowHapticsAndSystemSoundsDuringRecording`.
+- Carga del mundo: ~500 draws saltados; pipelines listos hasta 3045 ms tras su primer draw (cola de 2 workers con ~50 pipelines de 20–110 ms).
+
+## Commit siguiente [build]: hápticos durante grabación, 4 workers, caché de pipelines opcional, prueba de GPU (sin probar)
+- `spatial_audio_visionos.mm` `SetUpSession`: `setAllowHapticsAndSystemSoundsDuringRecording:YES`.
+- `PlayStationController.swift`: `engine.playsHapticsOnly = true` en cada motor.
+- `vk_pipeline_cache.cpp`: en visionOS workers = clamp(núcleos/2, 2, 4) (4 en M2).
+- `emulator.cpp` (visionOS): `SHADPS4_PIPELINE_CACHE` → `SetPipelineCacheEnabled(…, true)` antes de crear el renderer (WarmUp de shadPS4: guarda claves+programas en `CacheDir/<serial>` y los precarga). App: «Guardar y precargar shaders (experimental)» (`pipeline_cache`, 0). Ojo: el perfil de la caché depende del driver (cambiar KK↔MoltenVK la invalida).
+- App: «Prueba de GPU» (`gpu_test`: "" / "geometry" → `SHADPS4_DBG_DRAW_VERTICES=3`) para separar coste de vértices del fijo.
+- Pendiente: con la prueba de geometría decidir si atacar vértices (8 M/frame) o coste fijo/shaders; probar resolución 2160 (+0.7 GB, 1.6 GB libres ahora) con SMAA.
+
 ## Build c494416 (run 37916930027): OK (sin probar) — timestamps dentro de la pasada, SMAA, micro propio al abrirlo el juego, hápticos que se rehacen, espera de pipelines
 - `vk_scheduler.cpp`: `GpuTimer::PassBegin` tras `beginRendering` (`eTopOfPipe` → etapa vértice de KK) y `PassEnd` antes de `endRendering` (`eBottomOfPipe` → tile). Etapas distintas: KK reutiliza un timestamp por etapa y encoder. Pasadas sin attachments siguen yendo por cómputo.
 - `vk_pipeline_cache.cpp/.h`: `WaitForJob` (plantilla sobre `PendingGraphicsPipeline`, campo `waited`): el primer draw de un pipeline en compilación espera hasta `SHADPS4_PIPELINE_WAIT_MS` (40) con presupuesto total de 40 ms cada 100 ms; también para el job recién lanzado.
