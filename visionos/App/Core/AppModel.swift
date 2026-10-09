@@ -75,7 +75,15 @@ final class AppModel {
 
     /// A URL the app was opened with: SideStore's answer with the certificate.
     func handleOpenURL(_ url: URL) {
-        guard let result = VPCertificate.handle(url: url) else { return }
+        // Every URL the app is opened with, without the values (a certificate and its password):
+        // whether SideStore answers at all, and in what shape.
+        let parts = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        let items = (parts?.queryItems ?? []).map { "\($0.name)(\($0.value?.count ?? -1) chars)" }
+        LogFiles.log("VPEngine: opened with a URL: scheme \(url.scheme ?? "-"), host \(url.host ?? "-"), path of \(url.path.count) chars, parameters [\(items.joined(separator: ", "))], \(url.absoluteString.count) chars")
+        guard let result = VPCertificate.handle(url: url) else {
+            LogFiles.log("VPEngine: that URL is not a certificate from SideStore")
+            return
+        }
         switch result {
         case .success(let summary):
             certificate = summary
@@ -93,12 +101,15 @@ final class AppModel {
         defer { if accessing { file.stopAccessingSecurityScopedResource() } }
         do {
             let data = try Data(contentsOf: file)
+            LogFiles.log("VPEngine: certificate file \(file.lastPathComponent), \(data.count) bytes, password \(password.isEmpty ? "empty" : "given")")
             let summary = try VPCertificate.store(p12: data, password: password)
             certificate = summary
             message = L("Certificado importado: \(summary.commonName) (\(summary.team)).", "Certificate imported: \(summary.commonName) (\(summary.team)).")
+            LogFiles.log("VPEngine: certificate imported from a file, team \(summary.team); the app's team \(appTeam.isEmpty ? "unknown" : appTeam)")
             loadEngineIfReady()
         } catch {
             message = error.localizedDescription
+            LogFiles.log("VPEngine: certificate file import failed: \(error.localizedDescription)")
         }
     }
 
