@@ -57,6 +57,8 @@ final class PlayStationController: @unchecked Sendable {
     private var observers: [NSObjectProtocol] = []
     /// Motion updates so far (a few go to the log).
     private var motionReports: UInt = 0
+    /// Rumble changes so far (a few go to the log).
+    private var feedbackReports: UInt = 0
     /// When the motion sensors last reported (ProcessInfo uptime), and when they were last woken
     /// up again: visionOS can turn them off (sensorsActive false, no more updates) while the app
     /// keeps the controller, and then the game's controller stops turning.
@@ -247,14 +249,27 @@ final class PlayStationController: @unchecked Sendable {
             }
         }
         // Rumble: the low frequency motor in the left grip, the high frequency one in the right,
-        // as SDL drives a PlayStation controller on Apple systems.
+        // as SDL drives a PlayStation controller on Apple systems. A controller that has no
+        // motor of each grip to give gets one for both grips (or its only one) for the two.
         if let haptics = controller.haptics {
-            let low = RumbleMotor(haptics: haptics, locality: .leftHandle)
-            let high = RumbleMotor(haptics: haptics, locality: .rightHandle)
+            let localities = haptics.supportedLocalities.map { $0.rawValue }.sorted().joined(separator: ", ")
+            var low = RumbleMotor(haptics: haptics, locality: .leftHandle)
+            var high = RumbleMotor(haptics: haptics, locality: .rightHandle)
+            var how = "a motor in each grip"
+            if low == nil || high == nil {
+                let both = RumbleMotor(haptics: haptics, locality: .handles)
+                    ?? RumbleMotor(haptics: haptics, locality: .default)
+                low = low ?? both
+                high = high ?? both
+                how = both != nil ? "one motor for both grips" : "no motor"
+            }
+            LogFiles.log("Controller rumble: \(how) (it has: \(localities.isEmpty ? "none" : localities))")
             lock.lock()
             lowFrequency = low
             highFrequency = high
             lock.unlock()
+        } else {
+            LogFiles.log("Controller rumble: the controller offers no haptics")
         }
     }
 
@@ -522,12 +537,26 @@ final class PlayStationController: @unchecked Sendable {
         let high = highFrequency
         lock.unlock()
 
-        // The game's large motor is the low frequency one, its small motor the high frequency one.
-        if wanted.large_motor != previous.large_motor {
-            low?.setIntensity(Float(wanted.large_motor) / 255.0)
+        // The first few the game asks for, for the log.
+        if wanted.large_motor != previous.large_motor || wanted.small_motor != previous.small_motor {
+            feedbackReports &+= 1
+            if feedbackReports <= 5 {
+                LogFiles.log("Controller rumble: large \(wanted.large_motor) small \(wanted.small_motor); motors \(low != nil ? "yes" : "no")/\(high != nil ? "yes" : "no")")
+            }
         }
-        if wanted.small_motor != previous.small_motor {
-            high?.setIntensity(Float(wanted.small_motor) / 255.0)
+        // The game's large motor is the low frequency one, its small motor the high frequency one.
+        // One motor for both: the stronger of the two.
+        if let low, let high, low === high {
+            if wanted.large_motor != previous.large_motor || wanted.small_motor != previous.small_motor {
+                low.setIntensity(Float(max(wanted.large_motor, wanted.small_motor)) / 255.0)
+            }
+        } else {
+            if wanted.large_motor != previous.large_motor {
+                low?.setIntensity(Float(wanted.large_motor) / 255.0)
+            }
+            if wanted.small_motor != previous.small_motor {
+                high?.setIntensity(Float(wanted.small_motor) / 255.0)
+            }
         }
         if wanted.red != previous.red || wanted.green != previous.green || wanted.blue != previous.blue,
            let light = controller.light {
@@ -547,6 +576,7 @@ final class RumbleMotor: @unchecked Sendable {
 
     init?(haptics: GCDeviceHaptics, locality: GCHapticsLocality) {
         guard let engine = haptics.createEngine(withLocality: locality) else {
+            LogFiles.log("Controller rumble: no haptic engine for \(locality.rawValue)")
             return nil
         }
         self.engine = engine
@@ -569,9 +599,13 @@ final class RumbleMotor: @unchecked Sendable {
         do {
             try engine.start()
         } catch {
+            LogFiles.log("Controller rumble: the haptic engine for \(locality.rawValue) did not start: \(error.localizedDescription)")
             return nil
         }
     }
+
+    /// Failures while playing, a few for the log.
+    private var failures: UInt = 0
 
     func setIntensity(_ intensity: Float) {
         lock.lock()
@@ -604,6 +638,10 @@ final class RumbleMotor: @unchecked Sendable {
             }
         } catch {
             active = false
+            failures &+= 1
+            if failures <= 5 {
+                LogFiles.log("Controller rumble: could not play (\(error.localizedDescription))")
+            }
         }
     }
 

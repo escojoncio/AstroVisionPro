@@ -62,6 +62,12 @@ public:
         }
 
         if (!nullDevice) {
+#ifdef SHADPS4_VISIONOS
+            // The headset's sound plays while the microphone is open: SDL is to set the
+            // audio session up for both (on its own, with only a microphone open, it sets it up
+            // for recording alone, which silences every output).
+            SDL_SetHint(SDL_HINT_AUDIO_CATEGORY, "playandrecord");
+#endif
             stream = SDL_OpenAudioDeviceStream(devId, &fmt, nullptr, nullptr);
             if (stream) {
                 if (SDL_ResumeAudioStreamDevice(stream)) {

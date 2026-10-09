@@ -64,6 +64,9 @@ struct AstroSettings {
     /// Experimental: KosmicKrisp lets the next render pass start its vertex work while the one
     /// before is still drawing, instead of waiting for all of it (KK_LIGHT_BARRIERS).
     var lightBarriers = false
+    /// A draw that uses fewer of the targets of the render pass that is open is made in that pass
+    /// instead of ending it (SHADPS4_MERGE_PASSES).
+    var mergePasses = true
     /// The headset's 3D audio, as PlayStation VR renders it: each of the title's 3D sounds and
     /// surround speakers rendered by Apple's PHASE, head-locked (SHADPS4_SPATIAL_AUDIO).
     var spatialAudio = true
@@ -161,6 +164,7 @@ struct AstroSettings {
         case "async_shaders": asyncShaders = flag
         case "gs_in_pass": gsInPass = flag
         case "light_barriers": lightBarriers = flag
+        case "merge_passes": mergePasses = flag
         case "spatial_audio": spatialAudio = flag
         case "pass_diagnostics": passDiagnostics = flag
         case "game_language": gameLanguage = value
@@ -227,6 +231,7 @@ struct AstroSettings {
         env.append("SHADPS4_ASYNC_PIPELINES=\(asyncShaders ? 1 : 0)")
         env.append("KK_GS_IN_PASS=\(gsInPass ? 1 : 0)")
         env.append("KK_LIGHT_BARRIERS=\(lightBarriers ? 1 : 0)")
+        env.append("SHADPS4_MERGE_PASSES=\(mergePasses ? 1 : 0)")
         env.append("SHADPS4_SPATIAL_AUDIO=\(spatialAudio ? 1 : 0)")
         if passDiagnostics {
             env.append("SHADPS4_FRAME_STATS=2")
@@ -308,6 +313,8 @@ struct AstroSettings {
     gs_in_pass=1
     # 1 (experimental): cada pasada de render empieza sus vértices sin esperar a que acabe la anterior.
     light_barriers=0
+    # 1: un dibujo que usa menos destinos que la pasada abierta se hace en ella en vez de cortarla.
+    merge_passes=1
     # 1: audio 3D como el de PlayStation VR (cada sonido y altavoz con el HRTF de Apple, PHASE).
     spatial_audio=1
 

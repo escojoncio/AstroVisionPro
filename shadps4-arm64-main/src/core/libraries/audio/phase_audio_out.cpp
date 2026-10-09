@@ -115,6 +115,7 @@ private:
     /// Keeps two of the device's buffers and one of the port's waiting: a start (or a restart
     /// after a pause) gets silence up to that, and the port waits while there is more.
     void Pace() {
+        SpatialAudio::Watch();
         const u32 device = std::max<u32>(SpatialAudio::DeviceFrames(), 256);
         const u32 target = 2 * device + frames;
         u32 queued = SpatialAudio::Queued(voices[0]);

@@ -128,6 +128,28 @@ private:
     /// Set while a draw is made in more than one pass (SharedTargetPasses).
     bool in_target_passes{};
 
+    /// After a draw began a render pass: what the pass's pipelines are made for and which
+    /// images it draws to, for the draws after it (PipelineForOpenPass).
+    void NoteOpenPass(const GraphicsPipeline* pipeline);
+    /// A draw whose targets are some of those of the pass that is open (the same images, none
+    /// cleared, the same size), or none at all, can be made in that pass instead of ending it:
+    /// on a GPU that renders in tiles, ending a pass writes all its targets out to memory and
+    /// the next one reads them back in. Answers with a pipeline made for the pass's targets
+    /// that writes to none the draw has not got itself, or nullptr when the draw needs a pass
+    /// of its own (or that pipeline is not made yet). SHADPS4_MERGE_PASSES=0 turns it off.
+    const GraphicsPipeline* PipelineForOpenPass(const GraphicsPipeline* pipeline,
+                                                const RenderState& state);
+
+    struct OpenPass {
+        u64 serial{~0ull};
+        PipelineCache::OpenPassTargets targets{};
+        std::array<VideoCore::ImageId, AmdGpu::NUM_COLOR_BUFFERS + 1> images{};
+        u32 num_images{};
+    };
+    OpenPass open_pass{};
+    /// Set while the draw being made is made in a pass with more targets than its own.
+    bool in_open_pass{};
+
     void ResetBindings() {
         for (auto& image_id : bound_images) {
             texture_cache.GetImage(image_id).binding = {};

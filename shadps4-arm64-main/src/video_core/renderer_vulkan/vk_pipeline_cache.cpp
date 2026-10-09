@@ -744,6 +744,28 @@ bool PipelineCache::RefreshGraphicsKey() {
         }
     }
 
+    // A draw made in a pass that has more targets than it (MakeForOpenPass): the pipeline is
+    // made for all of the pass's, and those that are not the draw's own are written to by
+    // nothing (no channel, no blending). The shaders stay the draw's.
+    if (const auto* pass = open_pass_targets) {
+        for (u32 cb = 0; cb < AmdGpu::NUM_COLOR_BUFFERS; ++cb) {
+            const bool own = (pass->own_colors & (1u << cb)) != 0;
+            if (own && cb < pass->num_color_attachments) {
+                continue;
+            }
+            key.color_buffers[cb] =
+                cb < pass->num_color_attachments ? pass->color_buffers[cb] : Shader::PsColorBuffer{};
+            key.blend_controls[cb] = {};
+            key.write_masks[cb] = {};
+            key.color_samples[cb] = cb < pass->num_color_attachments ? pass->color_samples[cb] : 0;
+        }
+        key.num_color_attachments = pass->num_color_attachments;
+        key.num_samples = pass->num_samples;
+        key.depth_samples = pass->depth_samples;
+        key.z_format = pass->z_format;
+        key.stencil_format = pass->stencil_format;
+    }
+
     return true;
 }
 
