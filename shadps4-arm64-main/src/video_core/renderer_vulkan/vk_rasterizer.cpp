@@ -2174,6 +2174,46 @@ void Rasterizer::UpdateDepthStencilState() const {
     }
 }
 
+namespace {
+
+/// Draws of the kinds KosmicKrisp turns into extra GPU work, counted for the log every five
+/// seconds ("DRAW_KINDS"): lists that ask for primitive restart (KK unrolls each such indexed
+/// draw with a compute pass and splits the render pass, unless restart on lists is turned off),
+/// rect and quad lists (emulated with tessellation: compute passes per draw in KK) and triangle
+/// fans (unrolled). On the command processor's thread.
+struct DrawKinds {
+    u64 draws{};
+    u64 restart_lists{};
+    u64 restart_lists_kept{};
+    u64 rect_quad{};
+    u64 fans{};
+    std::chrono::steady_clock::time_point since{std::chrono::steady_clock::now()};
+
+    void Note(bool restart_list, bool restart_kept, bool rect_or_quad, bool fan) {
+        ++draws;
+        restart_lists += restart_list ? 1 : 0;
+        restart_lists_kept += restart_list && restart_kept ? 1 : 0;
+        rect_quad += rect_or_quad ? 1 : 0;
+        fans += fan ? 1 : 0;
+        const auto now = std::chrono::steady_clock::now();
+        const double seconds = std::chrono::duration<double>(now - since).count();
+        if (seconds < 5.0) {
+            return;
+        }
+        LOG_INFO(Render_Vulkan,
+                 "DRAW_KINDS: of {:.0f} draws/s, {:.0f}/s are lists asking for primitive restart "
+                 "({:.0f}/s given it), {:.0f}/s rect or quad lists, {:.0f}/s triangle fans",
+                 draws / seconds, restart_lists / seconds, restart_lists_kept / seconds,
+                 rect_quad / seconds, fans / seconds);
+        *this = DrawKinds{};
+        since = now;
+    }
+};
+
+DrawKinds draw_kinds;
+
+} // namespace
+
 void Rasterizer::UpdatePrimitiveState(const bool is_indexed) const {
     const auto& regs = liverpool->regs;
     auto& dynamic_state = scheduler.GetDynamicState();
@@ -2196,6 +2236,11 @@ void Rasterizer::UpdatePrimitiveState(const bool is_indexed) const {
         (regs.enable_primitive_restart & 1) != 0 &&
         (instance.IsListRestartSupported() || !is_list_topology(regs.primitive_type)) &&
         (instance.IsPatchListRestartSupported() || !is_patch_list_topology(regs.primitive_type));
+    draw_kinds.Note((regs.enable_primitive_restart & 1) != 0 && is_list_topology(regs.primitive_type),
+                    prim_restart,
+                    regs.primitive_type == AmdGpu::PrimitiveType::RectList ||
+                        regs.primitive_type == AmdGpu::PrimitiveType::QuadList,
+                    regs.primitive_type == AmdGpu::PrimitiveType::TriangleFan);
     ASSERT_MSG(!is_indexed || !prim_restart || regs.primitive_restart_index == 0xFFFF ||
                    regs.primitive_restart_index == 0xFFFFFFFF,
                "Primitive restart index other than -1 is not supported yet");

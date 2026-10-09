@@ -7,12 +7,15 @@
 // and a full immersive space the game is shown in.
 
 import CompositorServices
+import GameController
 import SwiftUI
 
 @main
 struct AstroQuestApp: App {
     @State private var model = AppModel()
     @State private var immersion: ImmersionStyle = .full
+    /// Read once when the app opens: changing it while the launcher is up would rebuild it.
+    @State private var controllerToApp = AstroSettings.load().controllerToApp
 
 #if VPENGINE
     init() {
@@ -26,6 +29,7 @@ struct AstroQuestApp: App {
         WindowGroup(id: AppModel.launcherID) {
             LauncherView()
                 .environment(model)
+                .modifier(ControllerEvents(toApp: controllerToApp))
 #if VPENGINE
                 .onOpenURL { url in
                     model.handleOpenURL(url)
@@ -48,5 +52,21 @@ struct AstroQuestApp: App {
         .immersionStyle(selection: $immersion, in: .full)
         .upperLimbVisibility(model.settings.showHands ? .visible : .hidden)
         .persistentSystemOverlays(.hidden)
+    }
+}
+
+/// The controller's events through GameController for the window (what Apple asks of a
+/// visionOS app that is played with a controller), instead of moving through its buttons: the
+/// app is then the controller's, which its rumble may need.
+private struct ControllerEvents: ViewModifier {
+    let toApp: Bool
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if toApp {
+            content.handlesGameControllerEvents(matching: .gamepad)
+        } else {
+            content
+        }
     }
 }

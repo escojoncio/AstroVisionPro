@@ -10,6 +10,7 @@
 #include "common/uint128.h"
 #include "core/libraries/gnmdriver/gnmdriver.h"
 #include "core/libraries/kernel/time.h"
+#include "video_core/amdgpu/game_clock.h"
 #include "video_core/amdgpu/pm4_opcodes.h"
 
 namespace AmdGpu {
@@ -337,21 +338,14 @@ enum class InterruptSelect : u32 {
     IrqUndocumented = 3,
 };
 
+// What the title's GPU clocks read (game_clock.h: scaled when asked for, and their stamps
+// logged).
 static u64 GetGpuClock64() {
-    auto now = std::chrono::high_resolution_clock::now();
-    auto duration = now.time_since_epoch();
-    auto ticks = std::chrono::duration_cast<std::chrono::nanoseconds>(duration).count();
-    return static_cast<u64>(ticks);
+    return AmdGpu::GameClock::GpuClock64();
 }
 
 static u64 GetGpuPerfCounter() {
-    const auto cpu_freq = Libraries::Kernel::sceKernelGetTscFrequency();
-    const auto gpu_freq = Libraries::GnmDriver::sceGnmGetGpuCoreClockFrequency();
-
-    const auto cpu_cycles = Libraries::Kernel::sceKernelReadTsc();
-    const auto gpu_cycles = Common::MultiplyAndDivide64(cpu_cycles, gpu_freq, cpu_freq);
-
-    return gpu_cycles;
+    return AmdGpu::GameClock::PerfCounter();
 }
 
 // VGT_EVENT_INITIATOR.EVENT_TYPE
@@ -480,11 +474,15 @@ struct PM4CmdEventWriteEop {
             break;
         }
         case DataSelect::GpuClock64: {
-            write_mem(address, GetGpuClock64(), sizeof(u64));
+            const u64 stamp = GetGpuClock64();
+            write_mem(address, stamp, sizeof(u64));
+            AmdGpu::GameClock::NoteStamp(address, stamp, false);
             break;
         }
         case DataSelect::PerfCounter: {
-            write_mem(address, GetGpuPerfCounter(), sizeof(u64));
+            const u64 stamp = GetGpuPerfCounter();
+            write_mem(address, stamp, sizeof(u64));
+            AmdGpu::GameClock::NoteStamp(address, stamp, true);
             break;
         }
         default: {
@@ -945,11 +943,15 @@ struct PM4CmdReleaseMem {
             break;
         }
         case DataSelect::GpuClock64: {
-            *Address<u64*>() = GetGpuClock64();
+            const u64 stamp = GetGpuClock64();
+            *Address<u64*>() = stamp;
+            AmdGpu::GameClock::NoteStamp(Address<void*>(), stamp, false);
             break;
         }
         case DataSelect::PerfCounter: {
-            *Address<u64*>() = GetGpuPerfCounter();
+            const u64 stamp = GetGpuPerfCounter();
+            *Address<u64*>() = stamp;
+            AmdGpu::GameClock::NoteStamp(Address<void*>(), stamp, true);
             break;
         }
         case DataSelect::GdsMemStore: {

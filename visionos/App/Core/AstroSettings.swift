@@ -86,6 +86,17 @@ struct AstroSettings {
     /// game) - a test of whether the controller's rumble stops because the app is left without
     /// a window (GameController then takes it for an app in the background).
     var closeLauncher = true
+    /// The title's GPU clocks run at this fraction of real time ("1", "0.5", "0.25";
+    /// SHADPS4_GPU_CLOCK_SCALE): it times its drawing with them and leaves shadows and effects
+    /// out when the drawing looks slow.
+    var gpuClockScale = "1"
+    /// The launcher's view takes the controller's events through GameController
+    /// (handlesGameControllerEvents): the app is then the controller's, for its rumble too.
+    var controllerToApp = true
+    /// Primitive restart on lists of vertices (SHADPS4_LIST_RESTART): off by default, as
+    /// shadPS4 has it for KosmicKrisp (titles leave it on without using it; KosmicKrisp then
+    /// unrolls every such draw with a compute pass).
+    var listRestart = false
 
     static var documents: URL {
         FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -162,6 +173,9 @@ struct AstroSettings {
         case "surround": surround = flag
         case "real_time": realTime = flag
         case "close_launcher": closeLauncher = flag
+        case "gpu_clock_scale": gpuClockScale = value
+        case "controller_to_app": controllerToApp = flag
+        case "list_restart": listRestart = flag
         case "pause": pause = flag
         case "game": game = value
         case "env": extraEnvironment.append(value)
@@ -249,7 +263,18 @@ struct AstroSettings {
         env.append("SHADPS4_SPATIAL_AUDIO=\(spatialAudio ? 1 : 0)")
         if passDiagnostics {
             env.append("SHADPS4_FRAME_STATS=2")
+            // The title's GPU clock stamps and its size control object (game_clock.h,
+            // known_title.cpp), to find what it leaves out when its GPU looks slow.
+            env.append("SHADPS4_GPU_STAMP_LOG=1")
+            env.append("SHADPS4_QUALITY_DUMP=1")
         }
+        if let scale = Double(gpuClockScale), scale > 0, scale < 1 {
+            env.append("SHADPS4_GPU_CLOCK_SCALE=\(gpuClockScale)")
+            if !passDiagnostics {
+                env.append("SHADPS4_GPU_STAMP_LOG=1")
+            }
+        }
+        env.append("SHADPS4_LIST_RESTART=\(listRestart ? 1 : 0)")
         env.append("SHADPS4_CONSOLE_LANGUAGE=\(GameLanguages.tag(for: gameLanguage))")
         // KosmicKrisp keeps what it translated (Mesa's shader cache) where the app may write:
         // the VPS4 folder when there is one (it outlives the app), else the app's caches.
