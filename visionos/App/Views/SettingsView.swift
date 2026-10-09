@@ -27,10 +27,11 @@ struct SettingsView: View {
                 Section {
                     GameLanguagePicker()
                     Toggle(L("Tiempo real", "Real time"), isOn: flag("real_time", \.realTime))
+                    Toggle(L("Audio 3D como PlayStation VR", "3D audio as on PlayStation VR"), isOn: flag("spatial_audio", \.spatialAudio))
                 } header: {
                     Text(L("Juego", "Game"))
                 } footer: {
-                    Text(gameLanguageFooter + " " + L("«Tiempo real»: el juego avanza al ritmo del reloj aunque dibuje menos de 60 imágenes por segundo. Desactivado, cada imagen avanza 1/60 s (cámara lenta cuando va lento); sirve para comprobar si los fallos de física, como atravesar paredes, vienen de pasos de tiempo largos.", "«Real time»: the game moves at the clock's pace even when it draws fewer than 60 frames a second. Off, every frame moves it 1/60 s (slow motion when it runs slow); it shows whether physics faults, like going through walls, come from long time steps."))
+                    Text(gameLanguageFooter + " " + L("«Tiempo real»: el juego avanza al ritmo del reloj aunque dibuje menos de 60 imágenes por segundo. Desactivado, cada imagen avanza 1/60 s (cámara lenta cuando va lento); sirve para comprobar si los fallos de física, como atravesar paredes, vienen de pasos de tiempo largos.", "«Real time»: the game moves at the clock's pace even when it draws fewer than 60 frames a second. Off, every frame moves it 1/60 s (slow motion when it runs slow); it shows whether physics faults, like going through walls, come from long time steps.") + " " + L("«Audio 3D como PlayStation VR»: cada sonido 3D del juego y cada altavoz del 7.1 suena desde su dirección con el audio espacial de Apple, girando con el juego como en el visor de PS4.", "«3D audio as on PlayStation VR»: every 3D sound of the game and every 7.1 speaker is heard from its direction through Apple's spatial audio, turning with the game as in the PS4 headset."))
                 }
 
                 Section {
