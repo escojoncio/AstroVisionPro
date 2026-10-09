@@ -1,6 +1,10 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#if defined(__APPLE__)
+#include <pthread.h>
+#include <sys/qos.h>
+#endif
 #include <atomic>
 #include <cstdlib>
 #include <cstring>
@@ -179,6 +183,10 @@ static void AudioOutputThread(std::shared_ptr<PortOut> port, const std::stop_tok
         const auto thread_name = fmt::format("shadPS4:AudioOutputThread:{}", fmt::ptr(port.get()));
         Common::SetCurrentThreadName(thread_name.c_str());
     }
+#if defined(__APPLE__)
+    // Sound is due every few milliseconds whatever else the machine is busy with.
+    pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0);
+#endif
 
     // One buffer per the time it lasts. Without a device behind it, time lost (the emulator
     // stalling) is not made up for: a burst of buffers afterwards would only be sound played in
