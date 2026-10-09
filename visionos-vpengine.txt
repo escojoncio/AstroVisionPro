@@ -1,0 +1,155 @@
+# visionos-vpengine - d073e7088aab07cc79ecab4c460da7169c4aa9e7 - 2026-10-09T08:47:10Z
+
+## core.log:     3049 lines
+### errors
+### end
+[1564/1670] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/backend/spirv/emit_spirv_integer.cpp.o
+[1565/1670] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/backend/spirv/emit_spirv_logical.cpp.o
+[1566/1670] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/backend/spirv/emit_spirv_quad_rect.cpp.o
+[1567/1670] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/backend/spirv/emit_spirv_select.cpp.o
+[1568/1670] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/backend/spirv/emit_spirv_shared_memory.cpp.o
+[1569/1670] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/backend/spirv/emit_spirv_special.cpp.o
+[1570/1670] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/backend/spirv/emit_spirv_undefined.cpp.o
+[1571/1670] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/backend/spirv/emit_spirv_warp.cpp.o
+[1572/1670] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/frontend/translate/data_share.cpp.o
+[1573/1670] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/frontend/translate/export.cpp.o
+[1574/1670] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/frontend/translate/scalar_alu.cpp.o
+[1575/1670] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/frontend/translate/scalar_flow.cpp.o
+[1576/1670] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/frontend/translate/scalar_memory.cpp.o
+[1577/1670] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/backend/spirv/spirv_emit_context.cpp.o
+[1578/1670] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/frontend/translate/vector_interpolation.cpp.o
+[1579/1670] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/frontend/translate/vector_alu.cpp.o
+[1580/1670] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/frontend/translate/vector_memory.cpp.o
+[1581/1670] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/frontend/control_flow_graph.cpp.o
+[1582/1670] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/frontend/copy_shader.cpp.o
+[1583/1670] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/frontend/translate/translate.cpp.o
+[1584/1670] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/frontend/decode.cpp.o
+[1585/1670] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/frontend/format.cpp.o
+[1586/1670] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/frontend/instruction.cpp.o
+[1587/1670] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/frontend/fetch_shader.cpp.o
+[1588/1670] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/frontend/structured_control_flow.cpp.o
+[1589/1670] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/dead_code_elimination_pass.cpp.o
+[1590/1670] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/constant_propagation_pass.cpp.o
+[1591/1670] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/hull_shader_transform.cpp.o
+[1592/1670] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/identity_removal_pass.cpp.o
+[1593/1670] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/inject_clip_distance_attributes.cpp.o
+[1594/1670] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/lower_buffer_format_to_raw.cpp.o
+[1595/1670] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp.o
+[1596/1670] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/lower_fp64_to_fp32.cpp.o
+[1597/1670] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/readlane_elimination_pass.cpp.o
+[1598/1670] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/ring_access_elimination.cpp.o
+[1599/1670] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/resource_tracking_pass.cpp.o
+[1600/1670] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/shared_memory_barrier_pass.cpp.o
+[1601/1670] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/shared_memory_simplify_pass.cpp.o
+[1602/1670] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/shared_memory_to_storage_pass.cpp.o
+[1603/1670] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/abstract_syntax_list.cpp.o
+[1604/1670] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/attribute.cpp.o
+[1605/1670] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/shader_info_collection_pass.cpp.o
+[1606/1670] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/ssa_rewrite_pass.cpp.o
+[1607/1670] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/patch.cpp.o
+[1608/1670] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/opcodes.cpp.o
+[1609/1670] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/basic_block.cpp.o
+[1610/1670] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/type.cpp.o
+[1611/1670] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/microinstruction.cpp.o
+[1612/1670] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/ir_emitter.cpp.o
+[1613/1670] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/post_order.cpp.o
+[1614/1670] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/value.cpp.o
+[1615/1670] Building CXX object CMakeFiles/shadps4.dir/src/shader_recompiler/ir/program.cpp.o
+[1616/1670] Building CXX object CMakeFiles/shadps4.dir/src/video_core/amdgpu/regs.cpp.o
+[1617/1670] Building CXX object CMakeFiles/shadps4.dir/src/video_core/amdgpu/pixel_format.cpp.o
+[1618/1670] Building CXX object CMakeFiles/shadps4.dir/src/video_core/buffer_cache/vk_dispatch_reload.cpp.o
+[1619/1670] Building CXX object CMakeFiles/shadps4.dir/src/video_core/amdgpu/tiling.cpp.o
+[1620/1670] Building CXX object CMakeFiles/shadps4.dir/src/video_core/buffer_cache/buffer.cpp.o
+[1621/1670] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_common.cpp.o
+[1622/1670] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/liverpool_to_vk.cpp.o
+[1623/1670] Building CXX object CMakeFiles/shadps4.dir/src/video_core/buffer_cache/fault_manager.cpp.o
+[1624/1670] Building CXX object CMakeFiles/shadps4.dir/src/video_core/amdgpu/liverpool.cpp.o
+[1625/1670] Building CXX object CMakeFiles/shadps4.dir/src/video_core/buffer_cache/buffer_cache.cpp.o
+[1626/1670] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_compute_pipeline.cpp.o
+[1627/1670] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_graphics_pipeline.cpp.o
+[1628/1670] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_master_semaphore.cpp.o
+[1629/1670] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_instance.cpp.o
+[1630/1670] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_pipeline_common.cpp.o
+[1631/1670] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp.o
+[1632/1670] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_vr_exporter.cpp.o
+[1633/1670] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_platform.cpp.o
+[1634/1670] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_pipeline_cache.cpp.o
+[1635/1670] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_resource_pool.cpp.o
+[1636/1670] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_shader_hle.cpp.o
+[1637/1670] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_scheduler.cpp.o
+[1638/1670] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_presenter.cpp.o
+[1639/1670] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_rasterizer.cpp.o
+[1640/1670] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_shader_util.cpp.o
+[1641/1670] Building CXX object CMakeFiles/shadps4.dir/src/video_core/texture_cache/host_compatibility.cpp.o
+[1642/1670] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_swapchain.cpp.o
+[1643/1670] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/host_passes/fsr_pass.cpp.o
+[1644/1670] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/host_passes/pp_pass.cpp.o
+[1645/1670] Building CXX object CMakeFiles/shadps4.dir/src/video_core/texture_cache/blit_helper.cpp.o
+[1646/1670] Building CXX object CMakeFiles/shadps4.dir/src/video_core/texture_cache/image.cpp.o
+[1647/1670] Building CXX object CMakeFiles/shadps4.dir/src/video_core/texture_cache/image_info.cpp.o
+[1648/1670] Building CXX object CMakeFiles/shadps4.dir/src/video_core/texture_cache/sampler.cpp.o
+[1649/1670] Building CXX object CMakeFiles/shadps4.dir/src/video_core/texture_cache/image_view.cpp.o
+[1650/1670] Building CXX object CMakeFiles/shadps4.dir/src/video_core/renderdoc.cpp.o
+[1651/1670] Building CXX object CMakeFiles/shadps4.dir/src/video_core/texture_cache/tile_manager.cpp.o
+[1652/1670] Building CXX object CMakeFiles/shadps4.dir/src/video_core/page_manager.cpp.o
+[1653/1670] Building CXX object CMakeFiles/shadps4.dir/src/video_core/texture_cache/texture_cache.cpp.o
+[1654/1670] Building CXX object CMakeFiles/shadps4.dir/src/video_core/cache_storage.cpp.o
+[1655/1670] Building CXX object CMakeFiles/shadps4.dir/src/platform/bachata/runtime_client.cpp.o
+[1656/1670] Building CXX object CMakeFiles/shadps4.dir/src/platform/bachata/controller_snapshot.cpp.o
+[1657/1670] Building CXX object CMakeFiles/shadps4.dir/src/common/jit_arena.cpp.o
+[1658/1670] Building CXX object CMakeFiles/shadps4.dir/src/platform/bachata/audio_transport.cpp.o
+[1659/1670] Building C object CMakeFiles/shadps4.dir/src/platform/visionos/jit_arena.c.o
+[1660/1670] Building C object CMakeFiles/shadps4.dir/src/platform/visionos/diagnostics.c.o
+[1661/1670] Building C object CMakeFiles/shadps4.dir/src/platform/visionos/logging.c.o
+[1662/1670] Building CXX object CMakeFiles/shadps4.dir/src/platform/visionos/astro_core.mm.o
+[1663/1670] Building CXX object CMakeFiles/shadps4.dir/src/core/libraries/audio/spatial_audio_visionos.mm.o
+[1664/1670] Building CXX object CMakeFiles/shadps4.dir/src/sdl_window.cpp.o
+[1665/1670] Linking CXX static library src/imgui/renderer/libImGui_Resources.a
+[1666/1670] Building CXX object CMakeFiles/shadps4.dir/src/emulator.cpp.o
+[1667/1670] Building CXX object CMakeFiles/shadps4.dir/src/core/libraries/audio/phase_audio_out.cpp.o
+[1668/1670] Building CXX object CMakeFiles/shadps4.dir/src/main.cpp.o
+[1669/1670] Linking CXX static library libshadps4.a
+Into libastroquest_core.a:
+  /Users/runner/work/AstroVisionPro/AstroVisionPro/build/visionos/core-vpengine/libshadps4.a
+  /Users/runner/work/AstroVisionPro/AstroVisionPro/build/visionos/core-vpengine/_deps/fmt-build/libfmt.a
+  /Users/runner/work/AstroVisionPro/AstroVisionPro/build/visionos/core-vpengine/_deps/zlib-build/libz.a
+  /Users/runner/work/AstroVisionPro/AstroVisionPro/build/visionos/core-vpengine/externals/aacdec/libfdk-aac.a
+  /Users/runner/work/AstroVisionPro/AstroVisionPro/build/visionos/core-vpengine/externals/date/libdate-tz.a
+  /Users/runner/work/AstroVisionPro/AstroVisionPro/build/visionos/core-vpengine/externals/epoll-shim/src/libepoll-shim.a
+  /Users/runner/work/AstroVisionPro/AstroVisionPro/build/visionos/core-vpengine/externals/freetype/libfreetype.a
+  /Users/runner/work/AstroVisionPro/AstroVisionPro/build/visionos/core-vpengine/externals/glslang/glslang/libglslang.a
+  /Users/runner/work/AstroVisionPro/AstroVisionPro/build/visionos/core-vpengine/externals/libDear_ImGui.a
+  /Users/runner/work/AstroVisionPro/AstroVisionPro/build/visionos/core-vpengine/externals/libImGuiFileDialog.a
+  /Users/runner/work/AstroVisionPro/AstroVisionPro/build/visionos/core-vpengine/externals/libLibAtrac9.a
+  /Users/runner/work/AstroVisionPro/AstroVisionPro/build/visionos/core-vpengine/externals/libpng/libpng.a
+  /Users/runner/work/AstroVisionPro/AstroVisionPro/build/visionos/core-vpengine/externals/libpng/libpng16.a
+  /Users/runner/work/AstroVisionPro/AstroVisionPro/build/visionos/core-vpengine/externals/libressl/crypto/libcrypto.a
+  /Users/runner/work/AstroVisionPro/AstroVisionPro/build/visionos/core-vpengine/externals/libressl/ssl/libssl.a
+  /Users/runner/work/AstroVisionPro/AstroVisionPro/build/visionos/core-vpengine/externals/libusb-null.a
+  /Users/runner/work/AstroVisionPro/AstroVisionPro/build/visionos/core-vpengine/externals/libxxhash.a
+  /Users/runner/work/AstroVisionPro/AstroVisionPro/build/visionos/core-vpengine/externals/miniupnp/miniupnpc/libminiupnpc.a
+  /Users/runner/work/AstroVisionPro/AstroVisionPro/build/visionos/core-vpengine/externals/miniz/libminiz.a
+  /Users/runner/work/AstroVisionPro/AstroVisionPro/build/visionos/core-vpengine/externals/openal-soft/libopenal.a
+  /Users/runner/work/AstroVisionPro/AstroVisionPro/build/visionos/core-vpengine/externals/pugixml/libpugixml.a
+  /Users/runner/work/AstroVisionPro/AstroVisionPro/build/visionos/core-vpengine/externals/sdl3/libSDL3.a
+  /Users/runner/work/AstroVisionPro/AstroVisionPro/build/visionos/core-vpengine/externals/sirit/src/libsirit.a
+  /Users/runner/work/AstroVisionPro/AstroVisionPro/build/visionos/core-vpengine/externals/spdlog/libspdlog.a
+  /Users/runner/work/AstroVisionPro/AstroVisionPro/build/visionos/core-vpengine/externals/tracy/libTracyClient.a
+  /Users/runner/work/AstroVisionPro/AstroVisionPro/build/visionos/core-vpengine/externals/zydis/libZydis.a
+  /Users/runner/work/AstroVisionPro/AstroVisionPro/build/visionos/core-vpengine/externals/zydis/zycore/libZycore.a
+  /Users/runner/work/AstroVisionPro/AstroVisionPro/build/visionos/core-vpengine/libembedded-resources.a
+  /Users/runner/work/AstroVisionPro/AstroVisionPro/build/visionos/core-vpengine/src/imgui/renderer/libImGui_Resources.a
+  /Users/runner/work/AstroVisionPro/AstroVisionPro/build/visionos/ffmpeg/lib/libavcodec.a
+  /Users/runner/work/AstroVisionPro/AstroVisionPro/build/visionos/ffmpeg/lib/libavfilter.a
+  /Users/runner/work/AstroVisionPro/AstroVisionPro/build/visionos/ffmpeg/lib/libavformat.a
+  /Users/runner/work/AstroVisionPro/AstroVisionPro/build/visionos/ffmpeg/lib/libavutil.a
+  /Users/runner/work/AstroVisionPro/AstroVisionPro/build/visionos/ffmpeg/lib/libswresample.a
+  /Users/runner/work/AstroVisionPro/AstroVisionPro/build/visionos/ffmpeg/lib/libswscale.a
+Symbols the runtime exports for game packs:
+373
+total 232312
+drwxr-xr-x  5 runner  staff        160 Oct  9 08:46 .
+drwxr-xr-x  3 runner  staff         96 Oct  9 08:46 ..
+-rw-r--r--  1 runner  staff  111627544 Oct  9 08:46 libastroquest_core.a
+-rw-r--r--  1 runner  staff    7123752 Oct  9 08:46 libMoltenVK.a
+-rwxr-xr-x  1 runner  staff     188288 Oct  9 08:46 libVPRuntime.dylib
