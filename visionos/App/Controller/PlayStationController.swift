@@ -361,6 +361,28 @@ final class PlayStationController: @unchecked Sendable {
         return controller
     }
 
+    /// The settings' «Probar vibración»: both motors at full strength for half a second, outside
+    /// the game (whether rumble works at all, or only not in the immersive space).
+    func testRumble() {
+        lock.lock()
+        let low = lowFrequency
+        let high = highFrequency
+        let name = controller?.vendorName ?? "none"
+        lock.unlock()
+        LogFiles.log("Controller rumble test on \(name): motors \(low != nil ? "yes" : "no")/\(high != nil ? "yes" : "no")")
+        low?.setIntensity(1.0)
+        if high !== low {
+            high?.setIntensity(1.0)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+            low?.setIntensity(0)
+            if high !== low {
+                high?.setIntensity(0)
+            }
+            LogFiles.log("Controller rumble test: done")
+        }
+    }
+
     /// Reads the buttons, sticks, triggers and touchpad, and passes on what the game asks of the
     /// motors and the light. Once per refresh of the headset's display.
     func poll() {
@@ -707,8 +729,9 @@ final class RumbleMotor: @unchecked Sendable {
             active = false
             player = nil
             failures &+= 1
-            if failures <= 5 {
-                LogFiles.log("Controller rumble: could not play (\(error.localizedDescription))")
+            if failures <= 10 {
+                let ns = error as NSError
+                LogFiles.log("Controller rumble: could not play (\(ns.domain) \(ns.code): \(ns.localizedDescription))")
             }
             return false
         }
