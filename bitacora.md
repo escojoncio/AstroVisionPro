@@ -19,7 +19,7 @@ JIT: arena RWX preparada por StikDebug (protocolo `brk #0xf00d` + universal.js);
 - Vibración: sigue fallando ("No se ha podido establecer comunicación…", motor rehecho y `stopped (reason -1)`). Causa probable: el sistema desactiva hápticos mientras se graba (el juego mantiene el micro abierto) salvo `setAllowHapticsAndSystemSoundsDuringRecording`.
 - Carga del mundo: ~500 draws saltados; pipelines listos hasta 3045 ms tras su primer draw (cola de 2 workers con ~50 pipelines de 20–110 ms).
 
-## Commit siguiente [build]: hápticos durante grabación, 4 workers, caché de pipelines opcional, prueba de GPU (sin probar)
+## Build 42bb1d1 (run 37919429973): OK (sin probar) — hápticos durante grabación, 4 workers, caché de pipelines opcional, prueba de GPU
 - `spatial_audio_visionos.mm` `SetUpSession`: `setAllowHapticsAndSystemSoundsDuringRecording:YES`.
 - `PlayStationController.swift`: `engine.playsHapticsOnly = true` en cada motor.
 - `vk_pipeline_cache.cpp`: en visionOS workers = clamp(núcleos/2, 2, 4) (4 en M2).
