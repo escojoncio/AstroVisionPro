@@ -40,7 +40,14 @@ settings["SWIFT_OBJC_BRIDGING_HEADER"] = "App/Bridge/AstroQuest-VPEngine-Bridgin
 settings["HEADER_SEARCH_PATHS"] = list(settings["HEADER_SEARCH_PATHS"]) + [
     str(vpengine / "runtime"), str(vpconvert / "include")]
 settings["LIBRARY_SEARCH_PATHS"] = list(settings["LIBRARY_SEARCH_PATHS"]) + [str(vpconvert / "lib")]
-settings["OTHER_LDFLAGS"] = list(settings["OTHER_LDFLAGS"]) + ["-lVPRuntime", "-lvpconvert_all"]
+# vpconvert first: it carries the Zydis vpaot is built against, and the emulator's archive another
+# Zydis commit (build-core.sh leaves it out in this build). Both define the same symbols; a static
+# library search takes the first library that has one, and another version may lay out its
+# structs and number its registers differently.
+# The emulator only uses Zydis on x86-64 hosts (cpu_patches, x86 SRT walkers), never here.
+ldflags = list(settings["OTHER_LDFLAGS"])
+ldflags.insert(ldflags.index("-lastroquest_core"), "-lvpconvert_all")
+settings["OTHER_LDFLAGS"] = ldflags + ["-lVPRuntime"]
 settings["INFOPLIST_FILE"] = "build/Info-VPEngine.plist"
 # The runtime is in the app's Frameworks (copied in when the IPA is made).
 settings["LD_RUNPATH_SEARCH_PATHS"] = ["$(inherited)", "@executable_path/Frameworks"]
