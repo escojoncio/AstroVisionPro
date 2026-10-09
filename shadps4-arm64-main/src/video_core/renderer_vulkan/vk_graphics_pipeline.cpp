@@ -38,7 +38,7 @@ GraphicsPipeline::GraphicsPipeline(
       fetch_shader{std::move(fetch_shader_)} {
     const vk::Device device = instance.GetDevice();
     std::ranges::copy(infos, stages.begin());
-    BuildDescSetLayout(preloading);
+    BuildDescSetLayout(preloading, sdata.buffer_is_storage);
     const auto debug_str = GetDebugString();
 
     const vk::PushConstantRange push_constants = {
@@ -463,6 +463,17 @@ void GraphicsPipeline::PrepareSerialization(
                             sdata.divisors, guest_buffers, vs_info.step_rate_0,
                             vs_info.step_rate_1);
     }
+    // The kind of each buffer binding, from the live sharps (BuildDescSetLayout), in the order
+    // the layout takes them.
+    sdata.buffer_is_storage.clear();
+    for (const auto* stage : infos) {
+        if (stage == nullptr) {
+            continue;
+        }
+        for (const auto& buffer : stage->buffers) {
+            sdata.buffer_is_storage.push_back(buffer.IsStorage(buffer.GetSharp(*stage)) ? 1 : 0);
+        }
+    }
     const auto& fs_info = runtime_infos[u32(Shader::LogicalStage::Fragment)].fs_info;
     sdata.multisampling = {
         .rasterizationSamples = LiverpoolToVK::NumSamples(
@@ -496,9 +507,11 @@ template void GraphicsPipeline::GetVertexInputs(
     VertexInputs<vk::VertexInputBindingDivisorDescriptionEXT>& divisors,
     VertexInputs<AmdGpu::Buffer>& guest_buffers, u32 step_rate_0, u32 step_rate_1) const;
 
-void GraphicsPipeline::BuildDescSetLayout(bool preloading) {
+void GraphicsPipeline::BuildDescSetLayout(bool preloading,
+                                          const std::vector<u8>& buffer_is_storage) {
     boost::container::small_vector<vk::DescriptorSetLayoutBinding, 32> bindings;
     u32 binding{};
+    size_t buffer_index{};
 
     for (const auto* stage : stages) {
         if (!stage) {
@@ -509,10 +522,16 @@ void GraphicsPipeline::BuildDescSetLayout(bool preloading) {
             const auto sharp =
                 preloading ? AmdGpu::Buffer{}
                            : buffer.GetSharp(*stage); // See for the comment in compute PL creation
+            // Made on a worker: what the main thread saw (PrepareSerialization), as the shader
+            // was compiled with it.
+            const bool is_storage = preloading && buffer_index < buffer_is_storage.size()
+                                        ? buffer_is_storage[buffer_index] != 0
+                                        : buffer.IsStorage(sharp);
+            ++buffer_index;
             bindings.push_back({
                 .binding = binding++,
-                .descriptorType = buffer.IsStorage(sharp) ? vk::DescriptorType::eStorageBuffer
-                                                          : vk::DescriptorType::eUniformBuffer,
+                .descriptorType = is_storage ? vk::DescriptorType::eStorageBuffer
+                                             : vk::DescriptorType::eUniformBuffer,
                 .descriptorCount = 1,
                 .stageFlags = stage_bit,
             });

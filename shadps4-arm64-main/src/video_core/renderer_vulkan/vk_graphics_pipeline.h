@@ -78,6 +78,10 @@ public:
         vk::PipelineMultisampleStateCreateInfo multisampling{};
         std::vector<u32> tcs{};
         std::vector<u32> tes{};
+        /// Whether each buffer binding (in descriptor order) is a storage buffer, taken by
+        /// PrepareSerialization from the live sharps for a pipeline made on a worker (which
+        /// cannot read them). Not serialized: empty when loaded from disk (all storage then).
+        std::vector<u8> buffer_is_storage{};
 
         void Serialize(Serialization::Archive& ar) const;
         bool Deserialize(Serialization::Archive& ar);
@@ -126,7 +130,7 @@ public:
                          u32 step_rate_1) const;
 
 private:
-    void BuildDescSetLayout(bool preloading);
+    void BuildDescSetLayout(bool preloading, const std::vector<u8>& buffer_is_storage);
 
 private:
     GraphicsPipelineKey key;

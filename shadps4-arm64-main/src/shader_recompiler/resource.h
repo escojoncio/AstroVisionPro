@@ -43,7 +43,16 @@ struct BufferResource {
         return buffer_type != BufferType::Guest;
     }
 
-    bool IsStorage([[maybe_unused]] const AmdGpu::Buffer buffer) const noexcept {
+    /// Read-only guest buffers no larger than this reach the shaders as uniform buffers; 0 (the
+    /// default): every buffer is a storage buffer. Set once, before any shader is compiled
+    /// (PipelineCache, SHADPS4_CONSTANT_UBO). On a GPU of Apple's, Metal's constant address
+    /// space (where KosmicKrisp puts uniform buffers, bounds-checked against the bound range)
+    /// is read through a path made for data the same for every pixel, a storage buffer like
+    /// any other memory - and the title's shaders read their constants (lights, matrices) from
+    /// these buffers over and over.
+    static inline u32 uniform_buffer_max_size = 0;
+
+    bool IsStorage(const AmdGpu::Buffer buffer) const noexcept {
         // When using uniform buffers, a size is required at compilation time, so we need to
         // either compile a lot of shader specializations to handle each size or just force it to
         // the maximum possible size always. However, for some vendors the shader-supplied size is
@@ -51,7 +60,11 @@ struct BufferResource {
         // off buffer robustness behavior. Instead, force storage buffers which are bounds checked
         // using the actual buffer size. We are assuming the performance hit from this is
         // acceptable.
-        return true; // buffer.GetSize() > profile.max_ubo_size || is_written;
+        if (uniform_buffer_max_size == 0 || is_written || buffer_type != BufferType::Guest) {
+            return true;
+        }
+        const u64 size = buffer.GetSize();
+        return size == 0 || size > uniform_buffer_max_size;
     }
 
     constexpr AmdGpu::Buffer GetSharp(const auto& info) const noexcept {

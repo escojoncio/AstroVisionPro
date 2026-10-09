@@ -106,6 +106,9 @@ struct AstroSettings {
     /// shadPS4 has it for KosmicKrisp (titles leave it on without using it; KosmicKrisp then
     /// unrolls every such draw with a compute pass).
     var listRestart = false
+    /// The title's read-only constant buffers reach its shaders as uniform buffers
+    /// (SHADPS4_CONSTANT_UBO): Metal's constant memory, read faster than a storage buffer.
+    var constantUbo = true
 
     static var documents: URL {
         FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -185,6 +188,7 @@ struct AstroSettings {
         case "gpu_clock_scale": gpuClockScale = value
         case "controller_to_app": controllerToApp = flag
         case "list_restart": listRestart = flag
+        case "constant_ubo": constantUbo = flag
         case "pause": pause = flag
         case "game": game = value
         case "env": extraEnvironment.append(value)
@@ -289,6 +293,7 @@ struct AstroSettings {
             }
         }
         env.append("SHADPS4_LIST_RESTART=\(listRestart ? 1 : 0)")
+        env.append("SHADPS4_CONSTANT_UBO=\(constantUbo ? 1 : 0)")
         env.append("SHADPS4_CONSOLE_LANGUAGE=\(GameLanguages.tag(for: gameLanguage))")
         // KosmicKrisp keeps what it translated (Mesa's shader cache) where the app may write:
         // the VPS4 folder when there is one (it outlives the app), else the app's caches.
