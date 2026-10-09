@@ -24,6 +24,7 @@
 #include "common/wave_dump.h"
 #include "core/libraries/audio/audioout.h"
 #include "core/libraries/audio/audioout_backend.h"
+#include "core/libraries/audio/spatial_audio.h"
 #include "core/libraries/audio/audioout_error.h"
 #include "core/libraries/audio/surround_virtualizer.h"
 #include "core/libraries/kernel/time.h"
@@ -373,6 +374,13 @@ s32 PS4_SYSV_ABI sceAudioOutInit() {
 #ifdef ENABLE_BACHATA_RUNTIME
     audio = std::make_unique<BachataAudioOut>();
 #else
+#if defined(SHADPS4_VISIONOS)
+    if (SpatialAudio::Start()) {
+        audio = std::make_unique<PhaseAudioOut>();
+        LOG_INFO(Lib_AudioOut, "Audio system initialized (PHASE)");
+        return ORBIS_OK;
+    }
+#endif
     if (EmulatorSettings.GetAudioBackend() == AudioBackend::OpenAL) {
         audio = std::make_unique<OpenALAudioOut>();
     } else {

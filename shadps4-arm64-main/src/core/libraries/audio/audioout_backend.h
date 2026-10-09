@@ -47,4 +47,12 @@ public:
     std::unique_ptr<PortBackend> Open(PortOut& port) override;
 };
 
+#if defined(SHADPS4_VISIONOS)
+/// The headset's own 3D audio (spatial_audio_visionos.mm).
+class PhaseAudioOut final : public AudioOutBackend {
+public:
+    std::unique_ptr<PortBackend> Open(PortOut& port) override;
+};
+#endif
+
 } // namespace Libraries::AudioOut
