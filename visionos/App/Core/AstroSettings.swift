@@ -67,8 +67,7 @@ struct AstroSettings {
     /// A draw that uses fewer of the targets of the render pass that is open is made in that pass
     /// instead of ending it (SHADPS4_MERGE_PASSES).
     var mergePasses = true
-    /// The pipelines the game used are kept and made again before its first frame
-    /// (SHADPS4_PIPELINE_CACHE). Experimental.
+    /// No longer used: shadPS4's pipeline cache crashes while preloading (SHADPS4_PIPELINE_CACHE=0).
     var pipelineCache = false
     /// No longer used: the GPU test is started in the game with L3 + R3 (gpu_bench.h).
     var gpuTest = ""
@@ -239,7 +238,9 @@ struct AstroSettings {
         env.append("KK_GS_IN_PASS=\(gsInPass ? 1 : 0)")
         env.append("KK_LIGHT_BARRIERS=\(lightBarriers ? 1 : 0)")
         env.append("SHADPS4_MERGE_PASSES=\(mergePasses ? 1 : 0)")
-        env.append("SHADPS4_PIPELINE_CACHE=\(pipelineCache ? 1 : 0)")
+        // shadPS4's pipeline cache reads the game's memory while preloading, before the game has
+        // any (GetSharp in BuildDescSetLayout): it crashes. Kept off.
+        env.append("SHADPS4_PIPELINE_CACHE=0")
         env.append("SHADPS4_SPATIAL_AUDIO=\(spatialAudio ? 1 : 0)")
         if passDiagnostics {
             env.append("SHADPS4_FRAME_STATS=2")
