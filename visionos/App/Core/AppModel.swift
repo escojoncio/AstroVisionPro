@@ -147,9 +147,7 @@ final class AppModel {
     /// A game converted before (or a pack from the PC) is loaded as soon as the app starts.
     private func loadEngineIfReady() {
         guard certificate != nil, packLoaded == nil, let gamePath else { return }
-        if VPConversion.isConverted(gamePath) {
-            conversion.start(game: gamePath, reason: "app start: the game was converted before")
-        }
+        conversion.loadIfConverted(game: gamePath, reason: "app start: the game was converted before")
     }
 #endif
 
@@ -157,6 +155,8 @@ final class AppModel {
 #if VPENGINE
         VPGamePack.log = { LogFiles.log($0) }
         VPCertificate.log = { LogFiles.log($0) }
+        // Conversions live in VPS4/VPEngine: they outlive the app.
+        VPConversion.storageRoot = { GameFolder.url()?.appendingPathComponent("VPEngine", isDirectory: true) }
         conversion.resolveGame = { [weak self] in self?.gamePath }
         conversion.onFinished = { [weak self] loaded in self?.packLoaded = loaded }
         packLoaded = VPGamePack.alreadyLoaded()
