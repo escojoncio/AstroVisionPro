@@ -6,6 +6,14 @@ App visionOS en `visionos/` (SwiftUI + Compositor Services + ARKit + GameControl
 JIT: arena RWX preparada por StikDebug (protocolo `brk #0xf00d` + universal.js); la app hace detach al terminar.
 
 ## Build e7d85d8 (run 37855488586): OK, KK recompilado con el parche nuevo (kk_shader.c, kk_cmd_draw.c sin errores); `visionos-latest/AstroQuest.ipa` (sin probar)
+## Build 0f6bcfc probada (log 2026-10-09 01:24; 1440 fija, FXAA, GS en la pasada): sin cierre
+- `KK_GS_IN_PASS`: todos los draws con GS dentro de la pasada (`N in the pass, 0 split it`, >70 k); sin fallos visuales reportados.
+- Mundo a 100 Hz: 28.8 fps de mediana (test 2: 26.6; test 1 a 816: 29.4), GPU 99 %; pasada principal 18.7 ms/frame (test 2: 21.3). Regresión: coste por draw con GS 0.12 ms (antes 0.25).
+- Térmico confirmado: `thermal nominal` → `fair` a ~2.5 min en el mundo; con `fair` el visor pasa a 50 Hz (juego a 25 fps, GPU 78–88 %); después `serious`.
+- Memoria (mundo, 7.25 GB, ~930 MB libres): GPU según el driver 2.9 GB; búferes 809 MB en 250 (576 MB en 2 de ≥64 MB), imágenes 1140 MB en 875; ~0.95 GB sin atribuir (KK interno, desperdicio de bloques VMA, búferes de `tile_manager`). Consola en RAM 1.4 GB.
+- FXAA: el usuario lo ve muy borroso y pierde detalle → quitar.
+- Siguiente palanca de rendimiento: `end_encoder` (kk_cmd_buffer.c) pone `barrierAfterStages:ALL beforeQueueStages:ALL` en cada encoder y `kk_CmdPipelineBarrier2` ignora las barreras fuera de render → cada pasada vacía la GPU.
+
 ## Build 0f6bcfc (run 37856887775): OK, `visionos-latest/AstroQuest.ipa` (sin probar) — incluye e7d85d8 + reparto de la memoria GPU
 - `buffer_cache/buffer.cpp`: `AllocationTally` (atómicos: bytes, nº, y los de ≥64 MB) con el tamaño VMA de cada asignación; `UniqueBuffer::Create`/destructor suman/restan; `TallyImageAllocation` (llamado desde `UniqueImage::Create`/`~UniqueImage`/`Destroy` en `texture_cache/image.cpp`); `DescribeGpuAllocations()` → `buffers X MB in N (Y MB in M of 64 MB or more), images …`. Los búferes con BDA (los del caché de búferes) llevan `VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT` → son los bloques dedicados de 256/512 MB de `IOAccelerator`.
 - `guest_watchdog.cpp` `ReportPace` (visionOS): añade ese texto a `PACE`.
