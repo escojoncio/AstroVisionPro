@@ -3,6 +3,10 @@
 
 #pragma once
 
+#include <span>
+#include <string>
+#include "common/types.h"
+
 // A test of where the GPU's time goes, on a device without a GPU profiler: once started, the
 // draws are made five ways in turn, ten seconds each, twice over - as they are, without their
 // pixels (rasterizer discard: only their vertices run), with three vertices each (next to no
@@ -51,5 +55,13 @@ int TimingTag();
 void NoteGpuTime(u32 timer, int tag, double ms, double scene_ms);
 /// A frame was presented (FrameStats::EndFrame).
 void NoteFrame();
+/// While counting: whether the state of a draw with this pixel shader (key hash) is still
+/// wanted, and that state, logged with each candidate.
+bool WantsShaderState(u64 fs_hash);
+void NoteShaderState(u64 fs_hash, std::string text);
+/// A shader compiled to SPIR-V, by its key hash (HashCombine(program hash, permutation)): kept
+/// so that the candidates' SPIR-V goes to the log ("GPU_SHADER_SPIRV", base64), to be read
+/// off the device.
+void NoteSpirv(u64 key_hash, std::span<const u32> spirv);
 
 } // namespace Vulkan::GpuBench

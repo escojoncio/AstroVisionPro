@@ -342,8 +342,60 @@ struct ShaderTest {
     std::atomic<bool> all_out{false};
     std::unordered_map<u32, std::vector<StepTime>> times; // by timer
     std::vector<u64> frames;                               // presented in each step's timed part
+    std::unordered_map<u64, std::string> states;           // a draw's state, by pixel shader
 };
 ShaderTest g_shaders;
+
+/// SPIR-V of every shader compiled, by key hash (NoteSpirv), up to a limit.
+struct SpirvStore {
+    std::mutex mutex;
+    std::unordered_map<u64, std::vector<u32>> by_hash;
+    size_t bytes{};
+};
+SpirvStore g_spirv;
+constexpr size_t MaxSpirvBytes = 24ull << 20;
+
+std::string Base64(std::span<const u32> words) {
+    static constexpr char Table[] =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    const auto* bytes = reinterpret_cast<const u8*>(words.data());
+    const size_t size = words.size_bytes();
+    std::string out;
+    out.reserve((size + 2) / 3 * 4);
+    for (size_t i = 0; i < size; i += 3) {
+        const u32 b0 = bytes[i];
+        const u32 b1 = i + 1 < size ? bytes[i + 1] : 0;
+        const u32 b2 = i + 2 < size ? bytes[i + 2] : 0;
+        const u32 v = (b0 << 16) | (b1 << 8) | b2;
+        out += Table[(v >> 18) & 63];
+        out += Table[(v >> 12) & 63];
+        out += i + 1 < size ? Table[(v >> 6) & 63] : '=';
+        out += i + 2 < size ? Table[v & 63] : '=';
+    }
+    return out;
+}
+
+/// Writes a shader's SPIR-V to the log in lines of base64 (the mutex of the test held).
+void LogSpirv(const char* what, u64 hash) {
+    std::vector<u32> words;
+    {
+        std::scoped_lock lock{g_spirv.mutex};
+        if (const auto it = g_spirv.by_hash.find(hash); it != g_spirv.by_hash.end()) {
+            words = it->second;
+        }
+    }
+    if (words.empty()) {
+        LOG_INFO(Render_Vulkan, "GPU_SHADER_SPIRV {} {:#x}: not kept", what, hash);
+        return;
+    }
+    const std::string text = Base64(words);
+    constexpr size_t Line = 3000;
+    const size_t parts = (text.size() + Line - 1) / Line;
+    for (size_t i = 0; i < parts; ++i) {
+        LOG_INFO(Render_Vulkan, "GPU_SHADER_SPIRV {} {:#x} {}/{} {}", what, hash, i + 1, parts,
+                 std::string_view{text}.substr(i * Line, Line));
+    }
+}
 
 s64 NowNs() {
     return std::chrono::duration_cast<std::chrono::nanoseconds>(
@@ -440,6 +492,16 @@ void ChooseCandidates(ShaderTest& t) {
              t.census.size(), double(total_draws) / seconds,
              double(total_vertices) / seconds / 1000.0, t.steps.size(),
              ShaderStepNs / 1'000'000'000, text.empty() ? "nothing (no scene draws seen)" : text);
+    // What each candidate's draws are made with, and its shaders' SPIR-V.
+    for (const auto& [hash, count] : t.candidates) {
+        const auto state = t.states.find(hash);
+        LOG_INFO(Render_Vulkan, "GPU_SHADER_STATE fs {:#x}: {}", hash,
+                 state != t.states.end() ? state->second : std::string{"not seen"});
+    }
+    for (const auto& [hash, count] : t.candidates) {
+        LogSpirv("fs", hash);
+        LogSpirv("vs", count.vs_hash);
+    }
 }
 
 /// The step `now` falls in: -1 counting, steps.size() or more done.
@@ -707,6 +769,34 @@ void NoteGpuTime(u32 timer, int tag, double ms, double scene_ms) {
     ++steps[size_t(tag)].buffers;
 }
 
+bool WantsShaderState(u64 fs_hash) {
+    ShaderTest& t = g_shaders;
+    const s64 started = t.started.load(std::memory_order_acquire);
+    if (started == 0 || ShaderStepAt(started, NowNs()) >= 0) {
+        return false;
+    }
+    std::scoped_lock lock{t.mutex};
+    return !t.counted && !t.states.contains(fs_hash);
+}
+
+void NoteShaderState(u64 fs_hash, std::string text) {
+    ShaderTest& t = g_shaders;
+    std::scoped_lock lock{t.mutex};
+    if (!t.counted) {
+        t.states.try_emplace(fs_hash, std::move(text));
+    }
+}
+
+void NoteSpirv(u64 key_hash, std::span<const u32> spirv) {
+    std::scoped_lock lock{g_spirv.mutex};
+    if (g_spirv.bytes + spirv.size_bytes() > MaxSpirvBytes ||
+        g_spirv.by_hash.contains(key_hash)) {
+        return;
+    }
+    g_spirv.by_hash.emplace(key_hash, std::vector<u32>(spirv.begin(), spirv.end()));
+    g_spirv.bytes += spirv.size_bytes();
+}
+
 void NoteFrame() {
     ShaderTest& t = g_shaders;
     if (t.started.load(std::memory_order_relaxed) == 0) {
@@ -733,6 +823,7 @@ void StartShaderTest() {
     t.steps.clear();
     t.times.clear();
     t.frames.clear();
+    t.states.clear();
     t.hash.store(0, std::memory_order_relaxed);
     t.action.store(int(DrawAction::Draw), std::memory_order_relaxed);
     t.all_out.store(false, std::memory_order_relaxed);
@@ -944,6 +1035,34 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
     RetireIsolatedReadConstSnapshots();
 }
 
+std::string Rasterizer::DescribeDrawState(const GraphicsPipeline* pipeline) const {
+    const auto& regs = liverpool->regs;
+    const auto& key = pipeline->GetGraphicsKey();
+    const auto& dc = regs.depth_control;
+    std::string fs = "no pixel shader";
+    if (pipeline->GetStages()[u32(Shader::LogicalStage::Fragment)] != nullptr) {
+        const auto& info = pipeline->GetStage(Shader::LogicalStage::Fragment);
+        fs = fmt::format("pixel shader: discard {}, writes depth {}, {} images, {} samplers, "
+                         "{} buffers, fp16 {}",
+                         info.has_discard ? "yes" : "no",
+                         info.stores.GetAny(Shader::IR::Attribute::Depth) ? "yes" : "no",
+                         info.images.size(), info.samplers.size(), info.buffers.size(),
+                         info.uses_fp16 ? "yes" : "no");
+    }
+    std::string blends;
+    for (u32 cb = 0; cb < key.num_color_attachments && cb < key.blend_controls.size(); ++cb) {
+        blends += fmt::format("{}{}{}", cb == 0 ? "" : ",",
+                              key.blend_controls[cb].enable ? "blend" : "opaque",
+                              key.write_masks[cb] ? "" : "(no writes)");
+    }
+    return fmt::format("depth test {} func {} write {}, stencil {}; {} colour targets [{}]; "
+                       "{} samples; prim {}; {}",
+                       dc.depth_enable ? "on" : "off", static_cast<u32>(dc.depth_func),
+                       dc.depth_write_enable ? "on" : "off", dc.stencil_enable ? "on" : "off",
+                       key.num_color_attachments, blends, key.num_samples,
+                       static_cast<u32>(key.prim_type), fs);
+}
+
 bool Rasterizer::BenchPixelsOut(bool pixels_out) {
     auto& dynamic_state = scheduler.GetDynamicState();
     const bool before = dynamic_state.IsRasterizerDiscardEnabled();
@@ -979,6 +1098,10 @@ bool Rasterizer::BenchLeavesOut(GpuBench::Mode mode, const GraphicsPipeline* pip
             }
         }
         const auto& hashes = pipeline->GetGraphicsKey().stage_hashes;
+        if (scene && GpuBench::WantsShaderState(hashes[u32(Shader::LogicalStage::Fragment)])) {
+            GpuBench::NoteShaderState(hashes[u32(Shader::LogicalStage::Fragment)],
+                                      DescribeDrawState(pipeline));
+        }
         const auto action = GpuBench::ShaderDraw(
             scene, hashes[u32(Shader::LogicalStage::Fragment)],
             hashes[u32(Shader::LogicalStage::Vertex)],

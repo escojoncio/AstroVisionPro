@@ -7,7 +7,9 @@
 #include "core/emulator_settings.h"
 #include "shader_recompiler/frontend/fetch_shader.h"
 #include "shader_recompiler/info.h"
+#include "common/hash.h"
 #include "video_core/cache_storage.h"
+#include "video_core/renderer_vulkan/gpu_bench.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_pipeline_cache.h"
 #include "video_core/renderer_vulkan/vk_shader_util.h"
@@ -267,6 +269,7 @@ bool PipelineCache::LoadPipelineStage(Serialization::Archive& ar, size_t stage) 
     if (spv.empty()) {
         return false;
     }
+    GpuBench::NoteSpirv(HashCombine(program->info.pgm_hash, perm_idx), spv);
 
     // Permutation hash depends on shader variation index. To prevent collisions, we need insert it
     // at the exact position rather than append

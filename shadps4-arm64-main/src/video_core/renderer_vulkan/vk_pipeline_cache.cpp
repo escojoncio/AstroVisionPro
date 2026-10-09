@@ -29,6 +29,7 @@
 #include "shader_recompiler/runtime_info.h"
 #include "video_core/amdgpu/liverpool.h"
 #include "video_core/cache_storage.h"
+#include "video_core/renderer_vulkan/gpu_bench.h"
 #include "video_core/renderer_vulkan/legacy_vertex_attributes.h"
 #include "video_core/renderer_vulkan/liverpool_to_vk.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
@@ -1057,6 +1058,7 @@ vk::ShaderModule PipelineCache::CompileModule(Shader::Info& info, Shader::Runtim
         module = CompileSPV(spv, instance.GetDevice());
     }
 
+    GpuBench::NoteSpirv(HashCombine(info.pgm_hash, perm_idx), is_patched ? *patch : spv);
     RegisterShaderBinary(std::move(spv), info.pgm_hash, perm_idx);
 
     const auto name = GetShaderName(info.stage, info.pgm_hash, perm_idx);
