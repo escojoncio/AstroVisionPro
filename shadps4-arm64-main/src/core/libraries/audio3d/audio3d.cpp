@@ -359,7 +359,7 @@ s32 PS4_SYSV_ABI sceAudio3dInitialize(const s64 reserved) {
 
 s32 PS4_SYSV_ABI sceAudio3dObjectReserve(const OrbisAudio3dPortId port_id,
                                          OrbisAudio3dObjectId* object_id) {
-    LOG_INFO(Lib_Audio3d, "called, port_id = {}, object_id = {}", port_id,
+    LOG_TRACE(Lib_Audio3d, "called, port_id = {}, object_id = {}", port_id,
              static_cast<void*>(object_id));
 
     if (!object_id) {
@@ -392,7 +392,7 @@ s32 PS4_SYSV_ABI sceAudio3dObjectReserve(const OrbisAudio3dPortId port_id,
 
     *object_id = port.next_object_id;
     port.objects.emplace(*object_id, ObjectState{});
-    LOG_INFO(Lib_Audio3d, "reserved object_id = {}", *object_id);
+    LOG_TRACE(Lib_Audio3d, "reserved object_id = {}", *object_id);
 
     return ORBIS_OK;
 }

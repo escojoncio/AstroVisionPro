@@ -26,10 +26,11 @@ struct SettingsView: View {
 
                 Section {
                     GameLanguagePicker()
+                    Toggle(L("Tiempo real", "Real time"), isOn: flag("real_time", \.realTime))
                 } header: {
-                    Text(L("Idioma del juego", "Language of the game"))
+                    Text(L("Juego", "Game"))
                 } footer: {
-                    Text(gameLanguageFooter)
+                    Text(gameLanguageFooter + " " + L("«Tiempo real»: el juego avanza al ritmo del reloj aunque dibuje menos de 60 imágenes por segundo. Desactivado, cada imagen avanza 1/60 s (cámara lenta cuando va lento); sirve para comprobar si los fallos de física, como atravesar paredes, vienen de pasos de tiempo largos.", "«Real time»: the game moves at the clock's pace even when it draws fewer than 60 frames a second. Off, every frame moves it 1/60 s (slow motion when it runs slow); it shows whether physics faults, like going through walls, come from long time steps."))
                 }
 
                 Section {

@@ -3,12 +3,14 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cstdlib>
 #include <cstring>
 #include <memory>
 #include <mutex>
 #include <optional>
 #include <thread>
+#include <vector>
 #include <SDL3/SDL_audio.h>
 #include <SDL3/SDL_events.h>
 #include <SDL3/SDL_hints.h>
@@ -165,11 +167,19 @@ public:
         } else {
             convert(ptr, internal_buffer, buffer_frames, nullptr);
         }
+#if defined(SHADPS4_VISIONOS)
+        // The device's clock paces this port: what it holds ahead is kept at two of its own
+        // buffers plus one of the port's, and the port waits for room instead of keeping time
+        // by a clock of its own (which lost time for good whenever the thread woke late, and
+        // left CoreAudio to fill the gaps with silence: the crackle).
+        PaceByDevice();
+#else
         HandleTiming(current_time);
 
         if ((output_count++ & 0xF) == 0) { // Check every 16 outputs
             ManageAudioQueue();
         }
+#endif
 
         if (!SDL_PutAudioStreamData(stream, internal_buffer, internal_buffer_size)) [[unlikely]] {
             LOG_ERROR(Lib_AudioOut, "Failed to output to SDL audio stream: {}", SDL_GetError());
@@ -210,6 +220,12 @@ public:
             LOG_ERROR(Lib_AudioOut, "Failed to set audio stream gain: {}", SDL_GetError());
         }
     }
+
+#if defined(SHADPS4_VISIONOS)
+    bool IsDevicePaced() const override {
+        return stream != nullptr;
+    }
+#endif
 
     u64 GetLastOutputTime() const {
         return last_output_time.load(std::memory_order_acquire);
@@ -384,6 +400,55 @@ private:
             next_output_time += period_us;
         }
     }
+
+#if defined(SHADPS4_VISIONOS)
+    void PaceByDevice() {
+        const int bytes_per_frame = static_cast<int>(sizeof(float) * output_channels);
+        const int device_bytes = std::max(device_buffer_frames, 256) * bytes_per_frame;
+        const int target = 2 * device_bytes + static_cast<int>(internal_buffer_size);
+        int queued = SDL_GetAudioStreamQueued(stream);
+        const bool nearly_empty = queued >= 0 && queued < device_bytes;
+        if (primed && nearly_empty) {
+            ++underruns;
+        }
+        if (!primed || nearly_empty) {
+            // A start (or a restart after a pause in the title's sound) ahead of the device:
+            // silence up to two of its buffers.
+            const int fill = 2 * device_bytes - std::max(queued, 0);
+            if (fill > 0) {
+                std::vector<u8> silence(static_cast<size_t>(fill), 0);
+                SDL_PutAudioStreamData(stream, silence.data(), fill);
+            }
+            primed = true;
+            queued = SDL_GetAudioStreamQueued(stream);
+        }
+        // Wait for room, at most as long as a few buffers (a device that stopped taking sound
+        // must not stop the title).
+        for (int waited = 0; queued > target && waited < 50; ++waited) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            queued = SDL_GetAudioStreamQueued(stream);
+        }
+        if (queued > target + 8 * device_bytes) {
+            // The device stopped taking sound for a while (a route change, an interruption):
+            // what piled up would play late for good.
+            LOG_WARNING(Lib_AudioOut, "AUDIO_PACE port {}: {} bytes piled up; dropped",
+                        static_cast<int>(port_type), queued);
+            SDL_ClearAudioStream(stream);
+            primed = false;
+        }
+        const u64 now = Kernel::sceKernelGetProcessTime();
+        if (now - pace_report_time >= 10'000'000) {
+            if (pace_report_time != 0) {
+                LOG_INFO(Lib_AudioOut,
+                         "AUDIO_PACE port {}: {} times nearly empty in 10 s; device buffer {} "
+                         "frames, {} bytes queued before this buffer",
+                         static_cast<int>(port_type), underruns, device_buffer_frames, queued);
+            }
+            underruns = 0;
+            pace_report_time = now;
+        }
+    }
+#endif
 
     void ManageAudioQueue() {
         const auto queued = SDL_GetAudioStreamQueued(stream);
@@ -618,8 +683,12 @@ private:
                      sdl_buffer_size) *
             QUEUE_MULTIPLIER;
 
-        LOG_DEBUG(Lib_AudioOut, "Audio queue threshold: {} bytes (SDL buffer: {} frames)",
-                  queue_threshold, sdl_buffer_frames);
+        device_buffer_frames = sdl_buffer_frames;
+#if defined(SHADPS4_VISIONOS)
+        primed = false;
+#endif
+        LOG_INFO(Lib_AudioOut, "Audio queue threshold: {} bytes (SDL buffer: {} frames)",
+                 queue_threshold, sdl_buffer_frames);
     }
 
     using ConverterFunc = void (*)(const void* src, void* dst, u32 frames, const float* volumes);
@@ -764,6 +833,10 @@ private:
     u64 next_output_time{0};
     u64 last_volume_check_time{0};
     u32 output_count{0};
+    int device_buffer_frames{0};
+    bool primed{false};
+    u32 underruns{0};
+    u64 pace_report_time{0};
 
     // Buffers
     u32 internal_buffer_size{0};
