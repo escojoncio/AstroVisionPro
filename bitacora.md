@@ -5,6 +5,13 @@ Base: shadPS4 ARM64 (`shadps4-arm64-main/`) + FEXCore (x86-64 → ARM64) + Molte
 App visionOS en `visionos/` (SwiftUI + Compositor Services + ARKit + GameController).
 JIT: arena RWX preparada por StikDebug (protocolo `brk #0xf00d` + universal.js); la app hace detach al terminar.
 
+## Estado al cierre (2026-10-10) y siguiente sesión
+- Última build: b40e806 (= 6861ed1 + CI), `visionos-latest/AstroQuest.ipa`, sin probar. Incluye: banco por shader v2 con estado y SPIR-V (L3+R3), constantes como UBO (`constant_ubo`, por defecto 1).
+- Probar primero: aspecto con «Constantes como uniform buffers» activada (luces/colores/sombras); después L3+R3 en el mundo (1–2 min de juego antes, quieto). Comparar con el test de d56f184: ~29 ms GPU/imagen, `fs 0x1759c590391` ≈ 5–7 ms.
+- Si la UBO no mejora o rompe algo: siguientes candidatos de coste por píxel en ese fs (18 muestras de sombra, bucles de luces, 381 `precise` → NoContraction impide fusionar fma en Metal).
+- Siguiente tarea grande: **caché de pipelines en disco + precarga** (arregla el efecto de construcción del mapa y los ~500 draws saltados al entrar al mundo): crash en `BuildDescSetLayout(preloading)` → `image.NumBindings(*stage)` → `GetSharp` (guardar nº de bindings por imagen en la serialización); serializar también `buffer_is_storage` (gráficos y compute) e invalidar `ShaderBinaryVersion`; quitar `SHADPS4_PIPELINE_CACHE=0` forzado en `AstroSettings.swift`.
+- Herramientas aquí: spirv-cross se compila desde GitHub (KhronosGroup/SPIRV-Cross, cmake) en el scratchpad; fuente de KK: `git fetch --depth 1 --filter=blob:none https://github.com/shadexternals/mesa.git b628375fb1fd99476bfbaaa0532deb6fe3a6870e` con sparse `src/kosmickrisp/`. Reconstruir SPIR-V del log: agrupar `GPU_SHADER_SPIRV fs|vs <hash> i/n <b64>` y decodificar.
+
 ## CI: release en borrador (2026-10-10)
 - La run 37997807560 dejó `visionos-latest` como borrador (sin enlace público; desde la sesión no se pueden editar releases: 403). `visionos-app.yml`: antes de crear, borra borradores `visionos-latest` por id; después, `gh release edit --draft=false --prerelease` (5 intentos) y comprueba el enlace con curl (falla el paso si no responde 200). `concurrency` movido al job (un push sin `[build]` de otra sesión canceló la run 37999013625).
 - Build b40e806 (run 37999221913): OK, release pública; mismo código que 6861ed1.
