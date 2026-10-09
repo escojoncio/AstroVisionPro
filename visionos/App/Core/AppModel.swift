@@ -116,7 +116,23 @@ final class AppModel {
     func convertGame() {
         guard let gamePath else { return }
         message = nil
+        VPConversion.patchImage = Self.titlePatcher(settings.environment)
         conversion.start(game: gamePath, reason: "the player pressed Convert")
+    }
+
+    /// The emulator's own changes to the title's code for these settings (the known title's): the
+    /// code is translated as changed, so that the translation matches the code that runs.
+    nonisolated static func titlePatcher(_ environment: [String]) -> @Sendable (String, UnsafeMutablePointer<UInt8>, Int) -> Void {
+        return { module, image, size in
+            guard module == "eboot" else { return }
+            var pointers = environment.map { strdup($0) }
+            defer { pointers.forEach { free($0) } }
+            _ = pointers.withUnsafeMutableBufferPointer { buffer -> Int32 in
+                buffer.baseAddress!.withMemoryRebound(to: UnsafePointer<CChar>?.self, capacity: buffer.count) { base in
+                    astro_core_title_code_patches(image, UInt(size), base, Int32(buffer.count))
+                }
+            }
+        }
     }
 
     func usePCPack() {
@@ -157,6 +173,7 @@ final class AppModel {
         VPCertificate.log = { LogFiles.log($0) }
         // Conversions live in VPS4/VPEngine: they outlive the app.
         VPConversion.storageRoot = { GameFolder.url()?.appendingPathComponent("VPEngine", isDirectory: true) }
+        VPConversion.patchImage = Self.titlePatcher(settings.environment)
         conversion.resolveGame = { [weak self] in self?.gamePath }
         conversion.onFinished = { [weak self] loaded in self?.packLoaded = loaded }
         packLoaded = VPGamePack.alreadyLoaded()

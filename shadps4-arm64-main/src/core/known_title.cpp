@@ -73,10 +73,10 @@ struct Larger : Builds::Sizes {
     s32 extra_memory_mb{};
 };
 
-const Larger& GetLarger() {
-    static const Larger larger = [] {
+/// The sizes for SHADPS4_TITLE_EYE_WIDTH=`value` (nullptr: not given).
+Larger ComputeLarger(const char* value) {
+    {
         Larger result;
-        const char* value = std::getenv("SHADPS4_TITLE_EYE_WIDTH");
         const s32 width = value != nullptr ? std::atoi(value) : 0;
         if (width <= static_cast<s32>(ConsoleSizes[LastHeadsetLevel][0])) {
             return result;
@@ -103,7 +103,11 @@ const Larger& GetLarger() {
         result.graphics_heap = Builds::ConsoleGraphicsHeap + growth;
         result.extra_memory_mb = static_cast<s32>((growth + 256 * MB) / (256 * MB) * 256);
         return result;
-    }();
+    }
+}
+
+const Larger& GetLarger() {
+    static const Larger larger = ComputeLarger(std::getenv("SHADPS4_TITLE_EYE_WIDTH"));
     return larger;
 }
 
@@ -167,10 +171,12 @@ struct Settings {
     bool physics_watch{false};
 };
 
-const Settings& GetSettings() {
-    static const Settings settings = [] {
+/// The settings from `get(name)` (std::getenv, or another environment's lookup).
+template <typename Get>
+Settings ParseSettings(Get get) {
+    {
         Settings parsed;
-        if (const char* value = std::getenv("SHADPS4_TITLE_TIMESTEP"); value != nullptr) {
+        if (const char* value = get("SHADPS4_TITLE_TIMESTEP"); value != nullptr) {
             const double rate = std::atof(value);
             if (rate <= 0.0) {
                 parsed.time_step = false;
@@ -178,7 +184,7 @@ const Settings& GetSettings() {
                 parsed.longest_step = 1.0 / std::clamp(rate, 10.0, 60.0);
             }
         }
-        if (const char* value = std::getenv("SHADPS4_TITLE_RESOLUTION"); value != nullptr) {
+        if (const char* value = get("SHADPS4_TITLE_RESOLUTION"); value != nullptr) {
             const std::string_view text{value};
             const s32 level = std::atoi(value);
             if (text == "title") {
@@ -188,17 +194,17 @@ const Settings& GetSettings() {
                 parsed.pinned_level = level;
             }
         }
-        if (const char* value = std::getenv("SHADPS4_VR_PACE"); value != nullptr) {
+        if (const char* value = get("SHADPS4_VR_PACE"); value != nullptr) {
             const s32 pace = std::atoi(value);
             parsed.pace = pace >= 1 ? std::min(pace, SlowestPace) : 0;
         }
-        if (const char* value = std::getenv("SHADPS4_VR_FASTEST_PACE"); value != nullptr) {
+        if (const char* value = get("SHADPS4_VR_FASTEST_PACE"); value != nullptr) {
             parsed.fastest_pace = std::atoi(value) == 1 ? 1 : 2;
         }
         // SHADPS4_VR_FPS_CAP=<frames a second>: as many as that at most, as many refreshes of
         // the display a frame as that takes (at 120 Hz: 120, 60, 40 or 30; at 90 Hz: 90, 45 or
         // 30). Frames come faster than the console's 60 only this way.
-        if (const char* value = std::getenv("SHADPS4_VR_FPS_CAP"); value != nullptr) {
+        if (const char* value = get("SHADPS4_VR_FPS_CAP"); value != nullptr) {
             const double cap = std::atof(value);
             if (cap >= 10.0) {
                 parsed.fps_cap = std::min(cap, 240.0);
@@ -206,14 +212,18 @@ const Settings& GetSettings() {
         }
         // SHADPS4_TITLE_PHYSICS_STEP=0 leaves the title's physics as the console has them;
         // SHADPS4_TITLE_PHYSICS_WATCH=1 tells in the log where its bodies end up.
-        if (const char* value = std::getenv("SHADPS4_TITLE_PHYSICS_STEP"); value != nullptr) {
+        if (const char* value = get("SHADPS4_TITLE_PHYSICS_STEP"); value != nullptr) {
             parsed.physics_step = std::atoi(value) != 0;
         }
-        if (const char* value = std::getenv("SHADPS4_TITLE_PHYSICS_WATCH"); value != nullptr) {
+        if (const char* value = get("SHADPS4_TITLE_PHYSICS_WATCH"); value != nullptr) {
             parsed.physics_watch = std::atoi(value) != 0;
         }
         return parsed;
-    }();
+    }
+}
+
+const Settings& GetSettings() {
+    static const Settings settings = ParseSettings([](const char* name) { return std::getenv(name); });
     return settings;
 }
 
@@ -1012,6 +1022,47 @@ void Prepare() {
              SizeName(LastHeadsetLevel), EmulatorSettings.GetExtraDmemInMBytes());
 }
 
+/// What the emulator changes in the title's code for these settings, made on `image` (as loaded,
+/// offset 0 = the image's start): at load (OnGameLoaded) and, the same, on the copy VPEngine
+/// translates ahead of time (astro_core_title_code_patches).
+static void ApplyCodeChanges(std::span<u8> image, const Build* build_pointer, const Larger& larger,
+                      const Settings& settings, bool log) {
+    const Build* const build = build_pointer;
+    if (larger.factor != 1.0) {
+        // Every place is checked for what the console's build has there before anything is
+        // written: a title that turns out to be other than thought is left as it is.
+        const auto changes = Builds::SizeChanges(*build, larger);
+        if (const Builds::Change* unexpected = Builds::Apply(image, changes);
+            unexpected != nullptr) {
+            if (log) LOG_WARNING(Core,
+                        "The title does not have {:#x} at {:#x} as expected: it draws at the "
+                        "console's sizes",
+                        unexpected->was, unexpected->at);
+        } else if (log) {
+            LOG_INFO(Core,
+                     "The title draws at up to {} an eye instead of 1440x1536 ({:.2f} times as "
+                     "wide), the smallest {}; its render targets have {} MB, its graphics memory "
+                     "{} MB",
+                     SizeName(LastHeadsetLevel), larger.factor, SizeName(FirstHeadsetLevel),
+                     larger.target_pool >> 20, larger.graphics_heap >> 20);
+        }
+    }
+    if (settings.time_step && settings.physics_step) {
+        const auto changes = Builds::PhysicsStepChanges(*build);
+        if (const Builds::Change* unexpected = Builds::Apply(image, changes);
+            unexpected != nullptr) {
+            if (log) LOG_WARNING(Core,
+                        "The title does not have {:#x} at {:#x} as expected: its physics are "
+                        "left as they are, and collisions that it moves may end up beside what "
+                        "is drawn",
+                        unexpected->was, unexpected->at);
+        } else if (log) {
+            LOG_INFO(Core, "The title's physics take every step with the time step its bodies "
+                           "were sent with");
+        }
+    }
+}
+
 void OnGameLoaded(VAddr base, u64 size) {
     if (Common::ElfInfo::Instance().GameSerial() != "CUSA12392") {
         return;
@@ -1030,40 +1081,7 @@ void OnGameLoaded(VAddr base, u64 size) {
     }
     LOG_INFO(Core, "CUSA12392 in a build known from inside: {}", build->name);
 
-    const Larger& larger = GetLarger();
-    if (larger.factor != 1.0) {
-        // Every place is checked for what the console's build has there before anything is
-        // written: a title that turns out to be other than thought is left as it is.
-        const auto changes = Builds::SizeChanges(*build, larger);
-        if (const Builds::Change* unexpected = Builds::Apply(image, changes);
-            unexpected != nullptr) {
-            LOG_WARNING(Core,
-                        "The title does not have {:#x} at {:#x} as expected: it draws at the "
-                        "console's sizes",
-                        unexpected->was, unexpected->at);
-        } else {
-            LOG_INFO(Core,
-                     "The title draws at up to {} an eye instead of 1440x1536 ({:.2f} times as "
-                     "wide), the smallest {}; its render targets have {} MB, its graphics memory "
-                     "{} MB",
-                     SizeName(LastHeadsetLevel), larger.factor, SizeName(FirstHeadsetLevel),
-                     larger.target_pool >> 20, larger.graphics_heap >> 20);
-        }
-    }
-    if (const Settings& settings = GetSettings(); settings.time_step && settings.physics_step) {
-        const auto changes = Builds::PhysicsStepChanges(*build);
-        if (const Builds::Change* unexpected = Builds::Apply(image, changes);
-            unexpected != nullptr) {
-            LOG_WARNING(Core,
-                        "The title does not have {:#x} at {:#x} as expected: its physics are "
-                        "left as they are, and collisions that it moves may end up beside what "
-                        "is drawn",
-                        unexpected->was, unexpected->at);
-        } else {
-            LOG_INFO(Core, "The title's physics take every step with the time step its bodies "
-                           "were sent with");
-        }
-    }
+    ApplyCodeChanges(image, build, GetLarger(), GetSettings(), true);
     known_base = base;
     known_build.store(build, std::memory_order_release);
 }
@@ -1117,3 +1135,29 @@ void NoteView(const Vr::Vec3& tracker_head) {
 }
 
 } // namespace Core::KnownTitle
+
+// VPEngine: the title's code as the emulator will run it, for translating it ahead of time
+// (platform/visionos/astro_core.h).
+extern "C" int astro_core_title_code_patches(unsigned char* image, unsigned long size,
+                                             const char* const* environment, int count) {
+    using namespace Core::KnownTitle;
+    const std::span<u8> span{image, static_cast<size_t>(size)};
+    const Build* const build = Builds::Recognise(span);
+    if (build == nullptr) {
+        return 0;
+    }
+    const auto get = [&](const char* name) -> const char* {
+        const size_t n = std::strlen(name);
+        const char* found = nullptr;
+        for (int i = 0; i < count; ++i) {
+            const char* entry = environment[i];
+            if (entry != nullptr && std::strncmp(entry, name, n) == 0 && entry[n] == '=') {
+                found = entry + n + 1; // the last one wins, as with setenv in order
+            }
+        }
+        return found;
+    };
+    ApplyCodeChanges(span, build, ComputeLarger(get("SHADPS4_TITLE_EYE_WIDTH")), ParseSettings(get),
+                     false);
+    return 1;
+}
