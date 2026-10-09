@@ -14,6 +14,7 @@ struct EngineCard: View {
     @Environment(AppModel.self) private var model
     @State private var choosingCertificate = false
     @State private var certificateFile: URL?
+    @State private var askingPassword = false
     @State private var password = ""
 
     var body: some View {
@@ -49,22 +50,29 @@ struct EngineCard: View {
             }
         }
         .fileImporter(isPresented: $choosingCertificate, allowedContentTypes: [UTType(filenameExtension: "p12") ?? .data, .data]) { result in
-            if case .success(let url) = result {
+            switch result {
+            case .success(let url):
                 certificateFile = url
+                // After the picker has finished closing: an alert asked for while it closes may
+                // never show (and the flag, left on, would keep it from showing again).
+                askingPassword = false
+                LogFiles.log("VPEngine: certificate file chosen, asking for its password")
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { askingPassword = true }
+            case .failure(let error):
+                model.message = error.localizedDescription
             }
         }
-        .alert(L("Contraseña del certificado", "Certificate password"), isPresented: Binding(
-            get: { certificateFile != nil }, set: { if !$0 { certificateFile = nil } })) {
+        // The file goes to the buttons as the alert's data: the alert clears its binding before
+        // it runs a button, so a button reading certificateFile found nil and did nothing.
+        .alert(L("Contraseña del certificado", "Certificate password"), isPresented: $askingPassword,
+               presenting: certificateFile) { file in
             SecureField(L("Contraseña (puede estar vacía)", "Password (may be empty)"), text: $password)
             Button(L("Importar", "Import")) {
-                if let file = certificateFile {
-                    model.importCertificate(file: file, password: password)
-                }
-                certificateFile = nil
+                model.importCertificate(file: file, password: password)
                 password = ""
             }
             Button(L("Cancelar", "Cancel"), role: .cancel) {
-                certificateFile = nil
+                password = ""
             }
         }
     }
@@ -108,6 +116,7 @@ struct VPEngineSection: View {
     @Environment(AppModel.self) private var model
     @State private var choosingCertificate = false
     @State private var certificateFile: URL?
+    @State private var askingPassword = false
     @State private var password = ""
     @State private var sharing = false
 
@@ -124,6 +133,10 @@ struct VPEngineSection: View {
             if !model.appTeam.isEmpty, let c = model.certificate, c.team != model.appTeam {
                 Text(L("La app está firmada por el equipo \(model.appTeam): importa el certificado de ese equipo.", "The app is signed by team \(model.appTeam): import that team's certificate."))
                     .foregroundStyle(.red)
+            }
+            // What the last import (or conversion step) said: also here, not only on the home tab.
+            if let message = model.message {
+                Text(message).font(.footnote).foregroundStyle(.secondary)
             }
             Button(L("Importar de SideStore", "Import from SideStore")) {
                 model.importCertificateFromSideStore()
@@ -152,22 +165,29 @@ struct VPEngineSection: View {
                    "The game is converted once on the headset (translated and compiled for its processor) and signed with your SideStore certificate: then it starts with no JIT or StikDebug. With the headset off and charging, visionOS may move the conversion on now and then; conversion.log, in Files, says how much. More pieces at once is faster while memory lasts."))
         }
         .fileImporter(isPresented: $choosingCertificate, allowedContentTypes: [UTType(filenameExtension: "p12") ?? .data, .data]) { result in
-            if case .success(let url) = result {
+            switch result {
+            case .success(let url):
                 certificateFile = url
+                // After the picker has finished closing: an alert asked for while it closes may
+                // never show (and the flag, left on, would keep it from showing again).
+                askingPassword = false
+                LogFiles.log("VPEngine: certificate file chosen, asking for its password")
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { askingPassword = true }
+            case .failure(let error):
+                model.message = error.localizedDescription
             }
         }
-        .alert(L("Contraseña del certificado", "Certificate password"), isPresented: Binding(
-            get: { certificateFile != nil }, set: { if !$0 { certificateFile = nil } })) {
+        // The file goes to the buttons as the alert's data: the alert clears its binding before
+        // it runs a button, so a button reading certificateFile found nil and did nothing.
+        .alert(L("Contraseña del certificado", "Certificate password"), isPresented: $askingPassword,
+               presenting: certificateFile) { file in
             SecureField(L("Contraseña (puede estar vacía)", "Password (may be empty)"), text: $password)
             Button(L("Importar", "Import")) {
-                if let file = certificateFile {
-                    model.importCertificate(file: file, password: password)
-                }
-                certificateFile = nil
+                model.importCertificate(file: file, password: password)
                 password = ""
             }
             Button(L("Cancelar", "Cancel"), role: .cancel) {
-                certificateFile = nil
+                password = ""
             }
         }
         .sheet(isPresented: $sharing) {
