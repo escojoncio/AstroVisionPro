@@ -335,10 +335,16 @@ s64 SteadyNs() {
         .count();
 }
 
+std::atomic<u64> perf_catch_up_ns{0};
+
 void DoResync() {
     const u64 moved = clock64.Resync(RawClock64());
-    perf_counter.Resync(RawPerfCounter());
+    const u64 perf_moved = perf_counter.Resync(RawPerfCounter());
     catch_up_ns.fetch_add(moved, std::memory_order_relaxed);
+    if (const u64 frequency = GpuFrequency(); frequency != 0) {
+        perf_catch_up_ns.fetch_add(Common::MultiplyAndDivide64(perf_moved, 1'000'000'000, frequency),
+                                   std::memory_order_relaxed);
+    }
     last_resync_ns.store(SteadyNs(), std::memory_order_relaxed);
 }
 } // namespace
@@ -371,7 +377,10 @@ ResyncStats TakeResyncStats() {
     ResyncStats stats;
     stats.frames = frame_resyncs.exchange(0, std::memory_order_relaxed);
     stats.late = late_resyncs.exchange(0, std::memory_order_relaxed);
-    stats.catch_up_ms = static_cast<double>(catch_up_ns.exchange(0, std::memory_order_relaxed)) / 1e6;
+    // Titles read one clock or the other: the one that moved more is the one read.
+    const u64 clock_ns = catch_up_ns.exchange(0, std::memory_order_relaxed);
+    const u64 perf_ns = perf_catch_up_ns.exchange(0, std::memory_order_relaxed);
+    stats.catch_up_ms = static_cast<double>(std::max(clock_ns, perf_ns)) / 1e6;
     return stats;
 }
 

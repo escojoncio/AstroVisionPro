@@ -28,8 +28,9 @@ struct AstroSettings {
     /// No longer used: the game is drawn with one sample a pixel (SHADPS4_MAX_MSAA=1).
     var msaa = ""
     /// Where the game resolves a multisampled picture (held with one sample a pixel here), the
-    /// edges are smoothed on the way (SmoothInto, SHADPS4_RESOLVE_AA). Off: copied as they are.
-    var antialias = true
+    /// edges are smoothed on the way (SmoothInto, SHADPS4_RESOLVE_AA). Off (the default): copied
+    /// as they are; the headset's SMAA smooths the picture anyway (no difference seen).
+    var antialias = false
     /// The hands holding the controller place it in the game.
     var hands = true
     /// How far beyond the next picture the head position is predicted, in milliseconds.
@@ -227,9 +228,7 @@ struct AstroSettings {
         env.append("SHADPS4_VR_SHARPEN=\(sharpen)")
         // No MSAA: on the headset 2 or 4 samples cost and smooth nothing that shows.
         env.append("SHADPS4_MAX_MSAA=1")
-        if !antialias {
-            env.append("SHADPS4_RESOLVE_AA=0")
-        }
+        env.append("SHADPS4_RESOLVE_AA=\(antialias ? 1 : 0)")
         if !hands {
             env.append("SHADPS4_XR_HANDS=0")
         }
@@ -270,6 +269,8 @@ struct AstroSettings {
             // known_title.cpp), to find what it leaves out when its GPU looks slow.
             env.append("SHADPS4_GPU_STAMP_LOG=1")
             env.append("SHADPS4_QUALITY_DUMP=1")
+            // KosmicKrisp: Metal encoders a second and what cut each render encoder short.
+            env.append("KK_CENSUS=1")
         }
         if gpuClockScale == "auto" {
             env.append("SHADPS4_GPU_CLOCK_SCALE=auto")
@@ -317,7 +318,7 @@ struct AstroSettings {
     # Nitidez de la imagen camino del visor, de 0 a 1.
     sharpen=0.3
 
-    #antialias=1
+    #antialias=0
 
     # 0: las manos no colocan el mando en el juego.
     hands=1
