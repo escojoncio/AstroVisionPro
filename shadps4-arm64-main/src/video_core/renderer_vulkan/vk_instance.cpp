@@ -810,6 +810,19 @@ u64 DeviceMemoryUsageForReports() {
                : 0;
 }
 
+std::string VmaBlocksForReports() {
+    const Instance* instance = g_reported_instance.load(std::memory_order_acquire);
+    if (instance == nullptr || instance->GetAllocator() == nullptr) {
+        return {};
+    }
+    VmaTotalStatistics stats{};
+    vmaCalculateStatistics(instance->GetAllocator(), &stats);
+    const VmaStatistics& total = stats.total.statistics;
+    return fmt::format("VMA {} MB in {} blocks, {} MB of it allocated in {}",
+                       total.blockBytes >> 20, total.blockCount, total.allocationBytes >> 20,
+                       total.allocationCount);
+}
+
 void Instance::CollectPhysicalMemoryInfo() {
     vk::PhysicalDeviceMemoryBudgetPropertiesEXT budget{};
     vk::PhysicalDeviceMemoryProperties2 props = {

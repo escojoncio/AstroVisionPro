@@ -22,7 +22,15 @@ final class AppModel {
     var settings = AstroSettings.load()
     let jit = JITGate()
     var controller: PlayStationController.Status?
-    var gamePath: URL?
+    var gamePath: URL? {
+        didSet {
+            if gamePath != oldValue {
+                gameLanguageCodes = GameLanguages.codesInFiles(gamePath: gamePath)
+            }
+        }
+    }
+    /// The language codes in the game's files (GameLanguages.swift), read when the game is found.
+    var gameLanguageCodes: [String] = []
     /// The VPS4 folder (GameFolder.swift), once chosen and reachable.
     var gameFolder: URL?
     var coreState: AstroCoreState = AstroCoreStateIdle
@@ -169,6 +177,8 @@ final class AppModel {
         LogFiles.gameStarted()
         LogFiles.log("Game started: \(gamePath.path)")
         LogFiles.log("Settings: \(environment.joined(separator: " "))")
+        let codes = gameLanguageCodes
+        LogFiles.log("Game language: \(GameLanguages.tag(for: settings.gameLanguage)); language files in the game: \(codes.isEmpty ? "none found" : codes.joined(separator: " "))")
         watchCore()
         return true
     }

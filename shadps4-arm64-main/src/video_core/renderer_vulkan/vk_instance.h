@@ -4,6 +4,7 @@
 #pragma once
 
 #include <span>
+#include <string>
 #include <unordered_map>
 
 #include "video_core/renderer_vulkan/vk_platform.h"
@@ -23,6 +24,8 @@ class Instance;
 
 /// What the Vulkan driver says the device's memory holds, for the logs; 0 if not known.
 u64 DeviceMemoryUsageForReports();
+/// How much of the memory VMA holds is in use ("VMA X MB in N blocks, Y MB of it allocated in M").
+std::string VmaBlocksForReports();
 
 class Instance {
 public:
