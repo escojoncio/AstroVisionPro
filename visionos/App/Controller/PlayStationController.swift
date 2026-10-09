@@ -602,6 +602,8 @@ final class RumbleMotor: @unchecked Sendable {
             }
             return nil
         }
+        // Rumble only: no audio of its own, so nothing about the audio session concerns it.
+        engine.playsHapticsOnly = true
         engine.stoppedHandler = { [weak self, weak engine] reason in
             guard let self else { return }
             self.lock.lock()
