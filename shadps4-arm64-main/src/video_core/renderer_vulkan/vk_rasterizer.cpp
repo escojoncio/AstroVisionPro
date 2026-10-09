@@ -363,9 +363,19 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
         buffer_cache.BindIndexBuffer(index_offset);
     }
 
-    pipeline->BindResources(set_writes, buffer_barriers, push_data);
-    UpdateDynamicState(pipeline, is_indexed);
-    scheduler.BeginRendering(state);
+    // In the pass that is open, when its targets include the draw's (PipelineForOpenPass).
+    const GraphicsPipeline* in_pass = PipelineForOpenPass(pipeline, state);
+    const GraphicsPipeline* draw_pipeline = in_pass ? in_pass : pipeline;
+    in_open_pass = in_pass != nullptr;
+    draw_pipeline->BindResources(set_writes, buffer_barriers, push_data);
+    UpdateDynamicState(draw_pipeline, is_indexed);
+    in_open_pass = false;
+    if (in_pass) {
+        FrameStats::Add(FrameStats::Counter::KeptInPass);
+    } else {
+        scheduler.BeginRendering(state);
+        NoteOpenPass(pipeline);
+    }
     scheduler.NoteDraw(
         pipeline->GetGraphicsKey().stage_hashes[u32(Shader::LogicalStage::Geometry)]);
     FrameStats::Draw();
@@ -375,7 +385,7 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
     const auto [vertex_offset, instance_offset] = GetDrawOffsets(regs, vs_info, fetch_shader);
 
     const auto cmdbuf = scheduler.CommandBuffer();
-    scheduler.BindGraphicsPipeline(pipeline->Handle());
+    scheduler.BindGraphicsPipeline(draw_pipeline->Handle());
 
     // SHADPS4_DBG_DRAW_VERTICES=<count> draws no more than that of every draw: with next to
     // no geometry left, what a frame still costs is what its draws cost as such.
@@ -397,6 +407,169 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
 
     ResetBindings();
     RetireIsolatedReadConstSnapshots();
+}
+
+void Rasterizer::NoteOpenPass(const GraphicsPipeline* pipeline) {
+    if (!scheduler.IsRendering() || scheduler.PassSerial() == open_pass.serial) {
+        return;
+    }
+    // A pass this draw began. (One that went on with the same targets keeps what was noted.)
+    open_pass.serial = scheduler.PassSerial();
+    const auto& key = pipeline->GetGraphicsKey();
+    const auto& rs = scheduler.GetRenderState();
+    if (key.num_color_attachments != rs.num_color_attachments) {
+        // Not as its pipelines were made: nothing is made in it but what asks for it.
+        open_pass.serial = ~0ull;
+        return;
+    }
+    auto& targets = open_pass.targets;
+    targets.num_color_attachments = key.num_color_attachments;
+    targets.color_buffers = key.color_buffers;
+    targets.color_samples = key.color_samples;
+    targets.num_samples = key.num_samples;
+    targets.depth_samples = key.depth_samples;
+    // As the pass has them: a pipeline may name a depth format where the pass has no depth.
+    const auto& db = rs.depth_stencil_attachment;
+    targets.z_format = db.image_view && db.has_depth ? key.z_format
+                                                     : AmdGpu::DepthBuffer::ZFormat::Invalid;
+    targets.stencil_format = db.image_view && db.has_stencil
+                                 ? key.stencil_format
+                                 : AmdGpu::DepthBuffer::StencilFormat::Invalid;
+    // Slots the pass has nothing in are nothing to the pipelines made for it either.
+    for (u32 cb = 0; cb < rs.num_color_attachments; ++cb) {
+        if (!rs.color_attachments[cb].image_view) {
+            targets.color_buffers[cb] = {};
+            targets.color_samples[cb] = 0;
+        }
+    }
+    open_pass.num_images = 0;
+    for (u32 cb = 0; cb < rs.num_color_attachments; ++cb) {
+        if (rs.color_attachments[cb].image_view && cb_descs[cb].first) {
+            open_pass.images[open_pass.num_images++] = cb_descs[cb].first;
+        }
+    }
+    if (rs.depth_stencil_attachment.image_view && db_desc.first) {
+        open_pass.images[open_pass.num_images++] = db_desc.first;
+    }
+}
+
+const GraphicsPipeline* Rasterizer::PipelineForOpenPass(const GraphicsPipeline* pipeline,
+                                                       const RenderState& state) {
+    static const bool enabled = [] {
+        const char* value = std::getenv("SHADPS4_MERGE_PASSES");
+        return value == nullptr || value[0] != '0';
+    }();
+    if (!enabled || in_target_passes || attachment_feedback_loop || !scheduler.IsRendering() ||
+        scheduler.PassSerial() != open_pass.serial || !buffer_barriers.empty() ||
+        scheduler.KeepsPassFor(state)) {
+        return nullptr;
+    }
+    const RenderState& open = scheduler.GetRenderState();
+    if (open.num_layers != state.num_layers) {
+        return nullptr;
+    }
+    bool own_target = false;
+    for (u32 cb = 0; cb < state.num_color_attachments; ++cb) {
+        const auto& theirs = state.color_attachments[cb];
+        if (!theirs.image_view) {
+            continue;
+        }
+        own_target = true;
+        if (cb >= open.num_color_attachments) {
+            return nullptr;
+        }
+        const auto& ours = open.color_attachments[cb];
+        if (ours.image_view != theirs.image_view || ours.image_layout != theirs.image_layout ||
+            theirs.is_clear != 0) {
+            return nullptr;
+        }
+    }
+    const auto& theirs = state.depth_stencil_attachment;
+    if (theirs.image_view) {
+        own_target = true;
+        const auto& ours = open.depth_stencil_attachment;
+        if (ours.image_view != theirs.image_view || ours.image_layout != theirs.image_layout ||
+            ours.has_depth != theirs.has_depth || ours.has_stencil != theirs.has_stencil ||
+            theirs.depth_clear || theirs.stencil_clear) {
+            return nullptr;
+        }
+    }
+    if (own_target) {
+        // Its targets' size: a pass of another size would cut its draws elsewhere.
+        if (open.width != state.width || open.height != state.height) {
+            return nullptr;
+        }
+    } else if (state.width > open.width || state.height > open.height) {
+        // A draw with no targets reaches as far as its scissor: the pass must cover that.
+        return nullptr;
+    }
+    bool open_has_target = open.depth_stencil_attachment.image_view != vk::ImageView{};
+    for (u32 cb = 0; cb < open.num_color_attachments; ++cb) {
+        open_has_target |= open.color_attachments[cb].image_view != vk::ImageView{};
+    }
+    if (!open_has_target) {
+        return nullptr;
+    }
+    // Samples as many as the pass's: a draw's pixel shader runs once a sample when it does.
+    const auto& key = pipeline->GetGraphicsKey();
+    if (key.num_samples != open_pass.targets.num_samples) {
+        return nullptr;
+    }
+    // Two outputs blended into the first target (dual-source blending) go with one target only.
+    if (const auto* fs = pipeline->GetStages()[u32(Shader::LogicalStage::Fragment)];
+        fs != nullptr && fs->fs_info.dual_source_blending && open.num_color_attachments > 1) {
+        return nullptr;
+    }
+    // Where the draw's pixel shader writes to a target the pass has and the draw has not, the
+    // shader's values must be of the kind the target holds (Metal checks it), even if nothing
+    // is written there: whole numbers in a target of whole numbers stay out.
+    for (u32 cb = 0; cb < open.num_color_attachments; ++cb) {
+        const bool own = cb < state.num_color_attachments && state.color_attachments[cb].image_view;
+        if (own || !open.color_attachments[cb].image_view || (key.mrt_mask & (1u << cb)) == 0) {
+            continue;
+        }
+        if (AmdGpu::GetNumberClass(open_pass.targets.color_buffers[cb].num_format) !=
+            AmdGpu::NumberClass::Float) {
+            return nullptr;
+        }
+    }
+    // A draw that reads (or writes through its shaders) one of the pass's targets needs that
+    // target written out first: a pass of its own.
+    for (const auto image_id : bound_images) {
+        const auto& image = texture_cache.GetImage(image_id);
+        if (!image.binding.is_bound) {
+            continue;
+        }
+        for (u32 i = 0; i < open_pass.num_images; ++i) {
+            if (open_pass.images[i] == image_id) {
+                return nullptr;
+            }
+        }
+    }
+    open_pass.targets.own_colors = 0;
+    for (u32 cb = 0; cb < state.num_color_attachments; ++cb) {
+        if (state.color_attachments[cb].image_view) {
+            open_pass.targets.own_colors |= static_cast<u8>(1u << cb);
+        }
+    }
+    const GraphicsPipeline* in_pass = nullptr;
+    {
+        // Back to the draws' own targets however the asking ends.
+        struct Reset {
+            PipelineCache& cache;
+            ~Reset() {
+                cache.MakeForOpenPass(nullptr);
+            }
+        } reset{pipeline_cache};
+        pipeline_cache.MakeForOpenPass(&open_pass.targets);
+        in_pass = pipeline_cache.GetGraphicsPipeline();
+    }
+    // Still the same pass (making a pipeline does not end it, but nothing is taken for granted).
+    if (in_pass == nullptr || !scheduler.IsRendering() ||
+        scheduler.PassSerial() != open_pass.serial) {
+        return nullptr;
+    }
+    return in_pass;
 }
 
 boost::container::small_vector<u8, 4> Rasterizer::SharedTargetPasses(u8 mrt_mask) const {
@@ -518,9 +691,18 @@ void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u3
         std::tie(count_buffer, count_base) = buffer_cache.ObtainBuffer(count_address, 4, false);
     }
 
-    pipeline->BindResources(set_writes, buffer_barriers, push_data);
-    UpdateDynamicState(pipeline, is_indexed);
-    scheduler.BeginRendering(state);
+    const GraphicsPipeline* in_pass = PipelineForOpenPass(pipeline, state);
+    const GraphicsPipeline* draw_pipeline = in_pass ? in_pass : pipeline;
+    in_open_pass = in_pass != nullptr;
+    draw_pipeline->BindResources(set_writes, buffer_barriers, push_data);
+    UpdateDynamicState(draw_pipeline, is_indexed);
+    in_open_pass = false;
+    if (in_pass) {
+        FrameStats::Add(FrameStats::Counter::KeptInPass);
+    } else {
+        scheduler.BeginRendering(state);
+        NoteOpenPass(pipeline);
+    }
     scheduler.NoteDraw(
         pipeline->GetGraphicsKey().stage_hashes[u32(Shader::LogicalStage::Geometry)]);
     FrameStats::Draw();
@@ -529,7 +711,7 @@ void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u3
     // instance offsets will be automatically applied by Vulkan from indirect args buffer.
 
     const auto cmdbuf = scheduler.CommandBuffer();
-    scheduler.BindGraphicsPipeline(pipeline->Handle());
+    scheduler.BindGraphicsPipeline(draw_pipeline->Handle());
 
     if (is_indexed) {
         ASSERT(sizeof(VkDrawIndexedIndirectCommand) == stride);
@@ -1847,7 +2029,10 @@ void Rasterizer::UpdateDepthStencilState() const {
         dynamic_state.SetDepthCompareOp(LiverpoolToVK::CompareOp(regs.depth_control.depth_func));
     }
 
-    const auto depth_bounds_test_enabled = regs.depth_control.depth_bounds_enable;
+    // A draw without a depth target of its own made in a pass that has one tests nothing
+    // against it (PipelineForOpenPass).
+    const bool own_depth = !in_open_pass || db_desc.first;
+    const auto depth_bounds_test_enabled = regs.depth_control.depth_bounds_enable && own_depth;
     dynamic_state.SetDepthBoundsTestEnabled(depth_bounds_test_enabled);
     if (depth_bounds_test_enabled) {
         dynamic_state.SetDepthBounds(regs.depth_bounds_min, regs.depth_bounds_max);

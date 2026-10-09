@@ -39,4 +39,8 @@ bool WriteObject(u64 key, const float* mono, u32 count, float x, float y, float 
 /// Called once per block of the 3D port: objects silent for a while give their voice back.
 void ObjectsTick();
 
+/// Called often by whoever writes to the voices: when PHASE has stopped asking for sound (the
+/// audio session was taken down under it), it is started again.
+void Watch();
+
 } // namespace Libraries::SpatialAudio
