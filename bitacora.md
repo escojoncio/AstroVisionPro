@@ -5,6 +5,16 @@ Base: shadPS4 ARM64 (`shadps4-arm64-main/`) + FEXCore (x86-64 → ARM64) + Molte
 App visionOS en `visionos/` (SwiftUI + Compositor Services + ARKit + GameController).
 JIT: arena RWX preparada por StikDebug (protocolo `brk #0xf00d` + universal.js); la app hace detach al terminar.
 
+## Build b1f8e15 (run 37963451616): OK, KK recompilado con el censo; `visionos-latest/AstroQuest.ipa` (sin probar) — censo de encoders de KosmicKrisp
+- `visionos/patches/kosmickrisp-visionos.patch` (regenerado sobre Mesa `b628375`, se aplica limpio):
+  - `kk_cmd_buffer.h`: `cs_get_compute` pasa a macro → `cs_get_compute_at(cmd, __FILE__ ":" __LINE__)`; declara `kk_census`, `kk_census_note(site, cut)`, `kk_census_note_pass`.
+  - `kk_cmd_buffer.c`: tabla de hasta 48 sitios con `simple_mtx`; `KK_CENSUS=1` → cada 5 s por stderr `KK_CENSUS: a second, R render encoders for P Vulkan render passes, C compute encoders; where render encoders were cut and compute encoders made: <fichero:línea> X cut Y compute; …`. Notas: `cs_get_compute_at` (corte si había render abierto; compute nuevo), `cs_start_render` (encoder de render), `kk_CmdPipelineBarrier2` (corte por barrera: «multisampled pass» / «attachment written, then read»).
+  - `kk_cmd_draw.c`: `kk_CmdBeginRendering` cuenta la pasada de Vulkan (antes de `cs_start_render`); `kk_flush_render_pass` anota el corte por cambio de mapa de colores o de posiciones de muestras.
+- App: `KK_CENSUS=1` con «Diagnóstico de pasadas»; `antialias` por defecto 0 y siempre se pasa `SHADPS4_RESOLVE_AA=0|1`; pie de Imagen avisa de que se aplica al abrir el juego.
+- `game_clock.cpp`: `perf_catch_up_ns` (ciclos → ns con `GpuFrequency`); «caught up» = máximo de ambos relojes.
+- Test de 7c2bd018 (log 18:43, solo nave, `SHADPS4_RESOLVE_AA=0`): 0 pasadas `blit_helper.cpp:371`, GPU ~15.3 ms/frame a 45 fps frente a 14.7–17 con suavizado → diferencia dentro del ruido (≤0.5 ms); sin diferencia visible.
+- Qué mirar en el log (en el mundo): `KK_CENSUS` (R−P = encoders ocultos; sitios con más cortes: `kk_cmd_copy.c` = copias, `kk_cmd_draw.c:2131/2287` = teselación de RectList/QuadList y GS, `kk_query_pool.c` = consultas/timestamps, barreras). Decide el siguiente arreglo.
+
 ## Test de c4d958d (log 2026-10-09 18:36; gpu_clock_scale=auto)
 - **Reloj automático funciona**: sombras durante toda la partida (confirmado por el usuario). `GPU_CLOCK_AUTO`: re-sincronización una vez por frame (113–226 por 5 s = fps×5), 0 «for lack of one», sin cuelgues. Nave: factor 1.00 (el juego mide 1–2.5 ms, por debajo del objetivo). Mundo: factor 0.27–0.67, medida media 3.9–4.3 ms ≈ objetivo 4.17; un pico de 11.4 ms (carga) absorbido por el tope de 4× sin hundir el factor.
 - «0.0 ms caught up»: el juego solo lee el contador de rendimiento (P), y `catch_up_ns` solo cuenta `clock64` → cosmético; contar el de `perf_counter` (convertido a ms) en la próxima build.
