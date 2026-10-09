@@ -6,6 +6,14 @@ App visionOS en `visionos/` (SwiftUI + Compositor Services + ARKit + GameControl
 JIT: arena RWX preparada por StikDebug (protocolo `brk #0xf00d` + universal.js); la app hace detach al terminar.
 
 ## Build e7d85d8 (run 37855488586): OK, KK recompilado con el parche nuevo (kk_shader.c, kk_cmd_draw.c sin errores); `visionos-latest/AstroQuest.ipa` (sin probar)
+## Commit siguiente (`[build]`): idioma del juego, pasadas solapadas (experimental), memoria del driver
+- Idiomas: `visionos/App/Core/GameLanguages.swift` (28 etiquetas de `pc-vr/launch.ps1`; códigos de archivo posibles por idioma; `codesInFiles` lee los sufijos `_lang_<código>` de `data/multi_platformer/text/gfx` — el log de 01:24 muestra `…_lang_us.jxm`); `AppModel.gameLanguageCodes` (al cambiar `gamePath`); ajuste `game_language` (system | etiqueta) → `SHADPS4_CONSOLE_LANGUAGE` (lo lee `emulator.cpp`, `Common::ConsoleLanguageFromTag`); `GameLanguagePicker` (menú; «En tu copia» primero) en Ajustes y junto a Jugar; log `Game language: <tag>; language files in the game: …`. Copia asiática CUSA12307: ja/ko/zh/th; la del usuario CUSA12392 (EU).
+- FXAA: quitado el interruptor y la lectura de `edge_smoothing` (el código de `EdgeSmoother` queda sin uso).
+- Parche KK, `KK_LIGHT_BARRIERS=1` (ajuste `light_barriers`, «Pasadas solapadas (experimental)», por defecto 0): `end_encoder` de un encoder de render pone `barrierAfterStages:ALL beforeQueueStages:ALL−(VERTEX|OBJECTS|MESH)`; `kk_note_dependency_outside_render` (desde `kk_CmdPipelineBarrier2` y `kk_CmdWaitEvents2`, siempre) marca `cmd->vertex_wait_pending` si algún `dstStageMask` llega a etapas de vértice (incl. ALL_COMMANDS/ALL_GRAPHICS); `kk_BeginCommandBuffer` lo marca; `cs_start_render` pone `barrierAfterQueueStages:ALL beforeStages:VERTEX|OBJECTS|MESH` si está marcado. Log `KK_LIGHT_BARRIERS: N render encoders, M waited…` (cada 4096).
+- Parche KK, memoria: `kk_bo.tally_kind` y `kk_bo_note_kind` (Vulkan memory en `kk_AllocateMemory`, descriptor pools en `kk_CreateDescriptorPool`, resto = del driver; importados no cuentan); stderr `KK_MEMORY: … in all; Vulkan memory …, descriptor pools …, the driver's own …` cada 64 MB de cambio.
+- shadPS4: `Vulkan::VmaBlocksForReports()` (vk_instance.cpp, `vmaCalculateStatistics`: bytes de bloques vs asignados) en `PACE`.
+- Revisión adversarial aplicada (barreras dentro del render también marcan, etapas de consumidor, tally sin avisos falsos, valor de idioma desconocido en el menú, códigos cacheados).
+
 ## Build 0f6bcfc probada (log 2026-10-09 01:24; 1440 fija, FXAA, GS en la pasada): sin cierre
 - `KK_GS_IN_PASS`: todos los draws con GS dentro de la pasada (`N in the pass, 0 split it`, >70 k); sin fallos visuales reportados.
 - Mundo a 100 Hz: 28.8 fps de mediana (test 2: 26.6; test 1 a 816: 29.4), GPU 99 %; pasada principal 18.7 ms/frame (test 2: 21.3). Regresión: coste por draw con GS 0.12 ms (antes 0.25).

@@ -50,11 +50,18 @@ index dc580ed0ea7..adb6aae468e 100644
  
     return device;
 diff --git a/src/kosmickrisp/vulkan/kk_bo.c b/src/kosmickrisp/vulkan/kk_bo.c
-index 5562b61f1ec..0b42b105e1e 100644
+index 5562b61f1ec..aa571ab3b5f 100644
 --- a/src/kosmickrisp/vulkan/kk_bo.c
 +++ b/src/kosmickrisp/vulkan/kk_bo.c
-@@ -15,7 +15,18 @@
+@@ -11,13 +11,69 @@
  
+ #include "kosmickrisp/bridge/mtl_bridge.h"
+ 
++#include "util/u_atomic.h"
+ #include "util/u_memory.h"
+ 
++#include <stdio.h>
++
  #if DETECT_OS_APPLE
  #include <mach/mach_init.h>
 +#include <TargetConditionals.h>
@@ -71,7 +78,234 @@ index 5562b61f1ec..0b42b105e1e 100644
 +#endif
  #endif /* DETECT_OS_APPLE */
  
++static int64_t tally_bytes[KK_BO_KIND_COUNT];
++static int64_t tally_count[KK_BO_KIND_COUNT];
++static int64_t tally_reported;
++
++static void
++kk_bo_tally(uint8_t kind, int64_t bytes, int64_t count)
++{
++   if (kind == 0 || kind >= KK_BO_KIND_COUNT)
++      return;
++   p_atomic_add(&tally_bytes[kind], bytes);
++   p_atomic_add(&tally_count[kind], count);
++   int64_t total = 0;
++   for (unsigned k = 1; k < KK_BO_KIND_COUNT; ++k)
++      total += p_atomic_read(&tally_bytes[k]);
++   int64_t reported = p_atomic_read(&tally_reported);
++   if (total - reported >= (64ll << 20) || reported - total >= (64ll << 20)) {
++      p_atomic_set(&tally_reported, total);
++      fprintf(stderr,
++              "KK_MEMORY: %lld MB in all; Vulkan memory %lld MB in %lld, descriptor "
++              "pools %lld MB in %lld, the driver's own %lld MB in %lld\n",
++              (long long)(total >> 20),
++              (long long)(p_atomic_read(&tally_bytes[KK_BO_KIND_VULKAN_MEMORY]) >> 20),
++              (long long)p_atomic_read(&tally_count[KK_BO_KIND_VULKAN_MEMORY]),
++              (long long)(p_atomic_read(&tally_bytes[KK_BO_KIND_DESCRIPTOR_POOL]) >> 20),
++              (long long)p_atomic_read(&tally_count[KK_BO_KIND_DESCRIPTOR_POOL]),
++              (long long)(p_atomic_read(&tally_bytes[KK_BO_KIND_OTHER]) >> 20),
++              (long long)p_atomic_read(&tally_count[KK_BO_KIND_OTHER]));
++   }
++}
++
++void
++kk_bo_note_kind(struct kk_bo *bo, enum kk_bo_kind kind)
++{
++   if (bo->tally_kind) {
++      p_atomic_add(&tally_bytes[bo->tally_kind], -(int64_t)bo->size_B);
++      p_atomic_add(&tally_count[bo->tally_kind], -1);
++   }
++   bo->tally_kind = kind;
++   p_atomic_add(&tally_bytes[kind], (int64_t)bo->size_B);
++   p_atomic_add(&tally_count[kind], 1);
++}
++
  VkResult
+ kk_alloc_bo(struct kk_device *dev, struct vk_object_base *log_obj,
+             uint64_t size_B, uint64_t align_B, struct kk_bo **bo_out)
+@@ -64,6 +120,8 @@ kk_alloc_bo(struct kk_device *dev, struct vk_object_base *log_obj,
+    bo->map = map;
+    bo->gpu = mtl_buffer_get_gpu_address(map);
+    bo->cpu = mtl_get_contents(map);
++   bo->tally_kind = KK_BO_KIND_OTHER;
++   kk_bo_tally(bo->tally_kind, (int64_t)size_B, 1);
+ 
+    kk_device_add_heap_to_residency_set(dev, handle);
+ 
+@@ -81,6 +139,8 @@ fail_heap:
+ void
+ kk_destroy_bo(struct kk_device *dev, struct kk_bo *bo)
+ {
++   kk_bo_tally(bo->tally_kind, -(int64_t)bo->size_B, -1);
++
+    /* We may only have a mapped buffer, for example if the memory was imported
+     * from a host pointer */
+    if (bo->mtl_handle)
+diff --git a/src/kosmickrisp/vulkan/kk_bo.h b/src/kosmickrisp/vulkan/kk_bo.h
+index d1590b99140..ce5ce14c015 100644
+--- a/src/kosmickrisp/vulkan/kk_bo.h
++++ b/src/kosmickrisp/vulkan/kk_bo.h
+@@ -23,8 +23,19 @@ struct kk_bo {
+    uint64_t size_B;
+    uint64_t gpu; // GPU address
+    void *cpu;    // CPU address
++   /* What it is for in the memory tally (kk_bo_note_kind); 0: not counted */
++   uint8_t tally_kind;
+ };
+ 
++enum kk_bo_kind {
++   KK_BO_KIND_OTHER = 1,
++   KK_BO_KIND_VULKAN_MEMORY = 2,
++   KK_BO_KIND_DESCRIPTOR_POOL = 3,
++   KK_BO_KIND_COUNT = 4,
++};
++
++void kk_bo_note_kind(struct kk_bo *bo, enum kk_bo_kind kind);
++
+ struct kk_ptr {
+    void *cpu;
+    uint64_t gpu;
+diff --git a/src/kosmickrisp/vulkan/kk_cmd_buffer.c b/src/kosmickrisp/vulkan/kk_cmd_buffer.c
+index 22f4bf7f3f1..7c0d62ed013 100644
+--- a/src/kosmickrisp/vulkan/kk_cmd_buffer.c
++++ b/src/kosmickrisp/vulkan/kk_cmd_buffer.c
+@@ -7,6 +7,11 @@
+ 
+ #include "kk_cmd_buffer.h"
+ 
++#include <stdio.h>
++#include <stdlib.h>
++
++#include "util/u_atomic.h"
++
+ #include "kk_buffer.h"
+ #include "kk_cmd_pool.h"
+ #include "kk_descriptor_set_layout.h"
+@@ -212,6 +217,7 @@ kk_BeginCommandBuffer(VkCommandBuffer commandBuffer,
+    }
+ 
+    vk_command_buffer_begin(&cmd->vk, pBeginInfo);
++   cmd->vertex_wait_pending = true;
+    cmd->one_time_submit =
+       pBeginInfo->flags & VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+ 
+@@ -270,6 +276,21 @@ cs_start_render(struct kk_cmd_buffer *cmd)
+    cmd->metal.render = mtl_new_render_command_encoder_with_descriptor(
+       cmd->metal.cmd_buf, state->render_pass_descriptor);
+ 
++   if (kk_light_barriers()) {
++      static uint32_t passes = 0u, waited = 0u;
++      if (cmd->vertex_wait_pending) {
++         mtl_barrier_after_queue_stages(
++            cmd->metal.render, MTL_STAGE_ALL,
++            MTL_STAGE_VERTEX | MTL_STAGE_OBJECTS | MTL_STAGE_MESH);
++         cmd->vertex_wait_pending = false;
++         p_atomic_inc(&waited);
++      }
++      if ((p_atomic_inc_return(&passes) & 4095u) == 1u)
++         fprintf(stderr, "KK_LIGHT_BARRIERS: %u render encoders, %u waited for "
++                         "earlier work before their vertices\n",
++                 p_atomic_read(&passes), p_atomic_read(&waited));
++   }
++
+    kk_encoder_update_debug(cmd, cmd->metal.render);
+    /* Starting a new render pass means we already flushed and no barrier is
+     * needed. */
+@@ -330,11 +351,57 @@ cs_get_compute(struct kk_cmd_buffer *cmd)
+    return cmd->metal.compute;
+ }
+ 
++bool
++kk_light_barriers(void)
++{
++   static int enabled = -1;
++   if (enabled < 0) {
++      const char *env = getenv("KK_LIGHT_BARRIERS");
++      enabled = env && env[0] == '1';
++   }
++   return enabled;
++}
++
++void
++kk_note_dependency_outside_render(struct kk_cmd_buffer *cmd,
++                                  const VkDependencyInfo *dep)
++{
++   const VkPipelineStageFlags2 vertex_stages =
++      VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT |
++      VK_PIPELINE_STAGE_2_VERTEX_INPUT_BIT |
++      VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT |
++      VK_PIPELINE_STAGE_2_TESSELLATION_CONTROL_SHADER_BIT |
++      VK_PIPELINE_STAGE_2_TESSELLATION_EVALUATION_SHADER_BIT |
++      VK_PIPELINE_STAGE_2_GEOMETRY_SHADER_BIT |
++      VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT |
++      VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT |
++      VK_PIPELINE_STAGE_2_INDEX_INPUT_BIT |
++      VK_PIPELINE_STAGE_2_VERTEX_ATTRIBUTE_INPUT_BIT |
++      VK_PIPELINE_STAGE_2_PRE_RASTERIZATION_SHADERS_BIT |
++      VK_PIPELINE_STAGE_2_CONDITIONAL_RENDERING_BIT_EXT;
++
++   VkPipelineStageFlags2 dst = 0;
++   for (uint32_t i = 0; i < dep->memoryBarrierCount; ++i)
++      dst |= dep->pMemoryBarriers[i].dstStageMask;
++   for (uint32_t i = 0; i < dep->bufferMemoryBarrierCount; ++i)
++      dst |= dep->pBufferMemoryBarriers[i].dstStageMask;
++   for (uint32_t i = 0; i < dep->imageMemoryBarrierCount; ++i)
++      dst |= dep->pImageMemoryBarriers[i].dstStageMask;
++
++   if (dst & vertex_stages)
++      cmd->vertex_wait_pending = true;
++}
++
+ static void
+ end_encoder(struct kk_cmd_buffer *cmd, mtl_command_encoder *encoder)
+ {
+-   /* TODO_KOSMICKRISP This is probably overkill */
+-   mtl_barrier_after_stages(encoder, MTL_STAGE_ALL, MTL_STAGE_ALL);
++   /* With KK_LIGHT_BARRIERS a render encoder lets the vertex stages of what follows start
++    * before it finishes; whatever they must wait for is a Vulkan dependency that reaches
++    * the vertex stages (kk_note_dependency_outside_render). */
++   enum mtl_stages before = MTL_STAGE_ALL;
++   if (kk_light_barriers() && encoder == cmd->metal.render)
++      before &= ~(MTL_STAGE_VERTEX | MTL_STAGE_OBJECTS | MTL_STAGE_MESH);
++   mtl_barrier_after_stages(encoder, MTL_STAGE_ALL, before);
+    mtl_end_encoding(encoder);
+    mtl_release(encoder);
+ 
+@@ -464,6 +531,8 @@ kk_CmdPipelineBarrier2(VkCommandBuffer commandBuffer,
+    /* TODO_KOSMICKRISP Lighten barriers according to the actual requested
+     * barrier. To take advantage of this we need to remove the chaining of
+     * encoders. */
++   kk_note_dependency_outside_render(cmd, pDependencyInfo);
++
+    if (cmd->metal.render) {
+       /* Multisample attachments require render pass split always. Then based on
+        * the barrier and if we are using depth/stencil or not, we may have to
+diff --git a/src/kosmickrisp/vulkan/kk_cmd_buffer.h b/src/kosmickrisp/vulkan/kk_cmd_buffer.h
+index dcd0983c202..d88755995f6 100644
+--- a/src/kosmickrisp/vulkan/kk_cmd_buffer.h
++++ b/src/kosmickrisp/vulkan/kk_cmd_buffer.h
+@@ -250,6 +250,9 @@ struct kk_cmd_buffer {
+    struct util_dynarray ts_stage_map;
+    /* Deferred writes due to being mid render encoder */
+    struct util_dynarray post_render_writes;
++   /* KK_LIGHT_BARRIERS: a dependency recorded outside a render pass reaches the vertex
++    * stages, so the next render encoder waits for earlier work before its vertices. */
++   bool vertex_wait_pending;
+ 
+    void *drawable;
+    mtl_argument_table *argument_table;
+@@ -316,6 +319,11 @@ void cs_start_render(struct kk_cmd_buffer *cmd);
+ mtl_render_encoder *cs_get_render(struct kk_cmd_buffer *cmd);
+ mtl_compute_encoder *cs_get_compute(struct kk_cmd_buffer *cmd);
+ void cs_end(struct kk_cmd_buffer *cmd);
++
++bool kk_light_barriers(void);
++
++void kk_note_dependency_outside_render(struct kk_cmd_buffer *cmd,
++                                       const VkDependencyInfo *dep);
+ void kk_cmd_bind_root_to_argument_table(struct kk_cmd_buffer *cmd,
+                                         uint64_t addr);
+ 
 diff --git a/src/kosmickrisp/vulkan/kk_cmd_draw.c b/src/kosmickrisp/vulkan/kk_cmd_draw.c
 index 24f05def80d..11951011ff2 100644
 --- a/src/kosmickrisp/vulkan/kk_cmd_draw.c
@@ -151,6 +385,42 @@ index 24f05def80d..11951011ff2 100644
  
     struct kk_draw_data rast = {
        .primitive_type = mesa_prim_to_mtl_primitive_type(gs->info.gs.mode),
+diff --git a/src/kosmickrisp/vulkan/kk_descriptor_set.c b/src/kosmickrisp/vulkan/kk_descriptor_set.c
+index 5f56abc877d..2381be7ffba 100644
+--- a/src/kosmickrisp/vulkan/kk_descriptor_set.c
++++ b/src/kosmickrisp/vulkan/kk_descriptor_set.c
+@@ -526,6 +526,7 @@ kk_CreateDescriptorPool(VkDevice _device,
+          kk_destroy_descriptor_pool(dev, pAllocator, pool);
+          return result;
+       }
++      kk_bo_note_kind(pool->bo, KK_BO_KIND_DESCRIPTOR_POOL);
+ 
+       /* The BO may be larger thanks to GPU page alignment.  We may as well
+        * make that extra space available to the client.
+diff --git a/src/kosmickrisp/vulkan/kk_device_memory.c b/src/kosmickrisp/vulkan/kk_device_memory.c
+index e658bd7d39c..dab68028e3d 100644
+--- a/src/kosmickrisp/vulkan/kk_device_memory.c
++++ b/src/kosmickrisp/vulkan/kk_device_memory.c
+@@ -145,6 +145,7 @@ kk_AllocateMemory(VkDevice device, const VkMemoryAllocateInfo *pAllocateInfo,
+          kk_alloc_bo(dev, &dev->vk.base, aligned_size, alignment, &mem->bo);
+       if (result != VK_SUCCESS)
+          goto fail_alloc;
++      kk_bo_note_kind(mem->bo, KK_BO_KIND_VULKAN_MEMORY);
+    }
+ 
+    *pMem = kk_device_memory_to_handle(mem);
+diff --git a/src/kosmickrisp/vulkan/kk_event.c b/src/kosmickrisp/vulkan/kk_event.c
+index 3e6db313375..232d4f3c471 100644
+--- a/src/kosmickrisp/vulkan/kk_event.c
++++ b/src/kosmickrisp/vulkan/kk_event.c
+@@ -113,4 +113,7 @@ kk_CmdWaitEvents2(VkCommandBuffer commandBuffer, uint32_t eventCount,
+                   const VkDependencyInfo *pDependencyInfos)
+ {
+    /* We do nothing, event should already be set by the time we are here. */
++   VK_FROM_HANDLE(kk_cmd_buffer, cmd, commandBuffer);
++   for (uint32_t i = 0; i < eventCount; ++i)
++      kk_note_dependency_outside_render(cmd, &pDependencyInfos[i]);
+ }
 diff --git a/src/kosmickrisp/vulkan/kk_image.c b/src/kosmickrisp/vulkan/kk_image.c
 index 5cbf34b9804..aea51d4c848 100644
 --- a/src/kosmickrisp/vulkan/kk_image.c
