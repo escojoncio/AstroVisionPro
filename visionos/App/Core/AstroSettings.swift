@@ -25,7 +25,7 @@ struct AstroSettings {
     var fovOf = "headset"
     /// Sharpening of the picture on its way to the headset, 0 to 1.
     var sharpen = "0.3"
-    /// The most samples a pixel gets; empty: as the console draws it (4).
+    /// No longer used: the game is drawn with one sample a pixel (SHADPS4_MAX_MSAA=1).
     var msaa = ""
     var antialias = true
     /// The hands holding the controller place it in the game.
@@ -73,8 +73,8 @@ struct AstroSettings {
     /// GPU diagnostics in the log: every few seconds what a frame is made of, and one frame's
     /// render passes with the code that ended each (SHADPS4_FRAME_STATS=2).
     var passDiagnostics = true
-    /// The edges of the game's picture smoothed (FXAA) before it is shown.
-    var edgeSmoothing = false
+    /// The game's picture antialiased (SMAA 1x, Render/EdgeSmoother.swift) before it is shown.
+    var edgeSmoothing = true
     /// The language the game is played in: "system" (the headset's) or a language tag
     /// (GameLanguages.swift).
     var gameLanguage = "system"
@@ -165,6 +165,7 @@ struct AstroSettings {
         case "gs_in_pass": gsInPass = flag
         case "light_barriers": lightBarriers = flag
         case "merge_passes": mergePasses = flag
+        case "smaa": edgeSmoothing = flag
         case "spatial_audio": spatialAudio = flag
         case "pass_diagnostics": passDiagnostics = flag
         case "game_language": gameLanguage = value
@@ -196,9 +197,8 @@ struct AstroSettings {
             }
         }
         env.append("SHADPS4_VR_SHARPEN=\(sharpen)")
-        if !msaa.isEmpty {
-            env.append("SHADPS4_MAX_MSAA=\(msaa)")
-        }
+        // No MSAA: on the headset 2 or 4 samples cost and smooth nothing that shows.
+        env.append("SHADPS4_MAX_MSAA=1")
         if !antialias {
             env.append("SHADPS4_RESOLVE_AA=0")
         }
@@ -273,8 +273,6 @@ struct AstroSettings {
     # Nitidez de la imagen camino del visor, de 0 a 1.
     sharpen=0.3
 
-    # Muestras por píxel (1, 2, 4, 8). Sin poner: como la consola (4).
-    #msaa=4
     #antialias=1
 
     # 0: las manos no colocan el mando en el juego.
@@ -315,6 +313,8 @@ struct AstroSettings {
     light_barriers=0
     # 1: un dibujo que usa menos destinos que la pasada abierta se hace en ella en vez de cortarla.
     merge_passes=1
+    # 1: antialiasing SMAA de la imagen del juego (bordes suaves sin emborronar las texturas).
+    smaa=1
     # 1: audio 3D como el de PlayStation VR (cada sonido y altavoz con el HRTF de Apple, PHASE).
     spatial_audio=1
 

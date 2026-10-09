@@ -569,55 +569,119 @@ final class PlayStationController: @unchecked Sendable {
 /// One of the controller's rumble motors, as a CoreHaptics engine playing one endless pattern
 /// whose strength is changed (what SDL does for a PlayStation controller on Apple systems).
 final class RumbleMotor: @unchecked Sendable {
+    private let haptics: GCDeviceHaptics
+    private let locality: GCHapticsLocality
     private var engine: CHHapticEngine?
     private var player: CHHapticAdvancedPatternPlayer?
     private var active = false
+    /// The last strength asked for, played again on an engine made anew.
+    private var wanted: Float = 0
+    /// When an engine may be made again after the last one failed (ProcessInfo uptime).
+    private var retryAfter: TimeInterval = 0
     private let lock = NSLock()
+    /// Failures and engines made anew, a few for the log.
+    private var failures: UInt = 0
+    private var rebuilds: UInt = 0
 
     init?(haptics: GCDeviceHaptics, locality: GCHapticsLocality) {
-        guard let engine = haptics.createEngine(withLocality: locality) else {
-            LogFiles.log("Controller rumble: no haptic engine for \(locality.rawValue)")
+        self.haptics = haptics
+        self.locality = locality
+        guard let engine = makeEngine() else {
             return nil
         }
         self.engine = engine
-        engine.stoppedHandler = { [weak self] _ in
-            guard let self else { return }
-            self.lock.lock()
-            self.player = nil
-            self.engine = nil
-            self.active = false
-            self.lock.unlock()
+    }
+
+    /// An engine for the motor, started; nil when the system gives none. Its connection to the
+    /// haptics server can go (the audio session changing under it is one way): then a new one
+    /// is made (setIntensity).
+    private func makeEngine(log: Bool = true) -> CHHapticEngine? {
+        guard let engine = haptics.createEngine(withLocality: locality) else {
+            if log {
+                LogFiles.log("Controller rumble: no haptic engine for \(locality.rawValue)")
+            }
+            return nil
         }
-        engine.resetHandler = { [weak self] in
+        engine.stoppedHandler = { [weak self, weak engine] reason in
             guard let self else { return }
             self.lock.lock()
-            self.player = nil
-            self.active = false
-            try? self.engine?.start()
+            if self.engine === engine {
+                self.player = nil
+                self.engine = nil
+                self.active = false
+            }
+            self.lock.unlock()
+            LogFiles.log("Controller rumble: the haptic engine stopped (reason \(reason.rawValue))")
+        }
+        engine.resetHandler = { [weak self, weak engine] in
+            guard let self else { return }
+            self.lock.lock()
+            if self.engine === engine {
+                self.player = nil
+                self.active = false
+                try? engine?.start()
+            }
             self.lock.unlock()
         }
         do {
             try engine.start()
         } catch {
-            LogFiles.log("Controller rumble: the haptic engine for \(locality.rawValue) did not start: \(error.localizedDescription)")
+            if log {
+                LogFiles.log("Controller rumble: the haptic engine for \(locality.rawValue) did not start: \(error.localizedDescription)")
+            }
             return nil
         }
+        return engine
     }
-
-    /// Failures while playing, a few for the log.
-    private var failures: UInt = 0
 
     func setIntensity(_ intensity: Float) {
         lock.lock()
-        defer { lock.unlock() }
-        guard let engine else { return }
+        wanted = intensity
+        if apply() {
+            lock.unlock()
+            return
+        }
+        // Once more with a new engine, unless one failed just now.
+        let now = ProcessInfo.processInfo.systemUptime
+        guard now >= retryAfter else {
+            lock.unlock()
+            return
+        }
+        retryAfter = now + 0.5
+        try? player?.cancel()
+        player = nil
+        let old = engine
+        engine = nil
+        active = false
+        rebuilds &+= 1
+        let rebuild = rebuilds
+        lock.unlock()
+        // Made outside the lock: the old engine's handlers take it on CoreHaptics' queue.
+        old?.stop(completionHandler: nil)
+        let made = makeEngine(log: rebuild <= 5)
+        lock.lock()
+        if engine == nil, retryAfter != .greatestFiniteMagnitude {
+            engine = made
+        } else {
+            made?.stop(completionHandler: nil)
+        }
+        let worked = engine != nil && apply()
+        lock.unlock()
+        if rebuild <= 5 {
+            LogFiles.log("Controller rumble: haptic engine made anew: \(worked ? "plays" : "still not")")
+        }
+    }
+
+    /// Plays `wanted` on the engine there is; false when it failed (or there is none).
+    private func apply() -> Bool {
+        guard let engine else { return wanted <= 0 }
         do {
-            if intensity <= 0 {
+            if wanted <= 0 {
                 if active {
                     try player?.stop(atTime: 0)
                 }
                 active = false
-                return
+                return true
             }
             if player == nil {
                 let event = CHHapticEvent(
@@ -630,18 +694,21 @@ final class RumbleMotor: @unchecked Sendable {
                 active = false
             }
             try player?.sendParameters(
-                [CHHapticDynamicParameter(parameterID: .hapticIntensityControl, value: intensity, relativeTime: 0)],
+                [CHHapticDynamicParameter(parameterID: .hapticIntensityControl, value: wanted, relativeTime: 0)],
                 atTime: 0)
             if !active {
                 try player?.start(atTime: 0)
                 active = true
             }
+            return true
         } catch {
             active = false
+            player = nil
             failures &+= 1
             if failures <= 5 {
                 LogFiles.log("Controller rumble: could not play (\(error.localizedDescription))")
             }
+            return false
         }
     }
 
@@ -653,5 +720,6 @@ final class RumbleMotor: @unchecked Sendable {
         engine?.stop(completionHandler: nil)
         engine = nil
         active = false
+        retryAfter = .greatestFiniteMagnitude
     }
 }

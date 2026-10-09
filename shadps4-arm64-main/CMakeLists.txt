@@ -1407,6 +1407,7 @@ if (SHADPS4_VISIONOS)
         src/core/libraries/audio/spatial_audio.h
         src/core/libraries/audio/spatial_audio_visionos.mm
         src/core/libraries/audio/phase_audio_out.cpp
+        src/core/libraries/audio/phase_audio_in.cpp
     )
     target_include_directories(shadps4 PRIVATE src/platform/visionos)
     set_source_files_properties(src/platform/visionos/astro_core.mm
