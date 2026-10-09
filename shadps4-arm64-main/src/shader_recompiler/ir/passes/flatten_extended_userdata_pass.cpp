@@ -563,9 +563,11 @@ void InterpretWalker(const u32* code, const u32* user_data, u32* flat_dst) {
             std::memcpy(reinterpret_cast<u8*>(x[1] + x[5]), &x[3], sizeof(u32));
         } else if ((insn & 0xffc003ffu) == 0xb9000023u) {
             std::memcpy(reinterpret_cast<u8*>(x[1]) + ((insn >> 10) & 0xfff) * sizeof(u32), &x[3], sizeof(u32));
-        } else if ((insn & 0xffe00000u) == 0xd2800000u) { // movz xN, #imm16
+        } else if ((insn & 0xffe00000u) == 0xd2800000u && (insn & 31) < std::size(x)) {
+            // movz xN, #imm16 (the generator only uses x4 and x5)
             x[insn & 31] = (insn >> 5) & 0xffff;
-        } else if ((insn & 0xff800000u) == 0xf2800000u) { // movk xN, #imm16, lsl #(16 * hw)
+        } else if ((insn & 0xff800000u) == 0xf2800000u && (insn & 31) < std::size(x)) {
+            // movk xN, #imm16, lsl #(16 * hw)
             const u32 shift = ((insn >> 21) & 3) * 16;
             u64& r = x[insn & 31];
             r = (r & ~(0xffffULL << shift)) | (static_cast<u64>((insn >> 5) & 0xffff) << shift);

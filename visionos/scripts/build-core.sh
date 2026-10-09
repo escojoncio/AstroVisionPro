@@ -81,6 +81,13 @@ while IFS= read -r LIB; do
   case "$LIB" in
     */ffmpeg-*/lib/*) continue ;;
   esac
+  # VPEngine: the app links vpconvert's Zydis; the emulator's (another commit, same symbols,
+  # possibly another layout) stays out so only one exists. On ARM64 the emulator never calls it.
+  if [[ "$GUEST_CPU" == vpengine ]]; then
+    case "$(basename "$LIB")" in
+      libZydis.a|libZycore.a) continue ;;
+    esac
+  fi
   LIBS+=("$LIB")
 done < <(find "$BUILD" -name '*.a' -not -path '*/CMakeFiles/*' | sort)
 if [[ "$GUEST_CPU" != vpengine ]]; then
