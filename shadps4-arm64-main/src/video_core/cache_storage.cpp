@@ -152,8 +152,20 @@ bool WriteVector(const BlobType type, std::filesystem::path&& path_, std::vector
                 }
             } else {
                 using namespace Common::FS;
-                const auto file = IOFile{path, FileAccessMode::Create};
-                file.Write(v);
+                // Written aside and renamed: a blob cut short when the app is closed is never
+                // read at the next start.
+                auto partial = path;
+                partial += ".part";
+                {
+                    const auto file = IOFile{partial, FileAccessMode::Create};
+                    file.Write(v);
+                }
+                std::error_code ec;
+                std::filesystem::rename(partial, path, ec);
+                if (ec) {
+                    LOG_ERROR(Render, "Failed to keep {}: {}", path.string(), ec.message());
+                    std::filesystem::remove(partial, ec);
+                }
             }
         }};
         std::scoped_lock lock{m_request};
@@ -257,6 +269,40 @@ void DataBase::ForEachBlob(BlobType type, const std::function<void(std::vector<u
             }
         }
     }
+}
+
+bool DataBase::Clear() {
+    if (!opened || EmulatorSettings.IsPipelineCacheArchived()) {
+        return false;
+    }
+    std::error_code ec;
+    for (const auto& entry : std::filesystem::directory_iterator{cache_path, ec}) {
+        if (entry.is_regular_file(ec)) {
+            std::filesystem::remove(entry.path(), ec);
+        }
+    }
+    return true;
+}
+
+static constexpr const char* PreloadingMark = "preloading.mark";
+
+bool DataBase::BeginPreloading() {
+    if (!opened || EmulatorSettings.IsPipelineCacheArchived()) {
+        return false;
+    }
+    std::error_code ec;
+    const auto mark = cache_path / PreloadingMark;
+    const bool was_there = std::filesystem::exists(mark, ec);
+    const auto file = Common::FS::IOFile{mark, Common::FS::FileAccessMode::Create};
+    return was_there;
+}
+
+void DataBase::EndPreloading() {
+    if (EmulatorSettings.IsPipelineCacheArchived() || cache_path.empty()) {
+        return;
+    }
+    std::error_code ec;
+    std::filesystem::remove(cache_path / PreloadingMark, ec);
 }
 
 void DataBase::FinishPreload() {

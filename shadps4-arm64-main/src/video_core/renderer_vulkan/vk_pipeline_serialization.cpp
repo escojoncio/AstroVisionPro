@@ -1,7 +1,10 @@
 // SPDX-FileCopyrightText: Copyright 2025-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <chrono>
+#include <cstddef>
 #include <cstdio>
+#include <cstring>
 
 #include "common/serdes.h"
 #include "core/emulator_settings.h"
@@ -18,8 +21,20 @@ namespace Serialization {
 /* You should increment versions below once corresponding serialization scheme is changed. */
 // Recompile cached shaders with the corrected geometry input ABI and invocation ID.
 static constexpr u32 ShaderBinaryVersion = 3u;
-static constexpr u32 ShaderMetaVersion = 2u;
-static constexpr u32 PipelineKeyVersion = 2u;
+// 3: Info's image and sampler lists written element by element.
+static constexpr u32 ShaderMetaVersion = 3u;
+// 3: each pipeline's buffer kinds and image binding counts kept with it.
+static constexpr u32 PipelineKeyVersion = 3u;
+/// Kept with the device's profile: what else the cached shaders depend on (how read-only
+/// buffers reach them, SHADPS4_CONSTANT_UBO). A cache made otherwise is emptied, not used.
+struct CacheTag {
+    u32 format = 1;
+    u32 uniform_buffer_max_size = 0;
+    // What is kept byte for byte: a build that changes them reads no cache of another.
+    u32 info_size = 0;
+    u32 key_size = 0;
+    u32 runtime_info_size = 0;
+};
 } // namespace Serialization
 
 namespace Vulkan {
@@ -136,12 +151,15 @@ bool ComputePipelineKey::Deserialize(Serialization::Archive& ar) {
 }
 
 void ComputePipeline::SerializationSupport::Serialize(Serialization::Archive& ar) const {
-    // Nothing here yet
-    return;
+    Serialization::Writer sdata{ar};
+    sdata.Write(buffer_is_storage);
+    sdata.Write(image_num_bindings);
 }
 
 bool ComputePipeline::SerializationSupport::Deserialize(Serialization::Archive& ar) {
-    // Nothing here yet
+    Serialization::Reader sdata{ar};
+    sdata.Read(buffer_is_storage);
+    sdata.Read(image_num_bindings);
     return true;
 }
 
@@ -199,6 +217,8 @@ void GraphicsPipeline::SerializationSupport::Serialize(Serialization::Archive& a
     sdata.Write(multisampling);
     sdata.Write(tcs);
     sdata.Write(tes);
+    sdata.Write(buffer_is_storage);
+    sdata.Write(image_num_bindings);
 }
 
 bool GraphicsPipeline::SerializationSupport::Deserialize(Serialization::Archive& ar) {
@@ -210,6 +230,8 @@ bool GraphicsPipeline::SerializationSupport::Deserialize(Serialization::Archive&
     sdata.Read(multisampling);
     sdata.Read(tcs);
     sdata.Read(tes);
+    sdata.Read(buffer_is_storage);
+    sdata.Read(image_num_bindings);
     return true;
 }
 
@@ -219,6 +241,9 @@ bool PipelineCache::LoadGraphicsPipeline(Serialization::Archive& ar) {
     GraphicsPipeline::SerializationSupport sdata{};
     sdata.Deserialize(ar);
 
+    fetch_shader.reset();
+    infos.fill(nullptr);
+    modules.fill(nullptr);
     for (int stage_idx = 0; stage_idx < MaxShaderStages; ++stage_idx) {
         const auto& hash = graphics_key.stage_hashes[stage_idx];
         if (!hash) {
@@ -239,18 +264,44 @@ bool PipelineCache::LoadGraphicsPipeline(Serialization::Archive& ar) {
         }
     }
 
-    const auto [it, is_new] = graphics_pipelines.try_emplace(graphics_key);
-    ASSERT(is_new);
-
-    it.value() = std::make_unique<GraphicsPipeline>(
-        instance, scheduler, desc_heap, profile, graphics_key, *pipeline_cache, infos,
-        runtime_infos, fetch_shader, modules, sdata, true);
+    const bool known = graphics_pipelines.contains(graphics_key) ||
+                       pending_graphics_pipelines.contains(graphics_key);
+    if (known) {
+        // The same key under two names: the first one is kept.
+    } else if (workers) {
+        // Made in the background from now on, as a draw's would be (MakeOnWorker), behind any
+        // the game asks for; a draw that asks for it first waits for it as for those.
+        auto job = std::make_shared<PendingGraphicsPipeline>();
+        job->key = graphics_key;
+        job->hash = std::hash<GraphicsPipelineKey>{}(graphics_key);
+        job->preloaded = true;
+        for (u32 stage = 0; stage < MaxShaderStages; ++stage) {
+            job->live_infos[stage] = infos[stage];
+            if (infos[stage] != nullptr) {
+                job->info_copies[stage].emplace(*infos[stage]);
+                job->copy_infos[stage] = &*job->info_copies[stage];
+            }
+        }
+        job->runtime_infos = runtime_infos;
+        job->modules = modules;
+        job->fetch_shader = fetch_shader;
+        job->sdata = std::move(sdata);
+        job->queued = std::chrono::steady_clock::now();
+        pending_graphics_pipelines.emplace(graphics_key, job);
+        MakeOnWorker(std::move(job), false);
+    } else {
+        graphics_pipelines.emplace(graphics_key, std::make_unique<GraphicsPipeline>(
+                                                     instance, scheduler, desc_heap, profile,
+                                                     graphics_key, *pipeline_cache, infos,
+                                                     runtime_infos, fetch_shader, modules, sdata,
+                                                     true));
+    }
 
     infos.fill(nullptr);
     modules.fill(nullptr);
     fetch_shader.reset();
 
-    return true;
+    return !known;
 }
 
 bool PipelineCache::LoadPipelineStage(Serialization::Archive& ar, size_t stage) {
@@ -258,8 +309,14 @@ bool PipelineCache::LoadPipelineStage(Serialization::Archive& ar, size_t stage) 
     Shader::StageSpecialization spec{};
     spec.info = &program->info;
     size_t perm_idx{};
-    if (!LoadShaderMeta(ar, program->info, fetch_shader, spec, perm_idx)) {
+    // Only the vertex shader has a fetch shader: a stage loaded after it (the geometry shader,
+    // LogicalStage order) must not take it away from the pipeline.
+    std::optional<Shader::Gcn::FetchShaderData> stage_fetch_shader{};
+    if (!LoadShaderMeta(ar, program->info, stage_fetch_shader, spec, perm_idx)) {
         return false;
+    }
+    if (stage_fetch_shader) {
+        fetch_shader = std::move(stage_fetch_shader);
     }
 
     std::vector<u32> spv{};
@@ -285,13 +342,27 @@ bool PipelineCache::LoadPipelineStage(Serialization::Archive& ar, size_t stage) 
         if (it != it_pgm.value()->modules.end()) {
             // If the permutation is already preloaded, make sure it has the same permutation index
             const auto idx = std::distance(it_pgm.value()->modules.begin(), it);
-            ASSERT_MSG(perm_idx == idx, "Permutation {} is already inserted at {}! ({}_{:x})",
-                       perm_idx, idx, program->info.stage, program->info.pgm_hash);
+            if (perm_idx != static_cast<size_t>(idx)) {
+                // Kept under two numbers (runs that did not preload all of it): this pipeline
+                // is left to be made when the game asks for it, rather than stop the start.
+                LOG_WARNING(Render, "Permutation {} is already inserted at {} ({}_{:x}): skipped",
+                            perm_idx, idx, program->info.stage, program->info.pgm_hash);
+                return false;
+            }
             module = it->module;
         } else {
+            const auto& modules_now = it_pgm.value()->modules;
+            if (perm_idx < modules_now.size() && modules_now[perm_idx].spec.Valid()) {
+                // Another permutation has this number already: the same.
+                LOG_WARNING(Render, "Permutation {} of {}_{:x} is another one already: skipped",
+                            perm_idx, program->info.stage, program->info.pgm_hash);
+                return false;
+            }
             module = CompileSPV(spv, instance.GetDevice());
         }
     }
+    // The program kept is the first loaded one: the one read now is freed on return.
+    spec.info = &it_pgm.value()->info;
     it_pgm.value()->InsertPermut(module, std::move(spec), perm_idx);
 
     infos[stage] = &it_pgm.value()->info;
@@ -315,26 +386,62 @@ void PipelineCache::WarmUp() {
 
     Storage::DataBase::Instance().Open();
 
-    // Check if cache is compatible
+    // Check if cache is compatible: the device's profile, then what CacheTag says.
+    const Serialization::CacheTag tag{
+        .uniform_buffer_max_size = Shader::BufferResource::uniform_buffer_max_size,
+        .info_size = static_cast<u32>(sizeof(Shader::InfoPersistent)),
+        .key_size = static_cast<u32>(sizeof(GraphicsPipelineKey)),
+        .runtime_info_size = static_cast<u32>(sizeof(Shader::RuntimeInfo)),
+    };
+    std::vector<u8> expected(sizeof(profile) + sizeof(tag));
+    std::memcpy(expected.data(), &profile, sizeof(profile));
+    // The padding between the flags and the counts that follow them holds whatever was there:
+    // zeroed, so that an emptied cache is not emptied again at every start.
+    {
+        constexpr size_t gap_begin =
+            offsetof(Shader::Profile, supports_shader_cull_distance) + sizeof(bool);
+        constexpr size_t gap_end = offsetof(Shader::Profile, max_clip_distances);
+        static_assert(gap_begin <= gap_end);
+        std::memset(expected.data() + gap_begin, 0, gap_end - gap_begin);
+    }
+    std::memcpy(expected.data() + sizeof(profile), &tag, sizeof(tag));
+
     std::vector<u8> profile_data{};
     Storage::DataBase::Instance().Load(Storage::BlobType::ShaderProfile, "profile", profile_data);
+    if (Storage::DataBase::Instance().BeginPreloading() && !profile_data.empty()) {
+        // The preloading of an earlier start did not end: the app was closed while it went on,
+        // or something read from the cache crashed it. Not trusted again.
+        LOG_WARNING(Render, "Pipeline cache: the last preloading did not end; it is emptied");
+        Storage::DataBase::Instance().Clear();
+        profile_data.clear();
+    }
+    if (!profile_data.empty() && profile_data != expected) {
+        // Made with another driver, other settings or an older build: emptied, and made anew
+        // from this run on (kept as it was, its shaders would not match this run's).
+        if (Storage::DataBase::Instance().Clear()) {
+            LOG_WARNING(Render, "Pipeline cache made otherwise (another driver, other settings or "
+                                "an older build): emptied, it is made anew");
+            profile_data.clear();
+        } else {
+            LOG_WARNING(Render,
+                        "Pipeline cache isn't compatible with current system. Ignoring the cache");
+            Storage::DataBase::Instance().Close();
+            return;
+        }
+    }
     if (profile_data.empty()) {
+        Storage::DataBase::Instance().EndPreloading();
         Storage::DataBase::Instance().FinishPreload();
-
-        profile_data.resize(sizeof(profile));
-        std::memcpy(profile_data.data(), &profile, sizeof(profile));
         Storage::DataBase::Instance().Save(Storage::BlobType::ShaderProfile, "profile",
-                                           std::move(profile_data));
-        return;
-    }
-    if (std::memcmp(profile_data.data(), &profile, sizeof(profile)) != 0) {
-        LOG_WARNING(Render,
-                    "Pipeline cache isn't compatible with current system. Ignoring the cache");
-        Storage::DataBase::Instance().Close();
+                                           std::move(expected));
+        LOG_INFO(Render, "Pipeline cache: none yet; the pipelines of this run are kept");
         return;
     }
 
+    const auto preload_begun = std::chrono::steady_clock::now();
+    preloads_begun = preload_begun;
     u32 num_pipelines{};
+    u32 num_background{};
     u32 num_total_pipelines{};
 
     Storage::DataBase::Instance().ForEachBlob(
@@ -362,10 +469,25 @@ void PipelineCache::WarmUp() {
 
             if (result) {
                 ++num_pipelines;
+                if (!is_compute && workers) {
+                    ++num_background;
+                }
             }
         });
 
-    LOG_INFO(Render, "Preloaded {} pipelines", num_pipelines);
+    LOG_INFO(Render,
+             "PIPELINE_PRELOAD: {} pipelines read from the cache in {} ms ({} of them being made "
+             "in the background)",
+             num_pipelines,
+             std::chrono::duration_cast<std::chrono::milliseconds>(
+                 std::chrono::steady_clock::now() - preload_begun)
+                 .count(),
+             num_background);
+    preloads_total.store(num_background, std::memory_order_release);
+    if (num_background == 0) {
+        Storage::DataBase::Instance().EndPreloading();
+    }
+    ReportPreloadsIfDone();
     if (num_total_pipelines > num_pipelines) {
         LOG_WARNING(Render, "{} stale pipelines were found. Consider re-generating the cache",
                     num_total_pipelines - num_pipelines);
@@ -382,10 +504,18 @@ void PipelineCache::Sync() {
 
 namespace Shader {
 
+// InfoPersistent is written byte for byte, but its image and sampler lists are
+// boost::container::small_vector, which keep a pointer to their elements: copied as bytes into
+// another process, that pointer is one of the process that wrote the cache (the SIGSEGV of
+// preloading in BuildDescSetLayout → NumBindings → GetSharp, and on destruction a free of it).
+// Those two lists go after the bytes, element by element, and the bytes they span are not
+// read back.
 void Info::Serialize(Serialization::Archive& ar) const {
     Serialization::Writer info{ar};
 
     info.Write(this, sizeof(InfoPersistent));
+    info.Write(images);
+    info.Write(samplers);
     info.Write(flattened_ud_buf);
     srt_info.Serialize(ar);
 }
@@ -393,7 +523,21 @@ void Info::Serialize(Serialization::Archive& ar) const {
 bool Info::Deserialize(Serialization::Archive& ar) {
     Serialization::Reader info{ar};
 
-    info.Read(this, sizeof(Shader::InfoPersistent));
+    auto* const self = reinterpret_cast<u8*>(static_cast<InfoPersistent*>(this));
+    // images and samplers lie between buffers and fmasks (declaration order).
+    const size_t lists_begin = reinterpret_cast<u8*>(&images) - self;
+    const size_t lists_end = reinterpret_cast<u8*>(&fmasks) - self;
+    ASSERT(lists_begin < lists_end && lists_end < sizeof(InfoPersistent) &&
+           reinterpret_cast<u8*>(&samplers) - self > static_cast<ptrdiff_t>(lists_begin) &&
+           reinterpret_cast<u8*>(&samplers) - self < static_cast<ptrdiff_t>(lists_end));
+    std::vector<u8> bytes(sizeof(InfoPersistent));
+    info.Read(bytes.data(), bytes.size());
+    std::memcpy(self, bytes.data(), lists_begin);
+    std::memcpy(self + lists_end, bytes.data() + lists_end, sizeof(InfoPersistent) - lists_end);
+    images.clear();
+    samplers.clear();
+    info.Read(images);
+    info.Read(samplers);
     info.Read(flattened_ud_buf);
 
     return srt_info.Deserialize(ar);

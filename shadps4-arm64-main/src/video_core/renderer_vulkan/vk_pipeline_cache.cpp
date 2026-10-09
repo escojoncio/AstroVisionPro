@@ -322,7 +322,7 @@ public:
         for (u32 i = 0; i < count; ++i) {
             threads.emplace_back([this, i] {
                 Common::SetCurrentThreadName(fmt::format("shadPS4:Pipelines{}", i).c_str());
-                Run();
+                Run(i);
             });
         }
     }
@@ -332,6 +332,7 @@ public:
             std::scoped_lock lock{mutex};
             stopping = true;
             jobs.clear();
+            background.clear();
         }
         wake.notify_all();
         for (auto& thread : threads) {
@@ -339,26 +340,33 @@ public:
         }
     }
 
-    void Push(std::function<void()> job) {
+    /// Urgent (a draw is waiting for it) before any of the others (the cache's preloads).
+    void Push(std::function<void()> job, bool urgent = true) {
         {
             std::scoped_lock lock{mutex};
-            jobs.push_back(std::move(job));
+            (urgent ? jobs : background).push_back(std::move(job));
         }
-        wake.notify_one();
+        // Not just one: the one woken may be the thread that leaves the background ones.
+        wake.notify_all();
     }
 
 private:
-    void Run() {
+    /// Thread 0 only makes the urgent ones: a draw's pipeline never waits behind a preload.
+    void Run(u32 index) {
+        const bool takes_background = index != 0;
         while (true) {
             std::function<void()> job;
             {
                 std::unique_lock lock{mutex};
-                wake.wait(lock, [this] { return stopping || !jobs.empty(); });
+                wake.wait(lock, [this, takes_background] {
+                    return stopping || !jobs.empty() || (takes_background && !background.empty());
+                });
                 if (stopping) {
                     return;
                 }
-                job = std::move(jobs.front());
-                jobs.pop_front();
+                auto& queue = jobs.empty() ? background : jobs;
+                job = std::move(queue.front());
+                queue.pop_front();
             }
             job();
         }
@@ -367,6 +375,7 @@ private:
     std::mutex mutex;
     std::condition_variable wake;
     std::deque<std::function<void()>> jobs;
+    std::deque<std::function<void()>> background;
     bool stopping{};
     std::vector<std::thread> threads;
 };
@@ -451,8 +460,6 @@ PipelineCache::PipelineCache(const Instance& instance_, Scheduler& scheduler_,
         LOG_INFO(Render_Vulkan, "Read-only buffers of up to {} bytes as uniform buffers",
                  profile.max_ubo_size);
     }
-    WarmUp();
-
     auto [cache_result, cache] = instance.GetDevice().createPipelineCacheUnique({});
     ASSERT_MSG(cache_result == vk::Result::eSuccess, "Failed to create pipeline cache: {}",
                vk::to_string(cache_result));
@@ -479,6 +486,8 @@ PipelineCache::PipelineCache(const Instance& instance_, Scheduler& scheduler_,
                  "is not ready yet is left out",
                  count);
     }
+    // After the workers: with them, the cache's pipelines are made in the background.
+    WarmUp();
 }
 
 PipelineCache::~PipelineCache() = default;
@@ -549,6 +558,13 @@ const GraphicsPipeline* PipelineCache::GetGraphicsPipeline() {
         if (const auto pending = pending_graphics_pipelines.find(graphics_key);
             pending != pending_graphics_pipelines.end()) {
             fetch_shader.reset();
+            if (auto& job = *pending->second; job.preloaded && !job.promoted) {
+                // From the cache, still behind the others: made next.
+                job.promoted = true;
+                if (!job.started.load(std::memory_order_acquire)) {
+                    MakeOnWorker(pending->second, true);
+                }
+            }
             if (!WaitForJob(*pending->second)) {
                 ++skipped_draws;
                 return nullptr;
@@ -577,24 +593,7 @@ const GraphicsPipeline* PipelineCache::GetGraphicsPipeline() {
                                                job->sdata);
         pending_graphics_pipelines.emplace(graphics_key, job);
         LOG_INFO(Render_Vulkan, "Compiling graphics pipeline {:#x} (on a worker)", job->hash);
-        const vk::PipelineCache cache_handle = *pipeline_cache;
-        workers->Push([this, job, cache_handle] {
-            const auto begun = std::chrono::steady_clock::now();
-            try {
-                job->result = std::make_unique<GraphicsPipeline>(
-                    instance, scheduler, desc_heap, profile, job->key, cache_handle,
-                    job->copy_infos, job->runtime_infos, job->fetch_shader, job->modules,
-                    job->sdata, true);
-            } catch (const std::exception& ex) {
-                job->error = ex.what();
-                job->result.reset();
-            }
-            job->compile_ms = static_cast<u32>(
-                std::chrono::duration_cast<std::chrono::milliseconds>(
-                    std::chrono::steady_clock::now() - begun)
-                    .count());
-            job->done.store(true, std::memory_order_release);
-        });
+        MakeOnWorker(job, true);
         fetch_shader.reset();
         if (WaitForJob(*job)) {
             const auto it_pending = pending_graphics_pipelines.find(graphics_key);
@@ -659,22 +658,78 @@ const GraphicsPipeline* PipelineCache::GetGraphicsPipeline() {
     return it->second.get();
 }
 
+void PipelineCache::MakeOnWorker(std::shared_ptr<PendingGraphicsPipeline> job, bool urgent) {
+    const vk::PipelineCache cache_handle = *pipeline_cache;
+    workers->Push(
+        [this, job, cache_handle] {
+            if (job->started.exchange(true, std::memory_order_acq_rel)) {
+                return;
+            }
+            const auto begun = std::chrono::steady_clock::now();
+            try {
+                job->result = std::make_unique<GraphicsPipeline>(
+                    instance, scheduler, desc_heap, profile, job->key, cache_handle,
+                    job->copy_infos, job->runtime_infos, job->fetch_shader, job->modules,
+                    job->sdata, true);
+            } catch (const std::exception& ex) {
+                job->error = ex.what();
+                job->result.reset();
+            }
+            job->compile_ms = static_cast<u32>(
+                std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now() - begun)
+                    .count());
+            job->done.store(true, std::memory_order_release);
+            if (job->preloaded) {
+                preloads_done.fetch_add(1, std::memory_order_acq_rel);
+                ReportPreloadsIfDone();
+            }
+        },
+        urgent);
+}
+
+void PipelineCache::ReportPreloadsIfDone() {
+    const u32 total = preloads_total.load(std::memory_order_acquire);
+    if (total == 0 || preloads_done.load(std::memory_order_acquire) != total ||
+        preloads_reported.exchange(true)) {
+        return;
+    }
+    Storage::DataBase::Instance().EndPreloading();
+    LOG_INFO(Render_Vulkan, "PIPELINE_PRELOAD: the {} pipelines of the cache made in {} ms",
+             total,
+             std::chrono::duration_cast<std::chrono::milliseconds>(
+                 std::chrono::steady_clock::now() - preloads_begun)
+                 .count());
+}
+
 const GraphicsPipeline* PipelineCache::FinishPendingGraphicsPipeline(
     PendingGraphicsPipeline& job) {
     const auto waited = std::chrono::duration_cast<std::chrono::milliseconds>(
                             std::chrono::steady_clock::now() - job.queued)
                             .count();
     if (!job.result) {
-        LOG_ERROR(Render_Vulkan, "Graphics pipeline {:#x} compile failed: {}", job.hash,
-                  job.error);
-        graphics_pipelines.emplace(job.key, nullptr);
+        LOG_ERROR(Render_Vulkan, "Graphics pipeline {:#x} compile failed: {}{}", job.hash,
+                  job.error, job.preloaded ? " (from the cache: made again at the next draw)" : "");
+        if (!job.preloaded) {
+            graphics_pipelines.emplace(job.key, nullptr);
+        }
         return nullptr;
     }
     // From now on the draws bind what the live descriptions say, as for any other pipeline.
     job.result->UseStages(job.live_infos);
-    RegisterPipelineData(job.key, job.hash, job.sdata);
-    ++num_new_pipelines;
-    if (job.compile_ms >= 30 || waited >= 100) {
+    if (job.preloaded) {
+        // Already in the cache on disk; late only if a draw had to be left out for it.
+        if (job.waited) {
+            LOG_INFO(Render_Vulkan,
+                     "PIPELINE_PRELOAD_LATE {:#x}: {} ms to make, a draw asked for it before "
+                     "it was made; in use {} ms after the start ({} draws left out so far)",
+                     job.hash, job.compile_ms, waited, skipped_draws);
+        }
+    } else {
+        RegisterPipelineData(job.key, job.hash, job.sdata);
+        ++num_new_pipelines;
+    }
+    if (!job.preloaded && (job.compile_ms >= 30 || waited >= 100)) {
         LOG_INFO(Render_Vulkan,
                  "PIPELINE_SLOW {:#x}: {} ms to make, ready {} ms after its first draw (pipeline "
                  "{} of this run; {} draws left out so far)",

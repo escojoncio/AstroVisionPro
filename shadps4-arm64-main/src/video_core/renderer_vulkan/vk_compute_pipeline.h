@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <vector>
+
 #include "video_core/renderer_vulkan/vk_common.h"
 #include "video_core/renderer_vulkan/vk_pipeline_common.h"
 
@@ -38,7 +40,9 @@ struct ComputePipelineKey {
 class ComputePipeline : public Pipeline {
 public:
     struct SerializationSupport {
-        u32 dummy{};
+        /// As GraphicsPipeline's: what the descriptor layout needs from the live sharps.
+        std::vector<u8> buffer_is_storage{};
+        std::vector<u32> image_num_bindings{};
 
         void Serialize(Serialization::Archive& ar) const;
         bool Deserialize(Serialization::Archive& ar);

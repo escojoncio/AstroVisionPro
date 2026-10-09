@@ -73,8 +73,11 @@ struct AstroSettings {
     /// A draw that uses fewer of the targets of the render pass that is open is made in that pass
     /// instead of ending it (SHADPS4_MERGE_PASSES).
     var mergePasses = true
-    /// No longer used: shadPS4's pipeline cache crashes while preloading (SHADPS4_PIPELINE_CACHE=0).
-    var pipelineCache = false
+    /// The pipelines the game used are kept in VPS4 (Partidas/cache) and, at the next start,
+    /// made again in the background before the game asks for them (SHADPS4_PIPELINE_CACHE):
+    /// no effects shown late or left out, no compiling in the middle of the game. Its own key
+    /// ("shader_cache"): the old "pipeline_cache" was off and stays in older settings files.
+    var shaderCache = true
     /// The GPU test that L3 + R3 start in the game (gpu_bench.h, SHADPS4_GPU_BENCH): "shaders"
     /// what each of the scene's pixel shaders costs, "stages" the older test by stages (pixels,
     /// geometry, depth-only passes, geometry shaders). Any other value is "shaders".
@@ -202,7 +205,7 @@ struct AstroSettings {
         case "heap_between_passes": heapBetweenPasses = flag
         case "light_barriers": lightBarriers = flag
         case "merge_passes": mergePasses = flag
-        case "pipeline_cache": pipelineCache = flag
+        case "shader_cache": shaderCache = flag
         case "gpu_test": gpuTest = value
         case "smaa": edgeSmoothing = flag
         case "spatial_audio": spatialAudio = flag
@@ -271,9 +274,7 @@ struct AstroSettings {
         env.append("KK_LIGHT_BARRIERS=\(lightBarriers ? 1 : 0)")
         env.append("SHADPS4_MERGE_PASSES=\(mergePasses ? 1 : 0)")
         env.append("SHADPS4_GPU_BENCH=\(gpuTest == "stages" ? "stages" : "shaders")")
-        // shadPS4's pipeline cache reads the game's memory while preloading, before the game has
-        // any (GetSharp in BuildDescSetLayout): it crashes. Kept off.
-        env.append("SHADPS4_PIPELINE_CACHE=0")
+        env.append("SHADPS4_PIPELINE_CACHE=\(shaderCache ? 1 : 0)")
         env.append("SHADPS4_SPATIAL_AUDIO=\(spatialAudio ? 1 : 0)")
         if passDiagnostics {
             env.append("SHADPS4_FRAME_STATS=2")
