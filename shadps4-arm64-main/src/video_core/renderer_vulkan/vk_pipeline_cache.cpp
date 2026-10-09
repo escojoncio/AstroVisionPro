@@ -46,7 +46,7 @@ using Shader::Stage;
 constexpr static auto SpirvVersion1_6 = 0x00010600U;
 
 constexpr static std::array DescriptorHeapSizes = {
-    vk::DescriptorPoolSize{vk::DescriptorType::eUniformBuffer, 512},
+    vk::DescriptorPoolSize{vk::DescriptorType::eUniformBuffer, 8192},
     vk::DescriptorPoolSize{vk::DescriptorType::eStorageBuffer, 8192},
     vk::DescriptorPoolSize{vk::DescriptorType::eSampledImage, 8192},
     vk::DescriptorPoolSize{vk::DescriptorType::eStorageImage, 1024},
@@ -443,6 +443,13 @@ PipelineCache::PipelineCache(const Instance& instance_, Scheduler& scheduler_,
         LOG_WARNING(Render_Vulkan,
                     "Forcing buffer #0 F32 loads as U32 bitcast on {} (IEEE-bit preserving)",
                     instance_.GetModelName());
+    }
+    // SHADPS4_CONSTANT_UBO=1: read-only guest buffers that fit go to the shaders as uniform
+    // buffers (Shader::BufferResource::IsStorage).
+    if (const char* value = std::getenv("SHADPS4_CONSTANT_UBO"); value != nullptr && *value == '1') {
+        Shader::BufferResource::uniform_buffer_max_size = static_cast<u32>(profile.max_ubo_size);
+        LOG_INFO(Render_Vulkan, "Read-only buffers of up to {} bytes as uniform buffers",
+                 profile.max_ubo_size);
     }
     WarmUp();
 
