@@ -133,7 +133,8 @@ private:
     /// images it draws to, for the draws after it (PipelineForOpenPass).
     void NoteOpenPass(const GraphicsPipeline* pipeline);
     /// Whether the GPU test (gpu_bench.h) leaves this draw out now.
-    bool BenchLeavesOut(GpuBench::Mode mode, const GraphicsPipeline* pipeline) const;
+    bool BenchLeavesOut(GpuBench::Mode mode, const GraphicsPipeline* pipeline,
+                        u64 vertices) const;
     /// A draw whose targets are some of those of the pass that is open (the same images, none
     /// cleared, the same size), or none at all, can be made in that pass instead of ending it:
     /// on a GPU that renders in tiles, ending a pass writes all its targets out to memory and

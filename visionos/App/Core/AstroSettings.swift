@@ -75,8 +75,10 @@ struct AstroSettings {
     var mergePasses = true
     /// No longer used: shadPS4's pipeline cache crashes while preloading (SHADPS4_PIPELINE_CACHE=0).
     var pipelineCache = false
-    /// No longer used: the GPU test is started in the game with L3 + R3 (gpu_bench.h).
-    var gpuTest = ""
+    /// The GPU test that L3 + R3 start in the game (gpu_bench.h, SHADPS4_GPU_BENCH): "shaders"
+    /// what each of the scene's pixel shaders costs, "stages" the older test by stages (pixels,
+    /// geometry, depth-only passes, geometry shaders). Any other value is "shaders".
+    var gpuTest = "shaders"
     /// The headset's 3D audio, as PlayStation VR renders it: each of the title's 3D sounds and
     /// surround speakers rendered by Apple's PHASE, head-locked (SHADPS4_SPATIAL_AUDIO).
     var spatialAudio = true
@@ -264,6 +266,7 @@ struct AstroSettings {
         env.append("KK_HEAP_BETWEEN_PASSES=\(heapBetweenPasses ? 1 : 0)")
         env.append("KK_LIGHT_BARRIERS=\(lightBarriers ? 1 : 0)")
         env.append("SHADPS4_MERGE_PASSES=\(mergePasses ? 1 : 0)")
+        env.append("SHADPS4_GPU_BENCH=\(gpuTest == "stages" ? "stages" : "shaders")")
         // shadPS4's pipeline cache reads the game's memory while preloading, before the game has
         // any (GetSharp in BuildDescSetLayout): it crashes. Kept off.
         env.append("SHADPS4_PIPELINE_CACHE=0")
