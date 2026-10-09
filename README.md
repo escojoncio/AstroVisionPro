@@ -367,6 +367,10 @@ use it only with software you own and have dumped yourself.
   desktop's spectator views, [Clodo76](https://github.com/Clodo76) for finding the game's
   1.04 executable from inside, [evertec82](https://github.com/evertec82) for what stopped the
   game under SteamVR.
+- [SMAA](https://github.com/iryoku/smaa) by Jorge Jimenez, Jose I. Echevarria, Belen Masia,
+  Fernando Navarro and Diego Gutierrez (MIT), the antialiasing of the Vision Pro app; turned
+  into Metal with [glslang](https://github.com/KhronosGroup/glslang) and
+  [SPIRV-Cross](https://github.com/KhronosGroup/SPIRV-Cross).
 - [The Khronos Group](https://www.khronos.org/) for OpenXR and Vulkan,
   [vgmstream](https://github.com/vgmstream/vgmstream) for documenting Sony's audio formats,
   and [Virtual Desktop](https://www.vrdesktop.net/) for the PC streaming path.
