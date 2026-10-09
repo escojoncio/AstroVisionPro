@@ -5,7 +5,7 @@ Base: shadPS4 ARM64 (`shadps4-arm64-main/`) + FEXCore (x86-64 → ARM64) + Molte
 App visionOS en `visionos/` (SwiftUI + Compositor Services + ARKit + GameController).
 JIT: arena RWX preparada por StikDebug (protocolo `brk #0xf00d` + universal.js); la app hace detach al terminar.
 
-## Build siguiente (commit «vibración por pasos, reloj de GPU del juego, restart en listas»), sin probar
+## Build 212a0a3 (run 37939178044): OK, `visionos-latest/AstroQuest.ipa` (sin probar) — vibración por pasos, mando por GameController, reloj de GPU del juego, restart en listas off
 - Prueba sin build del usuario: sin JIT/StikDebug la vibración falla igual → descartado el depurador. Quieto 2–3 min: las sombras no salen; en PS4 están desde el primer frame (coherente con «el juego mide la GPU lenta desde el inicio»).
 - Vibración:
   - `AstroQuestApp.swift`: `ControllerEvents` → `.handlesGameControllerEvents(matching: .gamepad)` en la raíz del lanzador (lo que Apple pide en visionOS para que la app reciba el mando por GameController; hasta ahora la entrada llegaba solo por `shouldMonitorBackgroundEvents`). Ajuste `controller_to_app` (1), leído una vez al abrir la app (`@State`), interruptor «El mando es de la app» en Ajustes › Juego.
