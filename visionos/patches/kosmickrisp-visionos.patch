@@ -166,7 +166,7 @@ index d1590b9..ce5ce14 100644
     void *cpu;
     uint64_t gpu;
 diff --git a/src/kosmickrisp/vulkan/kk_cmd_buffer.c b/src/kosmickrisp/vulkan/kk_cmd_buffer.c
-index 22f4bf7..33bb3f2 100644
+index 22f4bf7..710fce5 100644
 --- a/src/kosmickrisp/vulkan/kk_cmd_buffer.c
 +++ b/src/kosmickrisp/vulkan/kk_cmd_buffer.c
 @@ -7,6 +7,14 @@
@@ -184,7 +184,15 @@ index 22f4bf7..33bb3f2 100644
  #include "kk_buffer.h"
  #include "kk_cmd_pool.h"
  #include "kk_descriptor_set_layout.h"
-@@ -212,6 +220,7 @@ kk_BeginCommandBuffer(VkCommandBuffer commandBuffer,
+@@ -170,6 +178,7 @@ kk_reset_cmd_buffer_internal(struct kk_cmd_buffer *cmd)
+ 
+    memset(&cmd->state, 0, sizeof(cmd->state));
+    cmd->uses_heap = false;
++   cmd->heap_dirty = false;
+ }
+ 
+ static void
+@@ -212,6 +221,7 @@ kk_BeginCommandBuffer(VkCommandBuffer commandBuffer,
     }
  
     vk_command_buffer_begin(&cmd->vk, pBeginInfo);
@@ -192,7 +200,7 @@ index 22f4bf7..33bb3f2 100644
     cmd->one_time_submit =
        pBeginInfo->flags & VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
  
-@@ -257,6 +266,116 @@ kk_encoder_update_debug(struct kk_cmd_buffer *cmd, mtl_command_encoder *encoder)
+@@ -257,6 +267,116 @@ kk_encoder_update_debug(struct kk_cmd_buffer *cmd, mtl_command_encoder *encoder)
        mtl_encoder_push_debug_group(encoder, label->pLabelName);
  }
  
@@ -309,8 +317,18 @@ index 22f4bf7..33bb3f2 100644
  void
  cs_start_render(struct kk_cmd_buffer *cmd)
  {
-@@ -269,6 +388,22 @@ cs_start_render(struct kk_cmd_buffer *cmd)
+@@ -267,8 +387,32 @@ cs_start_render(struct kk_cmd_buffer *cmd)
+    /* Ensure no other active encoder, aka compute */
+    cs_end(cmd);
  
++   /* What the encoders before allocated from the geometry heap is done with:
++    * free it here, between encoders, so that the first geometry shader draw
++    * of this one can stay in it (KK_HEAP_BETWEEN_PASSES). */
++   if (cmd->heap_dirty && kk_heap_between_passes()) {
++      kk_heap_free_between_encoders(cmd);
++      cs_end(cmd);
++   }
++
     cmd->metal.render = mtl_new_render_command_encoder_with_descriptor(
        cmd->metal.cmd_buf, state->render_pass_descriptor);
 +   census_note_encoder(true, false);
@@ -332,7 +350,7 @@ index 22f4bf7..33bb3f2 100644
  
     kk_encoder_update_debug(cmd, cmd->metal.render);
     /* Starting a new render pass means we already flushed and no barrier is
-@@ -311,10 +446,11 @@ cs_get_render(struct kk_cmd_buffer *cmd)
+@@ -311,10 +455,11 @@ cs_get_render(struct kk_cmd_buffer *cmd)
  }
  
  mtl_compute_encoder *
@@ -345,7 +363,7 @@ index 22f4bf7..33bb3f2 100644
        kk_apply_attachment_store_ops(cmd, true);
        cs_end(cmd);
        kk_cmd_buffer_dirty_all_gfx(cmd);
-@@ -322,6 +458,7 @@ cs_get_compute(struct kk_cmd_buffer *cmd)
+@@ -322,6 +467,7 @@ cs_get_compute(struct kk_cmd_buffer *cmd)
     }
  
     if (cmd->metal.compute == NULL) {
@@ -353,7 +371,7 @@ index 22f4bf7..33bb3f2 100644
        cmd->metal.compute = mtl_new_compute_command_encoder(cmd->metal.cmd_buf);
        mtl_compute_set_argument_table(cmd->metal.compute, cmd->argument_table);
        kk_encoder_update_debug(cmd, cmd->metal.compute);
-@@ -330,11 +467,57 @@ cs_get_compute(struct kk_cmd_buffer *cmd)
+@@ -330,11 +476,57 @@ cs_get_compute(struct kk_cmd_buffer *cmd)
     return cmd->metal.compute;
  }
  
@@ -413,7 +431,7 @@ index 22f4bf7..33bb3f2 100644
     mtl_end_encoding(encoder);
     mtl_release(encoder);
  
-@@ -464,6 +647,8 @@ kk_CmdPipelineBarrier2(VkCommandBuffer commandBuffer,
+@@ -464,6 +656,8 @@ kk_CmdPipelineBarrier2(VkCommandBuffer commandBuffer,
     /* TODO_KOSMICKRISP Lighten barriers according to the actual requested
      * barrier. To take advantage of this we need to remove the chaining of
      * encoders. */
@@ -422,7 +440,7 @@ index 22f4bf7..33bb3f2 100644
     if (cmd->metal.render) {
        /* Multisample attachments require render pass split always. Then based on
         * the barrier and if we are using depth/stencil or not, we may have to
-@@ -471,6 +656,10 @@ kk_CmdPipelineBarrier2(VkCommandBuffer commandBuffer,
+@@ -471,6 +665,10 @@ kk_CmdPipelineBarrier2(VkCommandBuffer commandBuffer,
         */
        if (cmd->state.gfx.render.samples > 1 ||
            kk_barrier_requires_encoder_split(cmd, pDependencyInfo)) {
@@ -434,7 +452,7 @@ index 22f4bf7..33bb3f2 100644
           cs_end(cmd);
           cs_start_render(cmd);
 diff --git a/src/kosmickrisp/vulkan/kk_cmd_buffer.h b/src/kosmickrisp/vulkan/kk_cmd_buffer.h
-index dcd0983..95a8405 100644
+index dcd0983..e02a456 100644
 --- a/src/kosmickrisp/vulkan/kk_cmd_buffer.h
 +++ b/src/kosmickrisp/vulkan/kk_cmd_buffer.h
 @@ -250,6 +250,9 @@ struct kk_cmd_buffer {
@@ -447,7 +465,17 @@ index dcd0983..95a8405 100644
  
     void *drawable;
     mtl_argument_table *argument_table;
-@@ -314,8 +317,28 @@ kk_get_descriptors_state(struct kk_cmd_buffer *cmd,
+@@ -273,6 +276,9 @@ struct kk_cmd_buffer {
+ 
+    /* Does the command buffer use the geometry heap? */
+    bool uses_heap;
++   /* KK_HEAP_BETWEEN_PASSES: the heap was allocated from since it was last
++    * freed; it is freed again before the next render encoder starts. */
++   bool heap_dirty;
+    /* Set at vkBeginCommandBuffer. One-time-submit buffers skip command
+     * enqueueing in the trampolines since they can never be replayed. */
+    bool one_time_submit;
+@@ -314,8 +320,34 @@ kk_get_descriptors_state(struct kk_cmd_buffer *cmd,
  
  void cs_start_render(struct kk_cmd_buffer *cmd);
  mtl_render_encoder *cs_get_render(struct kk_cmd_buffer *cmd);
@@ -472,27 +500,49 @@ index dcd0983..95a8405 100644
 +
 +bool kk_light_barriers(void);
 +
++/* KK_HEAP_BETWEEN_PASSES (on unless 0): the geometry heap is freed between
++ * encoders, not by cutting the render encoder at its first use in a pass. */
++bool kk_heap_between_passes(void);
++/* Frees the geometry heap from a compute encoder; no render encoder open. */
++void kk_heap_free_between_encoders(struct kk_cmd_buffer *cmd);
++
 +void kk_note_dependency_outside_render(struct kk_cmd_buffer *cmd,
 +                                       const VkDependencyInfo *dep);
  void kk_cmd_bind_root_to_argument_table(struct kk_cmd_buffer *cmd,
                                          uint64_t addr);
  
+@@ -329,9 +361,12 @@ kk_cmd_buffer_dirty_all_gfx(struct kk_cmd_buffer *cmd)
+    cmd->state.gfx.descriptors.root_dirty = true;
+ 
+    /* We just flushed out the heap use. If we want to use it again, we'll need
+-    * to queue a free for it again.
++    * to queue a free for it again. With KK_HEAP_BETWEEN_PASSES the free is
++    * made between encoders instead (cs_start_render), so that the first
++    * geometry shader draw of a pass does not cut it for a compute encoder.
+     */
+-   cmd->uses_heap = false;
++   if (!kk_heap_between_passes())
++      cmd->uses_heap = false;
+ }
+ 
+ void kk_cmd_release_dynamic_ds_state(struct kk_cmd_buffer *cmd);
 diff --git a/src/kosmickrisp/vulkan/kk_cmd_draw.c b/src/kosmickrisp/vulkan/kk_cmd_draw.c
-index 24f05de..d944ecf 100644
+index 24f05de..38e78e6 100644
 --- a/src/kosmickrisp/vulkan/kk_cmd_draw.c
 +++ b/src/kosmickrisp/vulkan/kk_cmd_draw.c
-@@ -9,6 +9,10 @@
+@@ -9,6 +9,11 @@
  
  #include "kk_entrypoints.h"
  
 +#include <stdio.h>
++#include <stdlib.h>
 +
 +#include "util/u_atomic.h"
 +
  #include "kk_buffer.h"
  #include "kk_cmd_buffer.h"
  #include "kk_format.h"
-@@ -438,6 +442,7 @@ kk_CmdBeginRendering(VkCommandBuffer commandBuffer,
+@@ -438,6 +443,7 @@ kk_CmdBeginRendering(VkCommandBuffer commandBuffer,
  
     /* Rendering with no attachments requires pushing the start of the render
      * pass to first pipeline binding to know sample count. */
@@ -500,7 +550,7 @@ index 24f05de..d944ecf 100644
     cmd->state.gfx.render_pass_descriptor = pass_descriptor;
     if (!no_framebuffer)
        cs_start_render(cmd);
-@@ -968,6 +973,10 @@ kk_flush_render_pass(struct kk_cmd_buffer *cmd)
+@@ -968,6 +974,10 @@ kk_flush_render_pass(struct kk_cmd_buffer *cmd)
           kk_apply_attachment_store_ops(cmd, true);
        }
  
@@ -511,7 +561,46 @@ index 24f05de..d944ecf 100644
        cs_end(cmd);
        kk_cmd_buffer_dirty_all_gfx(cmd);
        cmd->state.gfx.need_to_start_render_pass = true;
-@@ -2255,19 +2264,51 @@ kk_launch_gs_prerast(struct kk_cmd_buffer *cmd,
+@@ -1070,9 +1080,38 @@ kk_heap(struct kk_cmd_buffer *cmd)
+       cmd->uses_heap = true;
+    }
+ 
++   cmd->heap_dirty = true;
+    return dev->heap->gpu;
+ }
+ 
++bool
++kk_heap_between_passes(void)
++{
++   static int enabled = -1;
++   if (enabled < 0) {
++      const char *env = getenv("KK_HEAP_BETWEEN_PASSES");
++      enabled = !(env && env[0] == '0');
++   }
++   return enabled;
++}
++
++void
++kk_heap_free_between_encoders(struct kk_cmd_buffer *cmd)
++{
++   struct kk_device *dev = kk_cmd_buffer_device(cmd);
++   assert(cmd->metal.render == NULL);
++   cmd->heap_dirty = false;
++   if (!cmd->uses_heap)
++      return;
++
++   /* Zeroing the allocated index frees everything (as kk_heap does). */
++   mtl_compute_encoder *encoder = cs_get_compute(cmd);
++   kk_cmd_write(cmd, (struct libkk_imm_write){
++                        dev->heap->gpu + offsetof(struct poly_heap, bottom), 0});
++   mtl_barrier_after_encoder_stages(encoder, MTL_STAGE_DISPATCH,
++                                    MTL_STAGE_DISPATCH);
++}
++
+ /* GPU-generated indices are allocated from the heap, past its header */
+ static struct kk_addr_range
+ kk_heap_indices(struct kk_cmd_buffer *cmd)
+@@ -2255,19 +2294,51 @@ kk_launch_gs_prerast(struct kk_cmd_buffer *cmd,
      * two pre-render pipelines */
     uint32_t pre_render_count = vs->pipeline.gfx.pre_render_count;
     struct mtl_size local_size = {KK_POLY_WG_SIZE, 1, 1};
@@ -522,12 +611,6 @@ index 24f05de..d944ecf 100644
 -   mtl_compute_set_pipeline_state(
 -      enc, vs->pipeline.gfx.pre_render[pre_render_count - 2u]);
 -   kk_dispatch_compute(enc, grid_vs, local_size);
--
--   mtl_barrier_after_encoder_stages(enc, MTL_STAGE_DISPATCH,
--                                    MTL_STAGE_DISPATCH);
--   mtl_compute_set_pipeline_state(
--      enc, vs->pipeline.gfx.pre_render[pre_render_count - 1u]);
--   kk_dispatch_compute(enc, grid_gs, local_size);
 +   static uint32_t in_pass_draws = 0u, split_draws = 0u;
 +   uint32_t counted;
 +   mtl_render_pipeline_state *const *vtx = vs->pipeline.gfx.pre_render_vertex;
@@ -553,7 +636,12 @@ index 24f05de..d944ecf 100644
 +      counted = p_atomic_inc_return(&in_pass_draws);
 +   } else {
 +      mtl_compute_encoder *enc = cs_get_compute(cmd);
-+
+ 
+-   mtl_barrier_after_encoder_stages(enc, MTL_STAGE_DISPATCH,
+-                                    MTL_STAGE_DISPATCH);
+-   mtl_compute_set_pipeline_state(
+-      enc, vs->pipeline.gfx.pre_render[pre_render_count - 1u]);
+-   kk_dispatch_compute(enc, grid_gs, local_size);
 +      mtl_barrier_after_encoder_stages(enc, MTL_STAGE_DISPATCH,
 +                                       MTL_STAGE_DISPATCH);
 +      mtl_compute_set_pipeline_state(
