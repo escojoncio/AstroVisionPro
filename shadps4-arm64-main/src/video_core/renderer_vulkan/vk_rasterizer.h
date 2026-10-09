@@ -139,6 +139,8 @@ private:
     /// whether rasterizer discard was on before, for BenchPixelsBack after the draw.
     bool BenchPixelsOut(bool pixels_out);
     void BenchPixelsBack(bool pixels_out, bool discard_before);
+    /// A draw's depth, blend and pixel shader state, for the shader test's report.
+    std::string DescribeDrawState(const GraphicsPipeline* pipeline) const;
     /// A draw whose targets are some of those of the pass that is open (the same images, none
     /// cleared, the same size), or none at all, can be made in that pass instead of ending it:
     /// on a GPU that renders in tiles, ending a pass writes all its targets out to memory and
