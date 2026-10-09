@@ -160,6 +160,9 @@ Incluye ab5f2f9 (banco de GPU, ver abajo) y 54d91d2 (botón «Probar vibración�
 - Revisión adversarial aplicada: motores que podían quedar a nil para siempre tras rehacerlos, vibración en curso no reenviada, lanzador duplicado al salir con `close_launcher=0`, carrera fin/Start del banco, includes.
 - Qué probar: (1) en el lanzador, «Probar vibración del mando» → `Controller rumble test …`; (2) jugar con «Cerrar el lanzador al jugar» activado y buscar `motors made anew`, `App:` y `could not play`; (3) si sigue sin vibrar, desactivarlo y probar el botón con la ventana abierta durante la partida; (4) en el mundo, quieto, L3+R3 → 11 pasos de 10 s: leer `GPU_BENCH: step i` y el `GPU_TIME` siguiente.
 
+## Sexta prueba (consola 23:40): el certificado SÍ está en el perfil — firma del pack en variantes
+- Detalle en la bitácora de VPEngine («Sexta prueba»). Descartado el certificado: el de iloader firmó la app y está en su perfil. El pack se firma ahora con el bundle id de la app y, en orden, con los requisitos de la propia app (4 KiB / 16 KiB) o sin ellos; la variante aceptada se recuerda. Sin cambios en este repo salvo esta nota; la build recoge VPEngine main.
+
 ## Quinta prueba (log 23:11): compila, enlaza (164 MB) y firma; el sistema rechaza la firma — build de diagnóstico
 - Detalle en la bitácora de VPEngine («Quinta prueba»). SideStore (Certificates): el de iloader marcado (R) remoto, exportable; arriba el «active signing certificate» (solo copiable). Sospecha: la app la firmó SideStore con el activo y su perfil no incluye el de iloader. La build añade el diagnóstico (firma de la app vs del pack y certificados del perfil) en la consola.
 
