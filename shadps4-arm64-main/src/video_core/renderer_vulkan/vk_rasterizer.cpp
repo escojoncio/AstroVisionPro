@@ -1880,6 +1880,8 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, Shader::Backend::Binding
             }
             if (desc.is_written && desc.is_formatted) {
                 texture_cache.InvalidateMemoryFromGPU(vsharp.base_address, size);
+            } else if (desc.is_written) {
+                texture_cache.InvalidateWholeImagesFromGPU(vsharp.base_address, size);
             }
         }
 
