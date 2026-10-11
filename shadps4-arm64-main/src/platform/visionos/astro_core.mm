@@ -234,6 +234,20 @@ void astro_core_pad_state(const AstroPadState* state) {
     if (mark_combo.exchange(mark) != mark && mark) {
         AmdGpu::GameClock::NoteMark();
     }
+    // L1 and R1 held and L3 pressed: the title's render targets as pictures, in the user folder
+    // (Partidas/rt_dump), within a few seconds (Presenter::DumpGpuImages looks for the file).
+    static std::atomic<bool> dump_combo{};
+    const bool dump = (state->buttons & AstroPadL1) != 0 && (state->buttons & AstroPadR1) != 0 &&
+                      (state->buttons & AstroPadL3) != 0 && (state->buttons & AstroPadR3) == 0;
+    if (dump_combo.exchange(dump) != dump && dump) {
+        const auto flag =
+            Common::FS::GetUserPath(Common::FS::PathType::UserDir) / "dump_render_targets";
+        if (std::FILE* file = std::fopen(flag.string().c_str(), "w")) {
+            std::fclose(file);
+        }
+        LOG_INFO(Core, "DUMP: the render targets are written to {} within a few seconds",
+                 (Common::FS::GetUserPath(Common::FS::PathType::UserDir) / "rt_dump").string());
+    }
     const std::array<int, 6> axes{state->left_x,       state->left_y,
                                   state->right_x,      state->right_y,
                                   state->left_trigger, state->right_trigger};
