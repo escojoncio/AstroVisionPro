@@ -661,7 +661,12 @@ TileManager::Result TileManager::DetileImage(vk::Buffer in_buffer, u32 in_offset
 
 void TileManager::TileImage(Image& in_image, std::span<vk::BufferImageCopy> buffer_copies,
                             vk::Buffer out_buffer, u32 out_offset, u32 copy_size) {
-    const auto& info = in_image.info;
+    TileImage(in_image, in_image.info, buffer_copies, out_buffer, out_offset, copy_size);
+}
+
+void TileManager::TileImage(Image& in_image, const ImageInfo& info,
+                            std::span<vk::BufferImageCopy> buffer_copies, vk::Buffer out_buffer,
+                            u32 out_offset, u32 copy_size) {
     if (!info.props.is_tiled) {
         for (auto& copy : buffer_copies) {
             copy.bufferOffset += out_offset;

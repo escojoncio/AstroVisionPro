@@ -589,7 +589,9 @@ bool VideoOutDriver::SubmitHmdFrame(VideoOutPort* port, const HmdFrame& hmd_fram
     // Where the head was for it is worked out here and now: the seat the title's pose was
     // counted from may be another by the time the GPU thread gets to the frame.
     HmdFrame frame = hmd_frame;
-    frame.render_pose = Core::Vr::Runtime::Instance().ToHostSpace(hmd_frame.render_pose);
+    if (!frame.is_screen) {
+        frame.render_pose = Core::Vr::Runtime::Instance().ToHostSpace(hmd_frame.render_pose);
+    }
     const u32 frame_id = Core::Vr::Runtime::Instance().NextFrameId();
     const auto started = Vulkan::FrameStats::TakeGuestSubmit();
     const auto handed_over = std::chrono::steady_clock::now();
@@ -608,6 +610,10 @@ void VideoOutDriver::SubmitHmdFrameInternal(VideoOutPort* port, const HmdFrame& 
                                             u32 frame_id,
                                             std::chrono::steady_clock::time_point started,
                                             std::chrono::steady_clock::time_point handed_over) {
+    if (hmd_frame.is_screen) {
+        SubmitScreenFrameInternal(port, hmd_frame, frame_id, started, handed_over);
+        return;
+    }
     u32 eye_width = 0;
     u32 eye_height = 0;
     const Vulkan::HmdFrames frames =
@@ -648,6 +654,85 @@ void VideoOutDriver::SubmitHmdFrameInternal(VideoOutPort* port, const HmdFrame& 
             .id = frame_id,
             .render_pose = hmd_frame.render_pose,
             .fov = hmd_frame.fov,
+            .eye_width = eye_width,
+            .eye_height = eye_height,
+        },
+        .started = started,
+        .prepared = std::chrono::steady_clock::now(),
+        .export_frame = frames.exported,
+    });
+}
+
+void VideoOutDriver::SubmitScreenFrameInternal(VideoOutPort* port, const HmdFrame& hmd_frame,
+                                               u32 frame_id,
+                                               std::chrono::steady_clock::time_point started,
+                                               std::chrono::steady_clock::time_point handed_over) {
+    // As the flat pictures' path (SubmitScreenToHeadset): with no headset of the machine's own
+    // showing, or no head pose to place the screen with, the flip is completed without a
+    // picture, so the title's flip accounting goes on.
+    const auto drop = [&] {
+        FinishFlip(port, hmd_frame.display_index, hmd_frame.flip_arg, false,
+                   FlipLabelTracker::kInvalidGeneration);
+    };
+#if defined(SHADPS4_VISIONOS)
+    const bool showing = Core::Vr::OpenXrHost::Instance().IsShowing();
+#else
+    const bool showing = false;
+#endif
+    if (!showing || !presenter->HasLocalHeadset()) {
+        drop();
+        return;
+    }
+    // The same screen as the flat VideoOut pictures': fixed in the room where the head looked
+    // (level) when the pictures began. This runs on the GPU thread, as SubmitScreenToHeadset.
+    // (Placed before a headset image is taken, so that none is left held.)
+    const s64 now = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                        std::chrono::steady_clock::now().time_since_epoch())
+                        .count();
+    constexpr s64 Second = 1'000'000'000;
+    const bool new_stretch = now - screen_since_ns > Second;
+    Core::Vr::Pose pose = screen_pose;
+    if (new_stretch) {
+        if (!Core::Vr::Runtime::Instance().HostHeadPose(pose)) {
+            drop();
+            return;
+        }
+        pose.orientation = Core::Vr::YawOnly(pose.orientation);
+    }
+    Core::Vr::Fov fov{};
+    u32 eye_width = 0;
+    u32 eye_height = 0;
+    const Vulkan::HmdFrames frames = presenter->PrepareTextureAsScreenHmdFrame(
+        hmd_frame.eye_textures[0], fov, eye_width, eye_height);
+    if (!frames) {
+        // A headset of the machine's own with none of its images free now: tried again once
+        // the GPU thread is.
+        liverpool->EnqueueCommand([=, this] {
+            SubmitScreenFrameInternal(port, hmd_frame, frame_id, started, handed_over);
+        });
+        return;
+    }
+    if (new_stretch) {
+        screen_pose = pose;
+        LOG_INFO(Lib_VideoOut, "SCREEN_IN_HEADSET: the title's 2D VR picture ({}x{}) is shown "
+                               "as a screen in the headset",
+                 hmd_frame.eye_textures[0].width + 1, hmd_frame.eye_textures[0].height + 1);
+    }
+    screen_since_ns = now;
+
+    std::scoped_lock lock{mutex};
+    requests.push({
+        .frame = frames.shown,
+        .port = port,
+        .flip_arg = hmd_frame.flip_arg,
+        .index = hmd_frame.display_index,
+        .eop = false,
+        .lock_generation = FlipLabelTracker::kInvalidGeneration,
+        .is_hmd = true,
+        .hmd_frame{
+            .id = frame_id,
+            .render_pose = screen_pose,
+            .fov = fov,
             .eye_width = eye_width,
             .eye_height = eye_height,
         },
