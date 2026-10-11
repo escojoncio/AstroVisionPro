@@ -1132,6 +1132,23 @@ vk::ShaderModule PipelineCache::CompileModule(Shader::Info& info, Shader::Runtim
     return module;
 }
 
+/// MSAA diagnostics: a shader that reads a multisampled image (a resolve of the title's own,
+/// or a pass that uses the samples) or its FMask.
+static void LogMsaaReads(const Shader::Info& info, const Shader::StageSpecialization& spec) {
+    const auto multisampled = std::ranges::count_if(spec.images, [](const auto& image) {
+        return image.type == AmdGpu::ImageType::Color2DMsaa ||
+               image.type == AmdGpu::ImageType::Color2DMsaaArray;
+    });
+    if (multisampled == 0 && info.fmasks.empty()) {
+        return;
+    }
+    static std::atomic<u32> told{};
+    if (told.fetch_add(1, std::memory_order_relaxed) < 16) {
+        LOG_INFO(Render_Vulkan, "MSAA: {} shader {:#x} reads {} multisampled image(s), {} FMask(s)",
+                 info.stage, info.pgm_hash, multisampled, info.fmasks.size());
+    }
+}
+
 PipelineCache::Result PipelineCache::GetProgram(Stage stage, LogicalStage l_stage,
                                                 const Shader::ShaderParams& params,
                                                 Shader::Backend::Bindings& binding) {
@@ -1146,6 +1163,7 @@ PipelineCache::Result PipelineCache::GetProgram(Stage stage, LogicalStage l_stag
         const auto perm_hash = HashCombine(params.hash, 0);
 
         RegisterShaderMeta(program->info, spec.fetch_shader_data, spec, perm_hash, 0);
+        LogMsaaReads(program->info, spec);
         program->AddPermut(module, std::move(spec));
         return std::make_tuple(&program->info, module, program->modules[0].spec.fetch_shader_data,
                                perm_hash);
@@ -1169,6 +1187,7 @@ PipelineCache::Result PipelineCache::GetProgram(Stage stage, LogicalStage l_stag
         module = CompileModule(new_info, runtime_info, params.code, perm_idx, binding);
 
         RegisterShaderMeta(info, spec.fetch_shader_data, spec, perm_hash, perm_idx);
+        LogMsaaReads(info, spec);
         program->AddPermut(module, std::move(spec));
     } else {
         info.AddBindings(binding);
