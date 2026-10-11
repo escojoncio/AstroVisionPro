@@ -373,7 +373,18 @@ void Emulator::Run(std::filesystem::path file, std::vector<std::string> args,
         // the emulator closes, and the app is often closed by the system without that.
         EmulatorSettings.SetPipelineCacheArchived(false, true);
     }
+    // SHADPS4_DUMP_SHADERS=<folder> (the app's «Modo diagnóstico»): every guest shader's GCN code
+    // is written to <folder>/dumps as it is first compiled (VPEngine's shader corpus).
+    if (const char* folder = std::getenv("SHADPS4_DUMP_SHADERS"); folder != nullptr && *folder) {
+        std::error_code error;
+        std::filesystem::create_directories(folder, error);
+        if (std::filesystem::is_directory(folder, error)) {
+            Common::FS::SetUserPath(Common::FS::PathType::ShaderDir, folder);
+            EmulatorSettings.SetDumpShaders(true, true);
+        }
+    }
 #endif
+    LOG_INFO(Config, "GPU dumpShaders: {}", EmulatorSettings.IsDumpShaders());
     LOG_INFO(Config, "Vulkan PipelineCacheEnabled: {}", EmulatorSettings.IsPipelineCacheEnabled());
     LOG_INFO(Config, "Vulkan PipelineCacheArchived: {}",
              EmulatorSettings.IsPipelineCacheArchived());

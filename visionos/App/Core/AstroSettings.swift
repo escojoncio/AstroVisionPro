@@ -239,6 +239,10 @@ struct AstroSettings {
             // known_title.cpp).
             env.append("SHADPS4_GPU_STAMP_LOG=1")
             env.append("SHADPS4_QUALITY_DUMP=1")
+            // Each shader's GCN code, once, to VPS4/VPEngine/shaders/dumps (VPEngine's corpus).
+            if let root = GameFolder.url() {
+                env.append("SHADPS4_DUMP_SHADERS=\(root.appendingPathComponent("VPEngine/shaders").path)")
+            }
             // KosmicKrisp: Metal encoders a second and what cut each render encoder short.
             env.append("KK_CENSUS=1")
         }
