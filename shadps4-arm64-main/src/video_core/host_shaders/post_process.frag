@@ -17,7 +17,16 @@ layout (push_constant) uniform settings {
     // The target encodes what it is given for display by itself (an sRGB image): it has to be
     // given linear light, or the picture would be encoded twice.
     bool linear_out;
+    // The input holds sRGB-encoded values, read as they are (a 10-bit picture the console calls
+    // sRGB: Vulkan has no sRGB format for it): decoded to linear light when read.
+    bool input_encoded;
 } pp;
+
+vec3 decoded(vec3 rgb) {
+    return pp.input_encoded ? mix(pow((rgb + 0.055) / 1.055, vec3(2.4)), rgb / 12.92,
+                                  lessThanEqual(rgb, vec3(0.04045)))
+                            : rgb;
+}
 
 const float cutoff = 0.0031308, a = 1.055, b = 0.055, d = 12.92;
 vec3 gamma(vec3 rgb) {
@@ -30,12 +39,13 @@ vec3 gamma(vec3 rgb) {
 
 // What goes to the display for the picture at a place.
 vec3 shown(vec2 at) {
-    vec3 rgb = textureLod(texSampler, at, 0.0).rgb;
+    vec3 rgb = decoded(textureLod(texSampler, at, 0.0).rgb);
     return pp.hdr ? rgb : gamma(rgb);
 }
 
 void main() {
     vec4 color_linear = texture(texSampler, uv);
+    color_linear.rgb = decoded(color_linear.rgb);
     vec3 here = pp.hdr ? color_linear.rgb : gamma(color_linear.rgb);
     if (pp.sharpen > 0.0) {
         // Contrast adaptive sharpening: a pixel is pushed away from the four next to it, the
