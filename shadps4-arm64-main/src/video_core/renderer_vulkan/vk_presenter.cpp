@@ -894,6 +894,9 @@ HmdFrames Presenter::PrepareHmdFrame(std::span<const AmdGpu::Image, 2> eye_textu
     const auto& left_info = texture_cache.GetImage(image_ids[0]).info;
     eye_width = left_info.size.width;
     eye_height = left_info.size.height;
+    last_hmd_fov = fov;
+    last_hmd_eye_width = eye_width;
+    last_hmd_eye_height = eye_height;
 
     // With a VR host attached the frame goes into one of its buffers instead of the window. A
     // headset of the machine's own gets a frame of its own next to the window's: the eyes'
@@ -1058,6 +1061,105 @@ HmdFrames Presenter::PrepareHmdFrame(std::span<const AmdGpu::Image, 2> eye_textu
     SubmitInfo info{};
     draw_scheduler.Flush(info);
     return {.shown = frame, .exported = local};
+}
+
+HmdFrames Presenter::PrepareScreenAsHmdFrame(
+    const Libraries::VideoOut::BufferAttributeGroup& attribute, VAddr cpu_address,
+    Core::Vr::Fov& fov, u32& eye_width, u32& eye_height) {
+    if (!vr_exporter->HasLocalHost()) {
+        return {};
+    }
+    auto desc = VideoCore::TextureCache::ImageDesc{attribute, cpu_address};
+    const auto image_id = texture_cache.FindImage(desc);
+    texture_cache.UpdateImage(image_id);
+
+    // The size and optics of the title's own headset frames, or a PlayStation VR's before any.
+    fov = last_hmd_fov;
+    eye_width = last_hmd_eye_width != 0 ? last_hmd_eye_width : 1440;
+    eye_height = last_hmd_eye_height != 0 ? last_hmd_eye_height : 1536;
+    Frame* const local = vr_exporter->AcquireLocal(eye_width * 2, eye_height);
+    if (local == nullptr) {
+        return {};
+    }
+
+    draw_scheduler.EndRendering();
+    const auto cmdbuf = draw_scheduler.CommandBuffer();
+    const vk::ImageMemoryBarrier2 pre_barrier{
+        .srcStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+        .srcAccessMask = vk::AccessFlagBits2::eColorAttachmentRead,
+        .dstStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+        .dstAccessMask = vk::AccessFlagBits2::eColorAttachmentWrite,
+        .oldLayout = vk::ImageLayout::eUndefined,
+        .newLayout = vk::ImageLayout::eColorAttachmentOptimal,
+        .image = local->image,
+        .subresourceRange{
+            .aspectMask = vk::ImageAspectFlagBits::eColor,
+            .baseMipLevel = 0,
+            .levelCount = 1,
+            .baseArrayLayer = 0,
+            .layerCount = VK_REMAINING_ARRAY_LAYERS,
+        },
+    };
+    cmdbuf.pipelineBarrier2(vk::DependencyInfo{
+        .imageMemoryBarrierCount = 1,
+        .pImageMemoryBarriers = &pre_barrier,
+    });
+
+    VideoCore::ImageViewInfo view_info{};
+    view_info.format = GetFrameViewFormat(attribute.attrib.pixel_format);
+    view_info.mapping.a = vk::ComponentSwizzle::eOne;
+    auto& image = texture_cache.GetImage(image_id);
+    image.Transit(vk::ImageLayout::eShaderReadOnlyOptimal, vk::AccessFlagBits2::eShaderRead, {},
+                  cmdbuf);
+    const vk::ImageView view = *image.FindView(view_info).image_view;
+
+    // A screen 70 degrees wide straight ahead, the same in both eyes (far away): in each eye's
+    // picture, which spans from the temple's tangent to the nose's and from the top's to the
+    // bottom's, the rectangle of those tangents.
+    constexpr float half_width_tan = 0.7002f; // tan(35 degrees): small text stays readable
+    const float picture_aspect = image.info.size.height > 0
+                                     ? static_cast<float>(image.info.size.width) /
+                                           static_cast<float>(image.info.size.height)
+                                     : 16.0f / 9.0f;
+    const float half_height_tan = half_width_tan / std::max(picture_aspect, 0.1f);
+    const u32 half_width = local->width / 2;
+    std::array<HostPasses::PostProcessingPass::Region, 2> regions;
+    for (u32 eye = 0; eye < 2; ++eye) {
+        // Left eye: the temple is to the left; right eye: the nose is.
+        const float left_tan = eye == 0 ? fov.tan_out : fov.tan_in;
+        const float right_tan = eye == 0 ? fov.tan_in : fov.tan_out;
+        const float span_x = std::max(left_tan + right_tan, 0.01f);
+        const float span_y = std::max(fov.tan_top + fov.tan_bottom, 0.01f);
+        const float x0 = (left_tan - half_width_tan) / span_x * half_width;
+        const float x1 = (left_tan + half_width_tan) / span_x * half_width;
+        const float y0 = (fov.tan_top - half_height_tan) / span_y * local->height;
+        const float y1 = (fov.tan_top + half_height_tan) / span_y * local->height;
+        const s32 left = std::clamp(static_cast<s32>(x0), 0, static_cast<s32>(half_width) - 1);
+        const s32 right = std::clamp(static_cast<s32>(x1), left + 1, static_cast<s32>(half_width));
+        const s32 top = std::clamp(static_cast<s32>(y0), 0, static_cast<s32>(local->height) - 1);
+        const s32 bottom =
+            std::clamp(static_cast<s32>(y1), top + 1, static_cast<s32>(local->height));
+        regions[eye] = {
+            .input = view,
+            .area{
+                .offset{.x = static_cast<s32>(eye * half_width) + left, .y = top},
+                .extent{.width = static_cast<u32>(right - left),
+                        .height = static_cast<u32>(bottom - top)},
+            },
+        };
+    }
+    auto local_settings = pp_settings;
+    local_settings.sharpen = 0.0f;
+    local_settings.linear_out = 1;
+    hmd_pp_pass.Render(cmdbuf, regions, *local, local_settings);
+    DebugState.output_resolution = {local->width, local->height};
+
+    local->ready_timeline = draw_scheduler.GetMasterSemaphore();
+    local->ready_semaphore = draw_scheduler.GetMasterSemaphore()->Handle();
+    local->ready_tick = draw_scheduler.CurrentTick();
+    SubmitInfo info{};
+    draw_scheduler.Flush(info);
+    return {.shown = nullptr, .exported = local};
 }
 
 bool Presenter::IsFrameFinished(const Frame* frame) {

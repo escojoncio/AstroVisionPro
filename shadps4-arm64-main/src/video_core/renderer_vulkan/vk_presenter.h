@@ -119,6 +119,15 @@ public:
                               const Core::Vr::Fov& fov, u32 frame_id,
                               u32& eye_width, u32& eye_height);
 
+    /// The title's flat picture (a VideoOut flip, not a headset frame) for the headset of the
+    /// machine's own, as a screen straight ahead in both eyes: what a title shows while it
+    /// has not started its headset output (setup and loading screens, a game that is not a VR
+    /// one). Returns the eye size and field of view it was laid out with; nothing if there is
+    /// no such headset or none of its images is free.
+    HmdFrames PrepareScreenAsHmdFrame(const Libraries::VideoOut::BufferAttributeGroup& attribute,
+                                      VAddr cpu_address, Core::Vr::Fov& fov, u32& eye_width,
+                                      u32& eye_height);
+
     /// Hands a frame made by PrepareHmdFrame to the VR host. Returns false for a frame that is
     /// not one of the host's, which has to be presented as usual.
     bool DeliverHmdFrame(Frame* frame, const Core::Vr::PresentedFrame& info);
@@ -155,6 +164,10 @@ private:
     HostPasses::PostProcessingPass pp_pass;
     /// The same pass for the frames of the machine's own headset, which have a format of their
     /// own. Only made where there is such a headset to draw for.
+    // The last headset frame's layout, for the title's flat pictures shown in the headset.
+    Core::Vr::Fov last_hmd_fov{};
+    u32 last_hmd_eye_width{};
+    u32 last_hmd_eye_height{};
     HostPasses::PostProcessingPass hmd_pp_pass;
     AmdGpu::Liverpool* liverpool;
     Scheduler draw_scheduler;

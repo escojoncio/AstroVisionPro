@@ -1081,6 +1081,15 @@ DeviceState Runtime::GetPad() {
     return state;
 }
 
+bool Runtime::HostHeadPose(Pose& out) const {
+    std::scoped_lock lock{mutex};
+    if (!host_head.tracked) {
+        return false;
+    }
+    out = host_head.pose;
+    return true;
+}
+
 Pose Runtime::ToHostSpace(const Pose& tracker_pose) const {
     std::scoped_lock lock{mutex};
     const auto from_seat = [&](const Vec3& position, const Quat& yaw) {

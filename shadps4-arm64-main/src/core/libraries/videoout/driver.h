@@ -139,6 +139,16 @@ private:
                                 std::chrono::steady_clock::time_point handed_over);
     void PresentThread(std::stop_token token);
     void ApplyDueLabelRetirement();
+    /// A flat picture (VideoOut flip) put in the headset of the machine's own as a screen,
+    /// while the title shows no headset frames of its own: true when it was.
+    bool SubmitScreenToHeadset(VideoOutPort* port, s32 index, s64 flip_arg, bool is_eop,
+                               u64 lock_generation);
+
+    // When the title last handed a headset frame over (steady clock, ns), and where the
+    // screen of its flat pictures is (fixed in the room while they go on).
+    std::atomic<s64> last_hmd_submit_ns{};
+    s64 screen_since_ns{};
+    Core::Vr::Pose screen_pose{};
 
     std::mutex mutex;
     VideoOutPort main_port{};
