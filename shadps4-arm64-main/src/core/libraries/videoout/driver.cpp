@@ -24,6 +24,9 @@
 #include "video_core/amdgpu/liverpool.h"
 #include "video_core/renderer_vulkan/vk_presenter.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
+#if defined(SHADPS4_VISIONOS)
+#include "core/vr/openxr_host.h"
+#endif
 
 extern std::unique_ptr<Vulkan::Presenter> presenter;
 extern std::unique_ptr<AmdGpu::Liverpool> liverpool;
@@ -441,6 +444,11 @@ void VideoOutDriver::SubmitFlipInternal(VideoOutPort* port, s32 index, s64 flip_
                  "BACHATA_FLIP_TRACE stage=prepare_enter index={} arg={} eop={}", index, flip_arg,
                  is_eop);
     }
+#if defined(SHADPS4_VISIONOS)
+    if (index != -1 && SubmitScreenToHeadset(port, index, flip_arg, is_eop, lock_generation)) {
+        return;
+    }
+#endif
     Vulkan::Frame* frame;
     if (index == -1) {
         frame = presenter->PrepareBlankFrame(false);
@@ -481,7 +489,92 @@ void VideoOutDriver::SubmitFlipInternal(VideoOutPort* port, s32 index, s64 flip_
     }
 }
 
+bool VideoOutDriver::SubmitScreenToHeadset(VideoOutPort* port, s32 index, s64 flip_arg,
+                                           bool is_eop, u64 lock_generation) {
+#if defined(SHADPS4_VISIONOS)
+    // Only while the headset is showing and the title has not handed a frame of its own to it
+    // for a second (its setup and loading screens, or a title that is not a VR one).
+    if (!Core::Vr::OpenXrHost::Instance().IsShowing()) {
+        return false;
+    }
+    const s64 now = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                        std::chrono::steady_clock::now().time_since_epoch())
+                        .count();
+    constexpr s64 Second = 1'000'000'000;
+    if (now - last_hmd_submit_ns.load(std::memory_order_relaxed) < Second) {
+        return false;
+    }
+    const auto& buffer = port->buffer_slots[index];
+    if (buffer.group_index < 0) {
+        return false;
+    }
+    // A screen fixed in the room: where the head looked (level) when the flat pictures began.
+    // Read as the host gives it: the title's own look at the head (GetHead) would place its
+    // seat now. Not known yet: on the window as before.
+    auto& runtime = Core::Vr::Runtime::Instance();
+    const bool new_stretch = now - screen_since_ns > Second;
+    if (new_stretch) {
+        Core::Vr::Pose pose;
+        if (!runtime.HostHeadPose(pose)) {
+            return false;
+        }
+        pose.orientation = Core::Vr::YawOnly(pose.orientation);
+        screen_pose = pose;
+    }
+    Core::Vr::Fov fov{};
+    u32 eye_width = 0;
+    u32 eye_height = 0;
+    const auto frames = presenter->PrepareScreenAsHmdFrame(
+        port->groups[buffer.group_index], buffer.address_left, fov, eye_width, eye_height);
+    if (!frames) {
+        // No image of the headset free now (it is held, or the app does not take frames): the
+        // window is not shown either, so the flip is tried again once the GPU thread is free,
+        // as headset frames are.
+        liverpool->EnqueueCommand([=, this] {
+            SubmitFlipInternal(port, index, flip_arg, is_eop, lock_generation);
+        });
+        return true;
+    }
+    // The title's time stamp for its next headset frame, not this one's.
+    (void)Vulkan::FrameStats::TakeGuestSubmit();
+    if (new_stretch) {
+        LOG_INFO(Lib_VideoOut, "SCREEN_IN_HEADSET: the title's flat pictures ({}x{}) are shown "
+                               "as a screen in the headset",
+                 port->groups[buffer.group_index].attrib.width,
+                 port->groups[buffer.group_index].attrib.height);
+    }
+    screen_since_ns = now;
+
+    std::scoped_lock lock{mutex};
+    requests.push({
+        .frame = frames.shown,
+        .port = port,
+        .flip_arg = flip_arg,
+        .index = index,
+        .eop = is_eop,
+        .lock_generation = lock_generation,
+        .is_hmd = true,
+        .hmd_frame{
+            .id = runtime.NextFrameId(),
+            .render_pose = screen_pose,
+            .fov = fov,
+            .eye_width = eye_width,
+            .eye_height = eye_height,
+        },
+        .prepared = std::chrono::steady_clock::now(),
+        .export_frame = frames.exported,
+    });
+    return true;
+#else
+    return false;
+#endif
+}
+
 bool VideoOutDriver::SubmitHmdFrame(VideoOutPort* port, const HmdFrame& hmd_frame) {
+    last_hmd_submit_ns.store(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                 std::chrono::steady_clock::now().time_since_epoch())
+                                 .count(),
+                             std::memory_order_relaxed);
     {
         std::unique_lock lock{port->port_mutex};
         if (port->flip_status.flip_pending_num > 16) {

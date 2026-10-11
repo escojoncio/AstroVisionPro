@@ -272,6 +272,10 @@ public:
     DeviceState GetHead();
     DeviceState GetPad();
 
+    /// Where the host last said the head is, in its own space, without anything a title's
+    /// look at the head does (GetHead sets the seat the first time): false while untracked.
+    bool HostHeadPose(Pose& out) const;
+
     /// Converts a tracker-space pose handed back by the guest into host space.
     Pose ToHostSpace(const Pose& tracker_pose) const;
 
@@ -363,7 +367,7 @@ private:
     PadFeedback pad_feedback;
     std::function<void(const PadFeedback&)> pad_feedback_listener;
     std::function<void(const PresentedFrame&)> frame_listener;
-    u32 frame_counter{};
+    std::atomic<u32> frame_counter{};
 };
 
 } // namespace Core::Vr
