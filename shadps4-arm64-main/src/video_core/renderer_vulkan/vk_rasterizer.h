@@ -104,6 +104,15 @@ private:
     std::pair<u32, u32> AttachmentlessExtent() const;
     void Resolve();
     void DepthStencilCopy(bool is_depth, bool is_stencil);
+    /// Copies the depth of `read_desc`'s image into `write_desc`'s (layers given).
+    void CopyDepthBetween(VideoCore::TextureCache::ImageDesc read_desc,
+                          VideoCore::TextureCache::ImageDesc write_desc, u32 base_layer,
+                          u32 num_layers, bool is_depth, bool is_stencil);
+    /// A texture at `address` is about to be read: if draws wrote depth meant for that address
+    /// into another surface (depth read and write addresses differ), it is copied there first.
+    void MirrorPendingDepth(VAddr address);
+    /// MirrorPendingDepth for every texture the pipeline's shaders read.
+    void RunDepthMirrors(const Pipeline* pipeline);
     void EliminateFastClear();
 
     void UpdateDynamicState(const GraphicsPipeline* pipeline, bool is_indexed) const;
@@ -207,6 +216,17 @@ private:
     boost::container::small_vector<ImageBindingInfo, Shader::NUM_IMAGES> image_bindings;
     bool fault_process_pending{};
     bool attachment_feedback_loop{};
+
+    /// Depth written by draws at the read address when the title asked for another write
+    /// address (DB_Z_READ_BASE != DB_Z_WRITE_BASE): copied there when that surface is read.
+    struct DepthMirror {
+        VAddr write_address;
+        VideoCore::TextureCache::ImageDesc read_desc;
+        VideoCore::TextureCache::ImageDesc write_desc;
+        u32 base_layer;
+        u32 num_layers;
+    };
+    std::vector<DepthMirror> depth_mirrors;
 };
 
 } // namespace Vulkan
