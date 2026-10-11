@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: Copyright 2024 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <atomic>
 #include <cstring>
 #include <cstdlib>
 #include <ranges>
@@ -285,6 +286,15 @@ Image::Image(const Vulkan::Instance& instance_, Vulkan::Scheduler& scheduler_,
         .initialLayout = vk::ImageLayout::eUndefined,
     };
     SetHostSamples(image_ci, info.num_samples);
+    if (info.num_samples > 1) {
+        static std::atomic<u32> told{};
+        if (told.fetch_add(1, std::memory_order_relaxed) < 12) {
+            LOG_INFO(Render_Vulkan,
+                     "MSAA: image {}x{} {} at {:#x}: the title's {} samples, {} on the host",
+                     info.size.width, info.size.height, vk::to_string(info.pixel_format),
+                     info.guest_address, info.num_samples, static_cast<u32>(image_ci.samples));
+        }
+    }
 
     backing = &backing_images.emplace_back();
     backing->num_samples = info.num_samples;
@@ -936,6 +946,17 @@ void Image::Resolve(Image& src_image, const VideoCore::SubresourceRange& mrt0_ra
                     const VideoCore::SubresourceRange& mrt1_range) {
     SetBackingSamples(1, false);
     scheduler->EndRendering();
+    {
+        static std::atomic<u32> told{};
+        if (told.fetch_add(1, std::memory_order_relaxed) < 6) {
+            LOG_INFO(Render_Vulkan,
+                     "MSAA: resolve {}x{} {} from {:#x} ({} samples, {} on the host) to {:#x}",
+                     info.size.width, info.size.height, vk::to_string(src_image.info.pixel_format),
+                     src_image.info.guest_address, src_image.info.num_samples,
+                     static_cast<u32>(src_image.backing->image.image_ci.samples),
+                     info.guest_address);
+        }
+    }
 
     // Where the host holds what the guest multisamples with one sample a pixel, there is
     // nothing to resolve, and a copy would leave every edge as jagged as it was drawn: the

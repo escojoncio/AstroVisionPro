@@ -106,6 +106,11 @@ bool Rasterizer::FilterDraw() {
     if (regs.color_control.mode == AmdGpu::ColorControl::OperationMode::FmaskDecompress) {
         // TODO: check for a valid MRT1 to promote the draw to the resolve pass.
         LOG_TRACE(Render_Vulkan, "FMask decompression pass skipped");
+        static std::atomic<u32> fmask_told{};
+        if (fmask_told.fetch_add(1, std::memory_order_relaxed) < 4) {
+            LOG_INFO(Render_Vulkan, "MSAA: FMask decompression of {:#x} ({} samples) skipped",
+                     regs.color_buffers[0].Address(), regs.color_buffers[0].NumSamples());
+        }
         if (TraceDraw()) {
             LOG_INFO(Render_Vulkan, "TRACE fmask-decompress cb0={:#x}",
                      regs.color_buffers[0].Address());
