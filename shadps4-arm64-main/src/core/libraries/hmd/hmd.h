@@ -317,6 +317,12 @@ s32 PS4_SYSV_ABI Func_FF2E0E53015FE231();
 /// Called by the video output once per display refresh; the headset reprojects at that rate.
 void OnVblank();
 
+/// The GPU waits (WAIT_REG_MEM) on `address`: if that is the label of a frame the title handed
+/// to the reprojection (OrbisHmdReprojectionParam::frame_label), which the console's
+/// reprojection writes once it has read the frame's eyes, the value the wait asks for is
+/// written there now (the frame has been passed on) and true is returned.
+bool SatisfyReprojectionLabelWait(u32* address, u32 function, u32 ref, u32 mask);
+
 void RegisterDistortion(Core::Loader::SymbolsResolver* sym);
 void RegisterReprojection(Core::Loader::SymbolsResolver* sym);
 void RegisterLib(Core::Loader::SymbolsResolver* sym);

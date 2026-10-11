@@ -1,7 +1,11 @@
 // SPDX-FileCopyrightText: Copyright 2024 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <algorithm>
+#include <array>
+#include <atomic>
 #include <chrono>
+#include <cstring>
 #include <mutex>
 
 #include "common/logging/log.h"
@@ -11,6 +15,7 @@
 #include "core/libraries/hmd/hmd_error.h"
 #include "core/libraries/libs.h"
 #include "core/libraries/videoout/video_out.h"
+#include "core/memory.h"
 #include "core/vr/vr_runtime.h"
 
 namespace Libraries::Hmd {
@@ -43,6 +48,9 @@ struct Reprojection {
     u32 submitted_frames{};
     UserEvent start_event;
     UserEvent end_event;
+    // The frame labels of the last frames handed over (OrbisHmdReprojectionParam::frame_label).
+    std::array<uintptr_t, 8> frame_labels{};
+    u32 next_label{};
 };
 
 Reprojection g_reprojection;
@@ -227,6 +235,11 @@ s32 PS4_SYSV_ABI sceHmdReprojectionStart(const OrbisHmdReprojectionParam* param,
         }
         video_out_handle = g_reprojection.video_out_handle;
         frame_number = g_reprojection.submitted_frames++;
+        if (param->frame_label != nullptr) {
+            g_reprojection.frame_labels[g_reprojection.next_label++ %
+                                        g_reprojection.frame_labels.size()] =
+                reinterpret_cast<uintptr_t>(param->frame_label);
+        }
         // The reprojection alternates between the two display buffers it was given.
         frame.display_index = g_reprojection.display_index[frame_number & 1];
     }
@@ -239,6 +252,11 @@ s32 PS4_SYSV_ABI sceHmdReprojectionStart(const OrbisHmdReprojectionParam* param,
                  frame_number, flip_arg, left.width + 1, left.height + 1, left.Address(),
                  frame.eye_textures[1].Address(), frame.fov.tan_out, frame.fov.tan_in,
                  frame.fov.tan_top, frame.fov.tan_bottom, param->unknown_40, param->flags, option);
+        LOG_INFO(Lib_Hmd,
+                 "frame {}: frame label at {} (now {:#x}), unknown_48 = {:#x}, unknown_50 = {:#x}",
+                 frame_number, fmt::ptr(param->frame_label),
+                 param->frame_label != nullptr ? *param->frame_label : 0, param->unknown_48,
+                 param->unknown_50);
         LOG_INFO(Lib_Hmd,
                  "eye UV: left scale {:.6f}/{:.6f}, offset {:.6f}/{:.6f}; "
                  "right scale {:.6f}/{:.6f}, offset {:.6f}/{:.6f}",
@@ -271,6 +289,54 @@ s32 PS4_SYSV_ABI sceHmdReprojectionStart(const OrbisHmdReprojectionParam* param,
         LOG_ERROR(Lib_Hmd, "Could not queue headset frame: {:#x}", static_cast<u32>(result));
     }
     return ORBIS_OK;
+}
+
+bool SatisfyReprojectionLabelWait(u32* address, u32 function, u32 ref, u32 mask) {
+    if (address == nullptr) {
+        return false;
+    }
+    const auto at = reinterpret_cast<uintptr_t>(address);
+    {
+        std::scoped_lock lock{g_reprojection.mutex};
+        const bool known = std::ranges::any_of(g_reprojection.frame_labels, [&](uintptr_t label) {
+            return label != 0 && at >= label && at < label + sizeof(u64);
+        });
+        if (!known) {
+            return false;
+        }
+    }
+    // The comparisons of WAIT_REG_MEM (pm4_cmds.h): 1 <, 2 <=, 3 ==, 4 !=, 5 >=, 6 >.
+    const u32 before = *address;
+    u32 wanted;
+    switch (function) {
+    case 1:
+        wanted = ref - 1;
+        break;
+    case 4:
+        wanted = (ref ^ mask);
+        break;
+    case 6:
+        wanted = ref + 1;
+        break;
+    default:
+        wanted = ref;
+        break;
+    }
+    const u32 value = (before & ~mask) | (wanted & mask);
+    // As the GPU's own label writes are made (EOP, liverpool.cpp): through the memory's backing.
+    if (!Core::Memory::Instance()->TryWriteBacking(address, &value,
+                                                   sizeof(value))) {
+        std::memcpy(address, &value, sizeof(value));
+    }
+    static std::atomic<u32> told{};
+    if (told.fetch_add(1, std::memory_order_relaxed) < 8) {
+        LOG_INFO(Lib_Hmd,
+                 "REPROJECTION_LABEL: the GPU waits on a frame's label at {} (comparison {}, "
+                 "{:#x} under mask {:#x}); it held {:#x}, now {:#x}, as once the reprojection has "
+                 "read the frame",
+                 fmt::ptr(address), function, ref, mask, before, *address);
+    }
+    return true;
 }
 
 s32 PS4_SYSV_ABI sceHmdReprojectionStart2dVr() {
