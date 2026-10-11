@@ -5,6 +5,55 @@ Base: shadPS4 ARM64 (`shadps4-arm64-main/`) + FEXCore (x86-64 → ARM64) + Molte
 App visionOS en `visionos/` (SwiftUI + Compositor Services + ARKit + GameController).
 JIT: arena RWX preparada por StikDebug (protocolo `brk #0xf00d` + universal.js); la app hace detach al terminar.
 
+## Informe de rendimiento (2026-10-11): dónde estamos, qué se probó, qué queda
+Resumen para decidir la dirección del proyecto. Datos de los logs del visor (Vision Pro M2, visionOS 27), ASTRO BOT CUSA12392 v1.00, KosmicKrisp salvo donde se dice.
+
+### Cadena actual
+- CPU del juego: FEX (x86-64 → ARM64, JIT en arena RWX vía StikDebug). VPEngine (AOT, sin JIT): build aparte `visionos-vpengine`; convierte en el visor (318/335 piezas, firma del pack aceptada en la 7.ª prueba), pero el eboot no llega a engancharse; no ha ejecutado el juego.
+- GPU: shadPS4 traduce GCN → SPIR-V → driver Vulkan sobre Metal. KosmicKrisp (Mesa `b628375`, parche propio `visionos/patches/kosmickrisp-visionos.patch`): SPIR-V → NIR → MSL → compilador de Metal. MoltenVK: SPIR-V → SPIRV-Cross → MSL.
+- Imagen: 1440x1536 por ojo (2880x1536 en total), ambos ojos en cada frame del juego, reproyección por pose en `GameRenderer.swift`, SMAA propio.
+- El límite es la GPU: 94–100 % de ocupación en el mundo. La CPU no limita (hilo de comandos ~20 %).
+
+### Números de referencia (mundo, quieto, KK)
+- **~30 ms de GPU por imagen** (rango 29–33 en frío, 34–44 con thermal serious). A 100 Hz eso da 33 fps (3 refrescos); el juego en consola va a 60.
+- Térmico: `nominal` → `fair` a los ~1,5–2,5 min de mundo; el sistema baja el visor a 50 Hz y el juego queda en 25 fps; `serious` a los ~2 min más. Sin térmico, el objetivo realista con lo actual sería 45 fps (≤22 ms); 60 fps exige ≤16,7 ms.
+- Por frame: ~2000 draws, ~6,5 M vértices, ~42–46 pasadas de Vulkan, ~49–55 encoders de render de Metal, ~5 dispatches.
+- Reparto por pasadas (`GPU_PASSES`, a 30 fps): escena `1440x1536 1 colour +depth` 14–23 ms (~70 %); fuera de pasadas (copias/cómputo) ~5 ms; `1440x1536 1 colour` ~4 ms; bloom ~3 ms; sombras 2048² ~2 ms; prepass ~0,6 ms.
+- Banco por etapas (5e2d0e3): normal 31–32 ms; sin píxeles (rasterizer discard) 18–20; 3 vértices por draw 16–17,5; sin pasadas solo-profundidad ~30; sin draws con GS ~29.
+- Resolución: 816 y 1440 por ojo cuestan casi lo mismo en la escena; 2160 sí sube (pasada de escena 19 → 37 ms) y además se queda sin memoria (8 GB, jetsam).
+- Banco por shader (c8b5b86 frío; b40e806 con thermal serious): `fs 0x1759c590391` −4,9 / −11,1 ms (casi todo fragmento); `fs 0xede974d10fd` −3,3 ms; los 8 shaders principales a la vez −14,7 ms (32,9 → 18,1) / −21,3 ms. Dos shaders de material del escenario (familia de vs `0x2b0f9329f9x`) concentran ~8–11 ms.
+- `fs 0x1759c590391` decompilado (spirv-cross): 5 texturas, 2 cascadas de sombra × 9 muestras de comparación, 4 bucles de luces, 127 lecturas de constantes, 381 operaciones `precise` (NoContraction). Sin discard, profundidad LessEqual, opaco, 1 color.
+- MoltenVK: 13 fps, ~77 ms/imagen (1a9a1d2, 1440); antes 17–25 fps a 816 (e030f88). 2,5× más lento que KK. Descartado.
+
+### Lo que se probó y lo que dio
+| Cambio | Build | Resultado |
+|---|---|---|
+| Resolución dinámica + MetalFX | 47cf082 | Sin ganancia (coste no escala con píxeles por debajo de 1440); quitado |
+| Pasada sin adjuntos de 16384² → tamaño real | 2ad2afd | −6…−23 % GPU estimado; quitada la pasada |
+| GS dentro de la pasada (`KK_GS_IN_PASS`) | e7d85d8/0f6bcfc | Coste por draw con GS 0,25 → 0,12 ms; pasada principal 21,3 → 18,7 ms |
+| Juntar pasadas (`SHADPS4_MERGE_PASSES`) | 14547eb | Activo; ganancia pequeña |
+| Pasadas solapadas (`KK_LIGHT_BARRIERS`) | 6e2f370 | Neutral; desactivado |
+| Restart de primitivas en listas off | 212a0a3 | 0 listas con restart en ASTRO BOT: sin efecto |
+| Memoria de GS entre pasadas (`KK_HEAP_BETWEEN_PASSES`) | 2a1c07f | Neutral (quita 6 cortes de encoder por frame) |
+| Suavizado al resolver off (`SHADPS4_RESOLVE_AA=0`) | c4d958d | ≤0,5 ms, en el ruido |
+| Reloj de GPU del juego automático | c4d958d | Corrección (el juego vuelve a dibujar sombras/efectos que quitaba por medir la GPU lenta), no rendimiento |
+| Constantes como uniform buffers (`SHADPS4_CONSTANT_UBO`) | 6861ed1 | Sin ganancia medible |
+| Caché de pipelines en disco + precarga en segundo plano | 1a9a1d2 | Funciona (MVK: 25 pipelines, 148 ms); afecta a tirones y efectos tarde, no a fps. Con KK sin probar aún en 2.ª partida |
+| Shaders de píxel sin NoContraction (`SHADPS4_EXACT_PIXEL_MATH=0`) | 06a33a4 | **Pendiente de medir** |
+
+### Palancas no probadas, por relación coste/efecto esperado
+1. **Robustez de búferes e imágenes**: el dispositivo se crea con `robustBufferAccess2=1`, `robustImageAccess2=1`, `nullDescriptor=1` (`vk_instance.cpp:333-340, 547-550`; confirmado en el log de KK). En KK cada acceso a SSBO/textura del MSL lleva comprobación de límites; el fs caro hace 127 lecturas de constantes + 5 texturas + 18 muestras de sombra por píxel. Probar un ajuste que no pida `robustBufferAccess2`/`robustImageAccess2` (manteniendo `nullDescriptor` si hace falta para descriptores vacíos) y medir con el banco. General, barato; riesgo: lecturas fuera de rango que hoy dan 0 pasarían a basura o fallo de GPU.
+2. **Ver el MSL que genera KK para `fs 0x1759c590391`** (volcarlo desde el parche de KK al log o a la carpeta VPS4, como ya se hace con el SPIR-V) y compararlo con lo que SPIRV-Cross genera del mismo SPIR-V: modo matemático, comprobaciones de límites, cómo quedan los muestreos de comparación y los bucles de luces. Es la forma de saber si el coste es del traductor o del propio shader del juego.
+3. **Costes fijos de KK** (~10 ms que no dependen de píxeles ni de vértices según el banco por etapas): `end_encoder` con barrera ALL→ALL en cada encoder, copias por compute (`kk_cmd_copy.c`) en vez de blit, teselación por compute para RectList/QuadList (bloom), encoders cortados. Requiere implementar barreras reales en KK.
+4. **Térmico**: con 30 ms de GPU sostenidos el visor se calienta y baja a 50 Hz en ~2 min. Cualquier ganancia de GPU también retrasa eso. Un tope de fps (p. ej. 30 estables a 90 Hz) podría sostener mejor que 33 → 25.
+5. **Backend Metal nativo en shadPS4** (estudio arriba, «Estudio backend Metal nativo frente a KosmicKrisp»): ~30–35 mil líneas a sustituir; Dolphin ganó 23–30 % con Metal frente a MoltenVK, Ryujinx retiró el suyo. Metal tampoco tiene GS/teselación/RectList. Coste muy alto, ganancia incierta frente a optimizar KK.
+6. **Cambios específicos del juego** (rechazados hasta ahora en favor de arreglos generales): reducir las muestras de sombra o la resolución de sombras/bloom del juego por parche.
+
+### Cómo medir
+- En el mundo, quieto, L3+R3 → banco por shader (~1 min): líneas `GPU_SHADER_BENCH` (ms/imagen de cada candidato y «all N at once»). Ajuste «Prueba de GPU con L3 + R3» = por etapas para el otro banco.
+- Por ventana de 5 s: `frame stats at` (fps, draws, pasadas), `GPU_TIME[0]` (ms de GPU en 5 s / command buffers), `[App] Headset:` (Hz del visor y estado térmico), `GPU_PASSES` (ms por tipo de pasada), `KK_CENSUS` (encoders y dónde se cortan).
+- Comparar siempre en frío (thermal nominal, visor a 100 Hz): con `fair`/`serious` los ms suben 10–40 %.
+
 ## Estado al cierre (2026-10-11) y siguiente sesión
 - Última build: 06a33a4 (run 38145867204), OK, `visionos-latest/AstroQuest.ipa`: selector de juego, caché por driver, `SHADPS4_EXACT_PIXEL_MATH`. Sin probar.
 - Probar: (1) banco L3+R3 en el mundo con KK y «Cálculo exacto en los shaders de píxel» desactivado (por defecto): `fs 0x1759c590391` frente a −11 ms y ms/imagen frente a ~30; mirar bandas/parpadeos/z-fighting; (2) 2.ª partida con KK para la caché (`PIPELINE_PRELOAD`, draws saltados, efecto del mapa); (3) CUSA06799 desde «Cambiar» en la tarjeta Juego (curiosidad: ¿arranca?, ¿se ve?).
