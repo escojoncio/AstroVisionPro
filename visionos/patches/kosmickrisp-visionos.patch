@@ -49,6 +49,61 @@ index dc580ed..adb6aae 100644
     }
  
     return device;
+diff --git a/src/kosmickrisp/bridge/mtl_encoder.h b/src/kosmickrisp/bridge/mtl_encoder.h
+index 90a4238..d2114e9 100644
+--- a/src/kosmickrisp/bridge/mtl_encoder.h
++++ b/src/kosmickrisp/bridge/mtl_encoder.h
+@@ -15,6 +15,11 @@
+ void mtl_end_encoding(void *encoder);
+ void mtl_barrier_after_stages(void *encoder, enum mtl_stages after_stages,
+                               enum mtl_stages before_queue_stages);
++/* The same producer barrier, flushing caches only to the device coherence point
++ * (MTL4VisibilityOptionDevice, Metal's default) instead of for aliased addresses. */
++void mtl_barrier_after_stages_device_visible(void *encoder,
++                                             enum mtl_stages after_stages,
++                                             enum mtl_stages before_queue_stages);
+ void mtl_barrier_after_encoder_stages(void *encoder,
+                                       enum mtl_stages after_stages,
+                                       enum mtl_stages before_queue_stages);
+diff --git a/src/kosmickrisp/bridge/mtl_encoder.m b/src/kosmickrisp/bridge/mtl_encoder.m
+index 0424743..43b2ebe 100644
+--- a/src/kosmickrisp/bridge/mtl_encoder.m
++++ b/src/kosmickrisp/bridge/mtl_encoder.m
+@@ -35,6 +35,17 @@ mtl_barrier_after_stages(void *encoder, enum mtl_stages after_stages,
+    }
+ }
+ 
++void
++mtl_barrier_after_stages_device_visible(void *encoder, enum mtl_stages after_stages,
++                                        enum mtl_stages before_queue_stages)
++{
++   @autoreleasepool {
++      id<MTL4CommandEncoder> enc = (id<MTL4CommandEncoder>)encoder;
++      [enc barrierAfterStages:(MTLStages)after_stages beforeQueueStages:(MTLStages)before_queue_stages
++           visibilityOptions:MTL4VisibilityOptionDevice];
++   }
++}
++
+ void
+ mtl_barrier_after_encoder_stages(void *encoder, enum mtl_stages after_stages,
+                                  enum mtl_stages before_queue_stages)
+diff --git a/src/kosmickrisp/bridge/stubs/mtl_encoder.c b/src/kosmickrisp/bridge/stubs/mtl_encoder.c
+index 7ef9fe8..2423a8f 100644
+--- a/src/kosmickrisp/bridge/stubs/mtl_encoder.c
++++ b/src/kosmickrisp/bridge/stubs/mtl_encoder.c
+@@ -18,6 +18,12 @@ mtl_barrier_after_stages(void *encoder, enum mtl_stages after_stages,
+ {
+ }
+ 
++void
++mtl_barrier_after_stages_device_visible(void *encoder, enum mtl_stages after_stages,
++                                        enum mtl_stages before_queue_stages)
++{
++}
++
+ void
+ mtl_barrier_after_encoder_stages(void *encoder, enum mtl_stages after_stages,
+                                  enum mtl_stages before_queue_stages)
 diff --git a/src/kosmickrisp/vulkan/kk_bo.c b/src/kosmickrisp/vulkan/kk_bo.c
 index 5562b61..aa571ab 100644
 --- a/src/kosmickrisp/vulkan/kk_bo.c
@@ -166,7 +221,7 @@ index d1590b9..ce5ce14 100644
     void *cpu;
     uint64_t gpu;
 diff --git a/src/kosmickrisp/vulkan/kk_cmd_buffer.c b/src/kosmickrisp/vulkan/kk_cmd_buffer.c
-index 22f4bf7..710fce5 100644
+index 22f4bf7..9bdd10c 100644
 --- a/src/kosmickrisp/vulkan/kk_cmd_buffer.c
 +++ b/src/kosmickrisp/vulkan/kk_cmd_buffer.c
 @@ -7,6 +7,14 @@
@@ -371,7 +426,7 @@ index 22f4bf7..710fce5 100644
        cmd->metal.compute = mtl_new_compute_command_encoder(cmd->metal.cmd_buf);
        mtl_compute_set_argument_table(cmd->metal.compute, cmd->argument_table);
        kk_encoder_update_debug(cmd, cmd->metal.compute);
-@@ -330,11 +476,57 @@ cs_get_compute(struct kk_cmd_buffer *cmd)
+@@ -330,11 +476,78 @@ cs_get_compute(struct kk_cmd_buffer *cmd)
     return cmd->metal.compute;
  }
  
@@ -416,6 +471,24 @@ index 22f4bf7..710fce5 100644
 +      cmd->vertex_wait_pending = true;
 +}
 +
++/* KK_BARRIER_VISIBILITY=device: the barrier every encoder ends with flushes caches to the
++ * device coherence point (Metal's default for producer barriers) rather than for aliased
++ * virtual addresses. Every VkDeviceMemory is a placement heap with a buffer over all of it
++ * and the images placed in it, and texel buffer views are textures made from buffers, so
++ * memory reached through two resources may need the alias flush: off unless asked for. */
++static bool
++kk_device_visible_barriers(void)
++{
++   static int enabled = -1;
++   if (enabled < 0) {
++      const char *env = getenv("KK_BARRIER_VISIBILITY");
++      enabled = env && strcmp(env, "device") == 0;
++      fprintf(stderr, "KK_BARRIER_VISIBILITY: encoders end with a %s barrier\n",
++              enabled ? "device-visible" : "resource-alias");
++   }
++   return enabled;
++}
++
  static void
  end_encoder(struct kk_cmd_buffer *cmd, mtl_command_encoder *encoder)
  {
@@ -427,11 +500,14 @@ index 22f4bf7..710fce5 100644
 +   enum mtl_stages before = MTL_STAGE_ALL;
 +   if (kk_light_barriers() && encoder == cmd->metal.render)
 +      before &= ~(MTL_STAGE_VERTEX | MTL_STAGE_OBJECTS | MTL_STAGE_MESH);
-+   mtl_barrier_after_stages(encoder, MTL_STAGE_ALL, before);
++   if (kk_device_visible_barriers())
++      mtl_barrier_after_stages_device_visible(encoder, MTL_STAGE_ALL, before);
++   else
++      mtl_barrier_after_stages(encoder, MTL_STAGE_ALL, before);
     mtl_end_encoding(encoder);
     mtl_release(encoder);
  
-@@ -464,6 +656,8 @@ kk_CmdPipelineBarrier2(VkCommandBuffer commandBuffer,
+@@ -464,6 +677,8 @@ kk_CmdPipelineBarrier2(VkCommandBuffer commandBuffer,
     /* TODO_KOSMICKRISP Lighten barriers according to the actual requested
      * barrier. To take advantage of this we need to remove the chaining of
      * encoders. */
@@ -440,7 +516,7 @@ index 22f4bf7..710fce5 100644
     if (cmd->metal.render) {
        /* Multisample attachments require render pass split always. Then based on
         * the barrier and if we are using depth/stencil or not, we may have to
-@@ -471,6 +665,10 @@ kk_CmdPipelineBarrier2(VkCommandBuffer commandBuffer,
+@@ -471,6 +686,10 @@ kk_CmdPipelineBarrier2(VkCommandBuffer commandBuffer,
         */
        if (cmd->state.gfx.render.samples > 1 ||
            kk_barrier_requires_encoder_split(cmd, pDependencyInfo)) {

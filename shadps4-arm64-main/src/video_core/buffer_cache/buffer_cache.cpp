@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cstdlib>
 #include <memory>
@@ -1099,6 +1100,87 @@ bool BufferCache::SynchronizeBufferFromImage(Buffer& buffer, VAddr device_addr, 
     auto& tile_manager = texture_cache.GetTileManager();
     tile_manager.TileImage(image, buffer_copies, buffer.Handle(), buf_offset, copy_size);
     return true;
+}
+
+void BufferCache::SynchronizeRawReadFromImage(Buffer& buffer, VAddr device_addr, u32 size) {
+    if (&buffer == &stream_buffer || &buffer == &slot_buffers[NULL_BUFFER_ID]) {
+        return;
+    }
+    u32 first_layer = 0;
+    u32 num_layers = 0;
+    const ImageId image_id =
+        texture_cache.FindImageForRawRead(device_addr, size, first_layer, num_layers);
+    if (!image_id) {
+        return;
+    }
+    Image& image = texture_cache.GetImage(image_id);
+    const ImageInfo info = num_layers == 0
+                               ? image.info
+                               : TextureCache::LayerRangeInfo(image.info, first_layer, num_layers);
+    if (!buffer.IsInBounds(info.guest_address, info.guest_size)) {
+        return;
+    }
+    const u32 buf_offset = buffer.Offset(info.guest_address);
+    boost::container::small_vector<vk::BufferImageCopy, 16> copies;
+    u32 copy_size = 0;
+    for (u32 mip = 0; mip < info.resources.levels; mip++) {
+        const auto& mip_info = info.mips_layout[mip];
+        const u32 width = std::max(info.size.width >> mip, 1u);
+        const u32 height = std::max(info.size.height >> mip, 1u);
+        const u32 depth = info.props.is_volume ? std::max(info.size.depth >> mip, 1u) : 1u;
+        copies.push_back(vk::BufferImageCopy{
+            .bufferOffset = mip_info.offset,
+            .bufferRowLength = mip_info.pitch,
+            .bufferImageHeight = mip_info.height,
+            .imageSubresource{
+                .aspectMask = image.aspect_mask & ~vk::ImageAspectFlagBits::eStencil,
+                .mipLevel = mip,
+                .baseArrayLayer = first_layer,
+                .layerCount = info.resources.layers,
+            },
+            .imageOffset = {0, 0, 0},
+            .imageExtent = {width, height, depth},
+        });
+        copy_size += mip_info.size;
+    }
+    if (copy_size == 0) {
+        return;
+    }
+    // Whatever used this memory before is done with it; the shader about to read it waits for
+    // the image's bytes (the caller's barrier may see no change of access and add none).
+    const vk::BufferMemoryBarrier2 pre_barrier{
+        .srcStageMask = vk::PipelineStageFlagBits2::eAllCommands,
+        .srcAccessMask = vk::AccessFlagBits2::eMemoryRead | vk::AccessFlagBits2::eMemoryWrite,
+        .dstStageMask = vk::PipelineStageFlagBits2::eAllCommands,
+        .dstAccessMask = vk::AccessFlagBits2::eMemoryRead | vk::AccessFlagBits2::eMemoryWrite,
+        .buffer = buffer.Handle(),
+        .offset = buf_offset,
+        .size = info.guest_size,
+    };
+    scheduler.EndRendering();
+    scheduler.CommandBuffer().pipelineBarrier2(vk::DependencyInfo{
+        .dependencyFlags = vk::DependencyFlagBits::eByRegion,
+        .bufferMemoryBarrierCount = 1,
+        .pBufferMemoryBarriers = &pre_barrier,
+    });
+    texture_cache.GetTileManager().TileImage(image, info, copies, buffer.Handle(), buf_offset,
+                                             copy_size);
+    scheduler.CommandBuffer().pipelineBarrier2(vk::DependencyInfo{
+        .dependencyFlags = vk::DependencyFlagBits::eByRegion,
+        .bufferMemoryBarrierCount = 1,
+        .pBufferMemoryBarriers = &pre_barrier,
+    });
+    gpu_modified_ranges.Add(info.guest_address, info.guest_size);
+    static std::atomic<u32> logged{};
+    if (logged.fetch_add(1, std::memory_order_relaxed) < 16) {
+        LOG_INFO(Render_Vulkan,
+                 "RAW_READ: a shader reads the memory of image {:#x} ({}x{}x{} {}{}, layers {}-{}): "
+                 "what was drawn in it written there first",
+                 image.info.guest_address, image.info.size.width, image.info.size.height,
+                 image.info.resources.layers, vk::to_string(image.info.pixel_format),
+                 image.info.props.is_depth ? ", depth" : "", first_layer,
+                 first_layer + info.resources.layers - 1);
+    }
 }
 
 void BufferCache::SynchronizeBuffersInRange(VAddr device_addr, u64 size) {

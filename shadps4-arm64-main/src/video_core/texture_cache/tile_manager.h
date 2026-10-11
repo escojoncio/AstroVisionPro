@@ -42,6 +42,11 @@ public:
     void TileImage(Image& in_image, std::span<vk::BufferImageCopy> buffer_copies,
                    vk::Buffer out_buffer, u32 out_offset, u32 copy_size);
 
+    /// As above, with the layout of `info` (some layers of the image: TextureCache::LayerRangeInfo).
+    void TileImage(Image& in_image, const ImageInfo& info,
+                   std::span<vk::BufferImageCopy> buffer_copies, vk::Buffer out_buffer,
+                   u32 out_offset, u32 copy_size);
+
     Result DetileImage(vk::Buffer in_buffer, u32 in_offset, const ImageInfo& info);
 
 private:

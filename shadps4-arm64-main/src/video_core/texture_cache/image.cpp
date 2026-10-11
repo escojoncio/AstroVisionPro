@@ -551,12 +551,25 @@ Image::Barriers Image::GetBarriers(vk::ImageLayout dst_layout, vk::AccessFlags2 
 
 void Image::Transit(vk::ImageLayout dst_layout, vk::AccessFlags2 dst_mask,
                     std::optional<SubresourceRange> range, vk::CommandBuffer cmdbuf /*= {}*/) {
-    // Adjust pipeline stage
-    const vk::PipelineStageFlags2 dst_pl_stage =
-        (dst_mask == vk::AccessFlagBits2::eTransferRead ||
-         dst_mask == vk::AccessFlagBits2::eTransferWrite)
-            ? vk::PipelineStageFlagBits2::eTransfer
-            : vk::PipelineStageFlagBits2::eAllGraphics | vk::PipelineStageFlagBits2::eComputeShader;
+    // Adjust pipeline stage. Attachment accesses (load/store ops included) happen only in the
+    // attachment stages, so a state that is only an attachment is waited for, and waits, there:
+    // a dependency that does not reach the vertex stages lets KosmicKrisp's KK_LIGHT_BARRIERS
+    // start the next pass's vertices before the last pass ends.
+    constexpr auto color_attachment_access =
+        vk::AccessFlagBits2::eColorAttachmentRead | vk::AccessFlagBits2::eColorAttachmentWrite;
+    constexpr auto depth_attachment_access = vk::AccessFlagBits2::eDepthStencilAttachmentRead |
+                                             vk::AccessFlagBits2::eDepthStencilAttachmentWrite;
+    vk::PipelineStageFlags2 dst_pl_stage =
+        vk::PipelineStageFlagBits2::eAllGraphics | vk::PipelineStageFlagBits2::eComputeShader;
+    if (dst_mask == vk::AccessFlagBits2::eTransferRead ||
+        dst_mask == vk::AccessFlagBits2::eTransferWrite) {
+        dst_pl_stage = vk::PipelineStageFlagBits2::eTransfer;
+    } else if (dst_mask && !(dst_mask & ~color_attachment_access)) {
+        dst_pl_stage = vk::PipelineStageFlagBits2::eColorAttachmentOutput;
+    } else if (dst_mask && !(dst_mask & ~depth_attachment_access)) {
+        dst_pl_stage = vk::PipelineStageFlagBits2::eEarlyFragmentTests |
+                       vk::PipelineStageFlagBits2::eLateFragmentTests;
+    }
 
     const auto barriers = GetBarriers(dst_layout, dst_mask, dst_pl_stage, range);
     if (barriers.empty()) {

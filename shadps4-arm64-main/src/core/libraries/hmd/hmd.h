@@ -140,7 +140,8 @@ s32 PS4_SYSV_ABI sceHmdReprojectionSetUserEventStart(Libraries::Kernel::OrbisKer
 s32 PS4_SYSV_ABI sceHmdReprojectionStart(const OrbisHmdReprojectionParam* param,
                                          const OrbisHmdReprojectionTrackerState* tracker_state,
                                          s64 flip_arg, s32 option);
-s32 PS4_SYSV_ABI sceHmdReprojectionStart2dVr();
+/// Parameters unknown: the six integer argument registers as the title sets them.
+s32 PS4_SYSV_ABI sceHmdReprojectionStart2dVr(u64 a0, u64 a1, u64 a2, u64 a3, u64 a4, u64 a5);
 s32 PS4_SYSV_ABI sceHmdReprojectionStartCapture();
 s32 PS4_SYSV_ABI sceHmdReprojectionStartLiveCapture();
 s32 PS4_SYSV_ABI sceHmdReprojectionStartMultilayer2();

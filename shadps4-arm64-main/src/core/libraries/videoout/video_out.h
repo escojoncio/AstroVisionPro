@@ -152,6 +152,10 @@ struct HmdFrame {
     Core::Vr::Pose render_pose;
     s64 flip_arg;
     s32 display_index; ///< Display buffer the reprojection would scan this frame out from.
+    /// A flat picture for the headset (sceHmdReprojectionStart2dVr): eye_textures[0] is shown
+    /// as a screen fixed in the room, as flat VideoOut pictures are; fov and render_pose are
+    /// then not the title's.
+    bool is_screen{};
 };
 
 // Internal system functions
