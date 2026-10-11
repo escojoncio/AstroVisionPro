@@ -128,6 +128,16 @@ public:
                                       VAddr cpu_address, Core::Vr::Fov& fov, u32& eye_width,
                                       u32& eye_height);
 
+    /// The same for a texture the title hands to the headset as a flat picture
+    /// (sceHmdReprojectionStart2dVr), read through its descriptor (format and swizzle).
+    /// Whether there is a headset of the machine's own to put screens in.
+    bool HasLocalHeadset() const {
+        return vr_exporter->HasLocalHost();
+    }
+
+    HmdFrames PrepareTextureAsScreenHmdFrame(const AmdGpu::Image& texture, Core::Vr::Fov& fov,
+                                             u32& eye_width, u32& eye_height);
+
     /// Hands a frame made by PrepareHmdFrame to the VR host. Returns false for a frame that is
     /// not one of the host's, which has to be presented as usual.
     bool DeliverHmdFrame(Frame* frame, const Core::Vr::PresentedFrame& info);
@@ -152,6 +162,13 @@ private:
     void SetExpectedGameSize(s32 width, s32 height);
 
 private:
+    /// Lays a cached image out as a screen straight ahead in both eyes of the machine's own
+    /// headset (the body of PrepareScreenAsHmdFrame and PrepareTextureAsScreenHmdFrame).
+    HmdFrames ComposeScreenAsHmdFrame(VideoCore::ImageId image_id,
+                                      const VideoCore::ImageViewInfo& view_info,
+                                      bool input_encoded, Core::Vr::Fov& fov, u32& eye_width,
+                                      u32& eye_height);
+
     std::optional<float> expected_ratio{1920.0 / 1080.0f};
     u32 expected_frame_width{1920};
     u32 expected_frame_height{1080};

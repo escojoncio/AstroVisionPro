@@ -162,6 +162,10 @@ public:
     /// Synchronizes all buffers in the specified range.
     void SynchronizeBuffersInRange(VAddr device_addr, u64 size);
 
+    /// A shader reads [device_addr, +size) of `buffer` as raw memory: when that memory holds a
+    /// GPU-drawn image (whole, or whole layers of it), what was drawn is written there first.
+    void SynchronizeRawReadFromImage(Buffer& buffer, VAddr device_addr, u32 size);
+
     /// Synchronizes all buffers neede for DMA.
     void SynchronizeDmaBuffers();
 

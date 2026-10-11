@@ -5,6 +5,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <cstdlib>
 #include <mutex>
 #include <string>
 #include <unordered_set>
@@ -262,36 +263,201 @@ void TextureCache::InvalidateMemoryFromGPU(VAddr address, size_t max_size) {
         // Only consider images that match base address.
         // TODO: Maybe also consider subresources
         if (image.info.guest_address != address) {
+            // Memory now has data the image does not: it must not be overwritten with the image.
+            if (image.Overlaps(address, max_size)) {
+                raw_touched_images.insert(image.image_uid);
+                raw_synced.erase(image.image_uid);
+            }
             return;
         }
-        // Ensure image is reuploaded when accessed again.
+        // Ensure image is reuploaded when accessed again (all of it: no pending layers alone).
         image.flags |= ImageFlagBits::GpuDirty;
+        raw_layer_writes.erase(image.image_uid);
+        raw_synced.erase(image.image_uid);
     });
+}
+
+bool TextureCache::RawImageSyncEnabled() {
+    static const bool enabled = [] {
+        const char* value = std::getenv("SHADPS4_RAW_IMAGE_SYNC");
+        const bool on = !(value && value[0] == '0');
+        LOG_INFO(Render_Vulkan, "RAW_IMAGE_SYNC: {}", on ? "on" : "off");
+        return on;
+    }();
+    return enabled;
+}
+
+// Whole layers [first, first + count) of a single-level, single-sample array image of thin
+// layout that [address, address + size) covers exactly. Layers lie one after another in memory
+// then, and each can be tiled on its own (2D tiling rotates banks by slice: LayerRangeInfo).
+static bool RawLayerRange(const ImageInfo& info, VAddr address, size_t size, u32& first,
+                          u32& count) {
+    const u32 layers = info.resources.layers;
+    if (layers < 2 || layers > 64 || info.resources.levels != 1 || info.num_samples > 1 ||
+        info.props.is_volume || info.mips_layout[0].offset != 0) {
+        return false;
+    }
+    switch (info.array_mode) {
+    case AmdGpu::ArrayMode::ArrayLinearAligned:
+    case AmdGpu::ArrayMode::Array1DTiledThin1:
+    case AmdGpu::ArrayMode::Array2DTiledThin1:
+        break;
+    default:
+        return false;
+    }
+    const u64 total = info.mips_layout[0].size;
+    if (total == 0 || total % layers != 0 || address < info.guest_address) {
+        return false;
+    }
+    const u64 layer_size = total / layers;
+    const u64 offset = address - info.guest_address;
+    if (offset % layer_size != 0 || size < layer_size || size % layer_size != 0) {
+        return false;
+    }
+    const u64 first_layer = offset / layer_size;
+    const u64 num_layers = size / layer_size;
+    if (first_layer + num_layers > layers) {
+        return false;
+    }
+    first = static_cast<u32>(first_layer);
+    count = static_cast<u32>(num_layers);
+    return true;
+}
+
+static bool CoversWholeImage(const ImageInfo& info, VAddr address, size_t size) {
+    return info.guest_address == address && info.guest_size <= size &&
+           size <= info.guest_size + 0x10000;
+}
+
+ImageInfo TextureCache::LayerRangeInfo(const ImageInfo& info, u32 first_layer, u32 num_layers) {
+    ImageInfo sub = info;
+    const u32 layer_size = info.mips_layout[0].size / info.resources.layers;
+    sub.resources.layers = num_layers;
+    sub.guest_address = info.guest_address + u64(first_layer) * layer_size;
+    sub.guest_size = num_layers * layer_size;
+    sub.mips_layout[0].size = num_layers * layer_size;
+    if (first_layer != 0 && AmdGpu::IsMacroTiled(info.array_mode)) {
+        // tiling.comp: bank ^= bank_swizzle + (NUM_BANKS / 2 - 1) * slice (thin layout), then
+        // masked to NUM_BANKS - 1. Slice first_layer + s of the array is slice s of this with
+        // the swizzle advanced by first_layer's rotation (sums agree modulo NUM_BANKS).
+        const auto macro_tile_mode =
+            AmdGpu::CalculateMacrotileMode(info.tile_mode, info.num_bits, info.num_samples);
+        const u32 num_banks = AmdGpu::GetNumBanks(macro_tile_mode);
+        if (num_banks >= 2) {
+            const u32 rotation = (num_banks / 2 - 1) * first_layer;
+            sub.bank_swizzle = static_cast<u8>((info.bank_swizzle + rotation) & (num_banks - 1));
+        }
+    }
+    return sub;
 }
 
 void TextureCache::InvalidateWholeImagesFromGPU(VAddr address, size_t size) {
     std::scoped_lock lock{mutex};
+    const bool layers_too = RawImageSyncEnabled();
     ForEachImageInRegion(address, size, [&](ImageId image_id, Image& image) {
+        if (!image.Overlaps(address, size)) {
+            return;
+        }
+        raw_synced.erase(image.image_uid);
         // Only an image the written range fits (whole, and not much more): a write to part of
         // one would bring back stale memory for the rest (what the GPU drew there is not in
         // memory), and a large buffer that merely starts there says nothing about the image.
         // Multisampled images are never taken from memory (RefreshImage leaves them).
-        if (image.info.guest_address != address || image.info.guest_size > size ||
-            size > image.info.guest_size + 0x10000 || image.info.num_samples > 1 ||
-            True(image.flags & ImageFlagBits::GpuDirty)) {
+        if (image.info.num_samples > 1) {
+            raw_touched_images.insert(image.image_uid);
             return;
         }
-        image.flags |= ImageFlagBits::GpuDirty;
-        static std::atomic<u32> logged{};
-        if (logged.fetch_add(1, std::memory_order_relaxed) < 16) {
-            LOG_INFO(Render_Vulkan,
-                     "RAW_WRITE: a shader rewrote the memory of image {:#x} ({}x{} {}{}, {:#x} "
-                     "bytes): taken again from memory",
-                     image.info.guest_address, image.info.size.width, image.info.size.height,
-                     vk::to_string(image.info.pixel_format),
-                     image.info.props.is_depth ? ", depth" : "", image.info.guest_size);
+        if (CoversWholeImage(image.info, address, size)) {
+            raw_layer_writes.erase(image.image_uid);
+            raw_touched_images.erase(image.image_uid);
+            if (True(image.flags & ImageFlagBits::GpuDirty)) {
+                return;
+            }
+            image.flags |= ImageFlagBits::GpuDirty;
+            raw_marked_in_bind.insert(image.image_uid);
+            static std::atomic<u32> logged{};
+            if (logged.fetch_add(1, std::memory_order_relaxed) < 16) {
+                LOG_INFO(Render_Vulkan,
+                         "RAW_WRITE: a shader rewrote the memory of image {:#x} ({}x{} {}{}, {:#x} "
+                         "bytes): taken again from memory",
+                         image.info.guest_address, image.info.size.width,
+                         image.info.size.height, vk::to_string(image.info.pixel_format),
+                         image.info.props.is_depth ? ", depth" : "", image.info.guest_size);
+            }
+            return;
         }
+        // Whole layers of an array (a shadow map's layer cleared, or restored from a copy).
+        u32 first = 0;
+        u32 count = 0;
+        if (layers_too && RawLayerRange(image.info, address, size, first, count)) {
+            const auto pending = raw_layer_writes.find(image.image_uid);
+            if (True(image.flags & ImageFlagBits::GpuDirty) && pending == raw_layer_writes.end()) {
+                return; // The whole image is taken again from memory already.
+            }
+            const u64 bits = (count >= 64 ? ~0ULL : ((1ULL << count) - 1)) << first;
+            raw_layer_writes[image.image_uid] |= bits;
+            image.flags |= ImageFlagBits::GpuDirty;
+            raw_marked_in_bind.insert(image.image_uid);
+            static std::atomic<u32> logged{};
+            if (logged.fetch_add(1, std::memory_order_relaxed) < 16) {
+                LOG_INFO(Render_Vulkan,
+                         "RAW_WRITE: a shader rewrote layers {}-{} of image {:#x} ({}x{}x{} {}{}): "
+                         "those layers taken again from memory",
+                         first, first + count - 1, image.info.guest_address,
+                         image.info.size.width, image.info.size.height,
+                         image.info.resources.layers, vk::to_string(image.info.pixel_format),
+                         image.info.props.is_depth ? ", depth" : "");
+            }
+            return;
+        }
+        // Part of the image's memory changed and the image does not know it.
+        raw_touched_images.insert(image.image_uid);
     });
+}
+
+ImageId TextureCache::FindImageForRawRead(VAddr address, size_t size, u32& first_layer,
+                                          u32& num_layers) {
+    if (!RawImageSyncEnabled()) {
+        return {};
+    }
+    std::scoped_lock lock{mutex};
+    ImageId found{};
+    u32 candidates = 0;
+    // An image read whole starts at the address and one read by layers holds it: looking at the
+    // images at that one address is enough (a large buffer would otherwise walk many pages).
+    ForEachImageInRegion(address, 1, [&](ImageId image_id, Image& image) {
+        if (!image.Overlaps(address, 1) || !image.SafeToDownload() || image.info.num_samples > 1 ||
+            raw_touched_images.contains(image.image_uid) ||
+            raw_layer_writes.contains(image.image_uid)) {
+            return;
+        }
+        u32 first = 0;
+        u32 count = 0;
+        if (CoversWholeImage(image.info, address, size)) {
+            first = 0;
+            count = 0;
+        } else if (!RawLayerRange(image.info, address, size, first, count)) {
+            return;
+        }
+        const u64 bits = count == 0 || count >= 64 ? ~0ULL : ((1ULL << count) - 1) << first;
+        if (const auto synced = raw_synced.find(image.image_uid);
+            synced != raw_synced.end() && (synced->second & bits) == bits) {
+            return; // Memory has these bytes already, not drawn in since.
+        }
+        ++candidates;
+        found = image_id;
+        first_layer = first;
+        num_layers = count;
+    });
+    // Several drawn images in that memory: which was drawn last is not known, leave it.
+    if (candidates != 1) {
+        return {};
+    }
+    // The caller writes them to memory now: until the image is drawn in again, once is enough.
+    const u64 bits =
+        num_layers == 0 || num_layers >= 64 ? ~0ULL : ((1ULL << num_layers) - 1) << first_layer;
+    raw_synced[slot_images[found].image_uid] |= bits;
+    return found;
 }
 
 void TextureCache::UnmapMemory(VAddr cpu_addr, size_t size) {
@@ -859,6 +1025,7 @@ ImageView& TextureCache::FindTexture(ImageId image_id, const ImageDesc& desc) {
     LogViewDimensionMismatch(desc, image);
     if (desc.type == BindingType::Storage) {
         image.flags |= ImageFlagBits::GpuModified;
+        ForgetRawState(image.image_uid, false);
         if (readback_linear_images && !image.info.props.is_tiled && image.info.guest_address != 0) {
             download_images.emplace(image_id);
         }
@@ -870,6 +1037,7 @@ ImageView& TextureCache::FindTexture(ImageId image_id, const ImageDesc& desc) {
 ImageView& TextureCache::FindRenderTarget(ImageId image_id, const ImageDesc& desc) {
     Image& image = slot_images[image_id];
     image.flags |= ImageFlagBits::GpuModified;
+    ForgetRawState(image.image_uid, false);
     if (readback_linear_images && !image.info.props.is_tiled) {
         download_images.emplace(image_id);
     }
@@ -895,6 +1063,7 @@ ImageView& TextureCache::FindRenderTarget(ImageId image_id, const ImageDesc& des
 ImageView& TextureCache::FindDepthTarget(ImageId image_id, const ImageDesc& desc) {
     Image& image = slot_images[image_id];
     image.flags |= ImageFlagBits::GpuModified;
+    ForgetRawState(image.image_uid, false);
     image.usage.depth_target = 1u;
     UpdateImage(image_id);
 
@@ -944,6 +1113,24 @@ void TextureCache::RefreshImage(Image& image) {
 
     RENDERER_TRACE;
     TRACE_HINT(fmt::format("{:x}:{:x}", image.info.guest_address, image.info.guest_size));
+
+    if (raw_marked_in_bind.contains(image.image_uid)) {
+        // The shader being bound writes this memory as raw bytes and has not run yet: what is
+        // there is taken at the next use, after it.
+        return;
+    }
+    if (const auto pending = raw_layer_writes.find(image.image_uid);
+        pending != raw_layer_writes.end()) {
+        const u64 mask = pending->second;
+        raw_layer_writes.erase(pending);
+        if ((image.flags & ImageFlagBits::Dirty) == ImageFlagBits::GpuDirty) {
+            // Only layers a shader wrote as raw memory changed: the rest keep what was drawn.
+            UploadRawLayers(image, mask);
+            image.flags &= ~ImageFlagBits::GpuDirty;
+            return;
+        }
+        // The CPU wrote it too: all of it comes again from memory, below.
+    }
 
     if (True(image.flags & ImageFlagBits::MaybeCpuDirty) &&
         False(image.flags & ImageFlagBits::CpuDirty)) {
@@ -1046,6 +1233,84 @@ void TextureCache::RefreshImage(Image& image) {
     }
 
     image.Upload(image_copies, buffer, offset);
+    // The image is what memory holds now.
+    raw_touched_images.erase(image.image_uid);
+}
+
+void TextureCache::UploadRawLayers(Image& image, u64 mask) {
+    const u32 layers = image.info.resources.layers;
+    const auto& mip = image.info.mips_layout[0];
+    const u32 width = image.info.size.width;
+    const u32 height = image.info.size.height;
+    const u32 extent_width = mip.pitch ? std::min(mip.pitch, width) : width;
+    const u32 extent_height = mip.height ? std::min(mip.height, height) : height;
+    const auto aspect = image.aspect_mask & ~vk::ImageAspectFlagBits::eStencil;
+    static std::atomic<u32> logged{};
+    for (u32 first = 0; first < layers;) {
+        if (((mask >> first) & 1) == 0) {
+            ++first;
+            continue;
+        }
+        u32 count = 0;
+        while (first + count < layers && ((mask >> (first + count)) & 1) != 0) {
+            ++count;
+        }
+        const ImageInfo sub = LayerRangeInfo(image.info, first, count);
+        scheduler.EndRendering();
+        const auto [in_buffer, in_offset] =
+            buffer_cache.ObtainBufferForImage(sub.guest_address, sub.guest_size);
+        if (auto barrier = in_buffer->GetBarrier(vk::AccessFlagBits2::eTransferRead,
+                                                 vk::PipelineStageFlagBits2::eTransfer)) {
+            scheduler.CommandBuffer().pipelineBarrier2(vk::DependencyInfo{
+                .dependencyFlags = vk::DependencyFlagBits::eByRegion,
+                .bufferMemoryBarrierCount = 1,
+                .pBufferMemoryBarriers = &barrier.value(),
+            });
+        }
+        const auto [buffer, offset] = tile_manager.DetileImage(in_buffer->Handle(), in_offset, sub);
+        // Image::Upload fences the whole image's size in the source buffer; these layers' source
+        // is smaller, so the copy is made here with barriers of its own size.
+        const vk::BufferMemoryBarrier2 pre_barrier{
+            .srcStageMask = vk::PipelineStageFlagBits2::eAllCommands,
+            .srcAccessMask = vk::AccessFlagBits2::eMemoryWrite,
+            .dstStageMask = vk::PipelineStageFlagBits2::eTransfer,
+            .dstAccessMask = vk::AccessFlagBits2::eTransferRead,
+            .buffer = buffer,
+            .offset = offset,
+            .size = sub.guest_size,
+        };
+        const auto cmdbuf = scheduler.CommandBuffer();
+        cmdbuf.pipelineBarrier2(vk::DependencyInfo{
+            .dependencyFlags = vk::DependencyFlagBits::eByRegion,
+            .bufferMemoryBarrierCount = 1,
+            .pBufferMemoryBarriers = &pre_barrier,
+        });
+        image.Transit(vk::ImageLayout::eTransferDstOptimal, vk::AccessFlagBits2::eTransferWrite,
+                      {});
+        const vk::BufferImageCopy copy{
+            .bufferOffset = offset,
+            .bufferRowLength = mip.pitch,
+            .bufferImageHeight = mip.height,
+            .imageSubresource{
+                .aspectMask = aspect,
+                .mipLevel = 0,
+                .baseArrayLayer = first,
+                .layerCount = count,
+            },
+            .imageOffset = {0, 0, 0},
+            .imageExtent = {extent_width, extent_height, 1},
+        };
+        cmdbuf.copyBufferToImage(buffer, image.GetImage(), vk::ImageLayout::eTransferDstOptimal,
+                                 copy);
+        image.Transit(vk::ImageLayout::eGeneral,
+                      vk::AccessFlagBits2::eShaderRead | vk::AccessFlagBits2::eTransferRead, {});
+        if (logged.fetch_add(1, std::memory_order_relaxed) < 16) {
+            LOG_INFO(Render_Vulkan, "RAW_WRITE: layers {}-{} of image {:#x} taken from memory{}",
+                     first, first + count - 1, image.info.guest_address,
+                     image.info.props.is_tiled ? " (detiled on their own)" : "");
+        }
+        first += count;
+    }
 }
 
 vk::Sampler TextureCache::GetSampler(const AmdGpu::Sampler& sampler,
@@ -1070,6 +1335,8 @@ void TextureCache::RegisterImage(ImageId image_id) {
 
 void TextureCache::UnregisterImage(ImageId image_id) {
     Image& image = slot_images[image_id];
+    ForgetRawState(image.image_uid, true);
+    raw_marked_in_bind.erase(image.image_uid);
     ASSERT_MSG(True(image.flags & ImageFlagBits::Registered),
                "Trying to unregister an already unregistered image");
     image.flags &= ~ImageFlagBits::Registered;

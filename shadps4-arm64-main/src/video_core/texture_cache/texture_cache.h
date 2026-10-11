@@ -93,7 +93,32 @@ public:
     /// A shader wrote raw memory (not through a formatted view) from `address` on, `size` bytes:
     /// images that start there and fit inside are taken again from that memory when next used.
     /// (A game that clears its depth buffer with a compute shader writing the memory.)
+    /// Also whole layers of a single-level array image (a shadow map restored or cleared one
+    /// layer at a time): only those layers are taken again. Images it touches otherwise are
+    /// noted, so their memory is not overwritten with what was drawn in them before a read.
     void InvalidateWholeImagesFromGPU(VAddr address, size_t size);
+
+    /// A shader is about to read raw memory that holds a GPU-drawn image, the whole of it or whole
+    /// layers of it: that image (layers from `first_layer`, `num_layers` of them; 0 = all), so
+    /// what was drawn can be written to that memory first. None when memory may be newer.
+    [[nodiscard]] ImageId FindImageForRawRead(VAddr address, size_t size, u32& first_layer,
+                                              u32& num_layers);
+
+    /// The layout of `num_layers` layers of a single-level array from `first_layer` on, as an
+    /// image of its own at their address (for tiling and detiling just those layers).
+    [[nodiscard]] static ImageInfo LayerRangeInfo(const ImageInfo& info, u32 first_layer,
+                                                  u32 num_layers);
+
+    /// Marks taken while one draw's or dispatch's resources are bound: an image whose memory
+    /// that shader writes as raw bytes is not refreshed for its own textures (the write has not
+    /// happened yet). Cleared before and after each binding.
+    void ClearRawBindMarks() {
+        std::scoped_lock lock{mutex};
+        raw_marked_in_bind.clear();
+    }
+
+    /// SHADPS4_RAW_IMAGE_SYNC (on unless "0"): raw shader access to images kept coherent.
+    [[nodiscard]] static bool RawImageSyncEnabled();
 
     /// Evicts any images that overlap the unmapped range.
     void UnmapMemory(VAddr cpu_addr, size_t size);
@@ -144,6 +169,9 @@ public:
 
     /// Reuploads image contents.
     void RefreshImage(Image& image);
+
+    /// Uploads only the layers of `mask` from memory (written there by a shader as raw bytes).
+    void UploadRawLayers(Image& image, u64 mask);
 
     /// Retrieves the sampler that matches the provided S# descriptor.
     [[nodiscard]] vk::Sampler GetSampler(const AmdGpu::Sampler& sampler,
@@ -384,6 +412,24 @@ private:
         s32 clear_mask = -1;
     };
     tsl::robin_map<VAddr, MetaDataInfo> surface_metas;
+    /// image_uid -> layers a shader wrote as raw memory, to be taken into the image on next use.
+    tsl::robin_map<u64, u64> raw_layer_writes;
+    /// image_uid of images part of whose memory a shader wrote without the image taking it:
+    /// memory may hold newer data than the image until the image is drawn in again.
+    std::unordered_set<u64> raw_touched_images;
+    /// image_uid -> layers (all bits: the whole image) already written to memory for a raw read
+    /// and not drawn in since: memory holds them, no need to write them again.
+    tsl::robin_map<u64, u64> raw_synced;
+    /// image_uid of images marked by raw writes during the binding under way.
+    std::unordered_set<u64> raw_marked_in_bind;
+    /// Forgets what raw reads and writes noted about an image (it was drawn in, or dropped).
+    void ForgetRawState(u64 image_uid, bool pending_layers_too) {
+        raw_touched_images.erase(image_uid);
+        raw_synced.erase(image_uid);
+        if (pending_layers_too) {
+            raw_layer_writes.erase(image_uid);
+        }
+    }
 };
 
 } // namespace VideoCore

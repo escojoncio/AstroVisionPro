@@ -880,13 +880,23 @@ HmdFrames Presenter::PrepareHmdFrame(std::span<const AmdGpu::Image, 2> eye_textu
     if (logged_frames < 3 || (logged_frames % 600) == 0) {
         for (u32 eye = 0; eye < 2; ++eye) {
             const auto& image = texture_cache.GetImage(image_ids[eye]);
+            // The view is made with the descriptor's dst_sel (ImageViewInfo), which undoes a
+            // component swap the colour buffer applied when the eye was drawn.
+            const auto& tex = eye_textures[eye];
+            const auto& mapping = descs[eye].view_info.mapping;
             LOG_INFO(Render_Vulkan,
                      "HMD frame {} eye {}: image {} at {:#x}, {}x{}, format {}, samples {}, "
-                     "flags {:#x}",
+                     "flags {:#x}; descriptor dfmt {} nfmt {} dst_sel {}{}{}{} -> view {} "
+                     "swizzle {}/{}/{}/{}",
                      frame_id, eye, image_ids[eye].index, image.info.guest_address,
                      image.info.size.width, image.info.size.height,
                      vk::to_string(image.info.pixel_format), image.info.num_samples,
-                     static_cast<u32>(image.flags));
+                     static_cast<u32>(image.flags), static_cast<u32>(tex.data_format),
+                     static_cast<u32>(tex.num_format), static_cast<u32>(tex.dst_sel_x),
+                     static_cast<u32>(tex.dst_sel_y), static_cast<u32>(tex.dst_sel_z),
+                     static_cast<u32>(tex.dst_sel_w), vk::to_string(descs[eye].view_info.format),
+                     vk::to_string(mapping.r), vk::to_string(mapping.g), vk::to_string(mapping.b),
+                     vk::to_string(mapping.a));
         }
     }
     ++logged_frames;
@@ -1073,6 +1083,37 @@ HmdFrames Presenter::PrepareScreenAsHmdFrame(
     const auto image_id = texture_cache.FindImage(desc);
     texture_cache.UpdateImage(image_id);
 
+    VideoCore::ImageViewInfo view_info{};
+    view_info.format = GetFrameViewFormat(attribute.attrib.pixel_format);
+    view_info.mapping.a = vk::ComponentSwizzle::eOne;
+    // A 10-bit picture the console calls sRGB is read through a plain view: its values are
+    // encoded already (decoding them is what the console's scan-out does).
+    const bool input_encoded =
+        attribute.attrib.pixel_format == Libraries::VideoOut::PixelFormat::A2R10G10B10Srgb;
+    return ComposeScreenAsHmdFrame(image_id, view_info, input_encoded, fov, eye_width,
+                                   eye_height);
+}
+
+HmdFrames Presenter::PrepareTextureAsScreenHmdFrame(const AmdGpu::Image& texture,
+                                                    Core::Vr::Fov& fov, u32& eye_width,
+                                                    u32& eye_height) {
+    if (!vr_exporter->HasLocalHost()) {
+        return {};
+    }
+    // Read the way a shader of the title's would sample it: the descriptor's own format and
+    // component swizzle (dst_sel) make the view.
+    auto desc = VideoCore::TextureCache::ImageDesc{texture, Shader::ImageResource{}};
+    const auto image_id = texture_cache.FindImage(desc);
+    texture_cache.UpdateImage(image_id);
+    auto view_info = desc.view_info;
+    view_info.mapping.a = vk::ComponentSwizzle::eOne;
+    return ComposeScreenAsHmdFrame(image_id, view_info, false, fov, eye_width, eye_height);
+}
+
+HmdFrames Presenter::ComposeScreenAsHmdFrame(VideoCore::ImageId image_id,
+                                             const VideoCore::ImageViewInfo& view_info,
+                                             bool input_encoded, Core::Vr::Fov& fov,
+                                             u32& eye_width, u32& eye_height) {
     // The size and optics of the title's own headset frames, or a PlayStation VR's before any.
     fov = last_hmd_fov;
     eye_width = last_hmd_eye_width != 0 ? last_hmd_eye_width : 1440;
@@ -1105,9 +1146,6 @@ HmdFrames Presenter::PrepareScreenAsHmdFrame(
         .pImageMemoryBarriers = &pre_barrier,
     });
 
-    VideoCore::ImageViewInfo view_info{};
-    view_info.format = GetFrameViewFormat(attribute.attrib.pixel_format);
-    view_info.mapping.a = vk::ComponentSwizzle::eOne;
     auto& image = texture_cache.GetImage(image_id);
     image.Transit(vk::ImageLayout::eShaderReadOnlyOptimal, vk::AccessFlagBits2::eShaderRead, {},
                   cmdbuf);
@@ -1151,10 +1189,7 @@ HmdFrames Presenter::PrepareScreenAsHmdFrame(
     auto local_settings = pp_settings;
     local_settings.sharpen = 0.0f;
     local_settings.linear_out = 1;
-    // A 10-bit picture the console calls sRGB is read through a plain view: its values are
-    // encoded already (decoding them is what the console's scan-out does).
-    local_settings.input_encoded =
-        attribute.attrib.pixel_format == Libraries::VideoOut::PixelFormat::A2R10G10B10Srgb ? 1 : 0;
+    local_settings.input_encoded = input_encoded ? 1 : 0;
     hmd_pp_pass.Render(cmdbuf, regions, *local, local_settings);
     DebugState.output_resolution = {local->width, local->height};
 

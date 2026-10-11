@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include "common/debug.h"
+#include "common/scope_exit.h"
 #include "core/emulator_settings.h"
 #include "core/memory.h"
 #include "shader_recompiler/runtime_info.h"
@@ -965,6 +966,25 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
                  texture_cache.IsMetaCleared(regs.depth_htile_data_base.GetAddress(),
                                              regs.depth_view.slice_start),
                  static_cast<u32>(regs.depth_buffer.z_info.format));
+        // How the draw lands in its targets: blending of the first two (factors: 1 one, 2 src,
+        // 4 src alpha, 8 dst colour, 15-18 second shader output = dual-source), where the
+        // other colour targets are, and the depth slice drawn (layered shadow maps).
+        const auto& b0 = regs.blend_control[0];
+        const auto& b1 = regs.blend_control[1];
+        LOG_INFO(Render_Vulkan,
+                 "TRACE   targets: blend0 en={} c={}*src {} {}*dst a={}*src {} {}*dst sep={} "
+                 "blend1 en={} c={}*src {} {}*dst cb1={:#x} cb2={:#x} cb3={:#x} "
+                 "db_slice={}-{} db_size={}x{}",
+                 static_cast<u32>(b0.enable), static_cast<u32>(b0.color_src_factor),
+                 static_cast<u32>(b0.color_func), static_cast<u32>(b0.color_dst_factor),
+                 static_cast<u32>(b0.alpha_src_factor), static_cast<u32>(b0.alpha_func),
+                 static_cast<u32>(b0.alpha_dst_factor), static_cast<u32>(b0.separate_alpha_blend),
+                 static_cast<u32>(b1.enable), static_cast<u32>(b1.color_src_factor),
+                 static_cast<u32>(b1.color_func), static_cast<u32>(b1.color_dst_factor),
+                 regs.color_buffers[1].Address(), regs.color_buffers[2].Address(),
+                 regs.color_buffers[3].Address(), static_cast<u32>(regs.depth_view.slice_start),
+                 static_cast<u32>(regs.depth_view.slice_max), regs.depth_buffer.Pitch(),
+                 regs.depth_buffer.Height());
     }
     if (!pipeline) {
         return;
@@ -1573,6 +1593,11 @@ void Rasterizer::OnSubmit() {
 }
 
 bool Rasterizer::BindResources(const Pipeline* pipeline) {
+    // Raw-write marks hold only while this shader's own buffers and textures are bound.
+    texture_cache.ClearRawBindMarks();
+    SCOPE_EXIT {
+        texture_cache.ClearRawBindMarks();
+    };
     if (IsComputeImageCopy(pipeline)) {
         if (g_draw_trace_budget.load(std::memory_order_relaxed) > 0) {
             LOG_INFO(Render_Vulkan, "TRACE   compute handled as image copy");
@@ -1867,6 +1892,11 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, Shader::Backend::Binding
         } else {
             const auto [vk_buffer, offset] = buffer_cache.ObtainBuffer(
                 vsharp.base_address, size, desc.is_written, desc.is_formatted, buffer_id);
+            if (!desc.is_written && !desc.is_formatted && size >= 0x10000) {
+                // Raw bytes of an image the GPU drew (a compute copy of a depth or colour
+                // buffer): only the image has them, memory gets them first.
+                buffer_cache.SynchronizeRawReadFromImage(*vk_buffer, vsharp.base_address, size);
+            }
             const u32 offset_aligned = Common::AlignDown(offset, alignment);
             const u32 adjust = offset - offset_aligned;
             ASSERT(adjust % 4 == 0);

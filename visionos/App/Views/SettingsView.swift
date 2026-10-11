@@ -103,10 +103,12 @@ struct SettingsView: View {
                     Toggle(L("Memoria de geometry shaders entre pasadas", "Geometry shader memory between passes"), isOn: flag("heap_between_passes", \.heapBetweenPasses))
                     Toggle(L("Juntar pasadas", "Merge passes"), isOn: flag("merge_passes", \.mergePasses))
                     Toggle(L("Pasadas solapadas (experimental)", "Overlapping passes (experimental)"), isOn: flag("light_barriers", \.lightBarriers))
+                    Toggle(L("Barreras ligeras entre pasadas (experimental)", "Lighter barriers between passes (experimental)"), isOn: flag("device_barriers", \.deviceBarriers))
                     Toggle(L("Diagnóstico de pasadas en el registro", "Pass diagnostics in the log"), isOn: flag("pass_diagnostics", \.passDiagnostics))
                     Toggle(L("Primitive restart en listas", "Primitive restart on lists"), isOn: flag("list_restart", \.listRestart))
                     Toggle(L("Constantes como uniform buffers (experimental)", "Constants as uniform buffers (experimental)"), isOn: flag("constant_ubo", \.constantUbo))
                     Toggle(L("Cálculo exacto en los shaders de píxel (desactivado = experimental)", "Exact arithmetic in pixel shaders (off = experimental)"), isOn: flag("exact_pixel_math", \.exactPixelMath))
+                    Toggle(L("Copias de imágenes por compute coherentes (sombras, TAA)", "Coherent compute copies of images (shadows, TAA)"), isOn: flag("raw_image_sync", \.rawImageSync))
                     Picker(L("Prueba de GPU con L3 + R3", "GPU test with L3 + R3"), selection: Binding(get: { model.settings.gpuTest == "stages" ? "stages" : "shaders" }, set: { save("gpu_test", $0) })) {
                         Text(L("Por shader · ~1 min", "By shader · ~1 min")).tag("shaders")
                         Text(L("Por etapas · ~2 min", "By stages · ~2 min")).tag("stages")

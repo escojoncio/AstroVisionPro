@@ -76,6 +76,9 @@ struct AstroSettings {
     /// Experimental: KosmicKrisp lets the next render pass start its vertex work while the one
     /// before is still drawing, instead of waiting for all of it (KK_LIGHT_BARRIERS).
     var lightBarriers = false
+    /// Experimental: the barrier at the end of each KosmicKrisp render encoder makes memory
+    /// visible to the device only, without the alias flush (KK_BARRIER_VISIBILITY=device).
+    var deviceBarriers = false
     /// A draw that uses fewer of the targets of the render pass that is open is made in that pass
     /// instead of ending it (SHADPS4_MERGE_PASSES).
     var mergePasses = true
@@ -121,6 +124,10 @@ struct AstroSettings {
     /// The pixel shaders' arithmetic exactly as the console's, operation by operation
     /// (SHADPS4_EXACT_PIXEL_MATH): off, Metal may fuse and reorder it as in any shader of its own.
     var exactPixelMath = false
+    /// Raw shader copies keep the GPU's images (SHADPS4_RAW_IMAGE_SYNC): a compute shader that
+    /// reads an image's memory as plain bytes first gets what was drawn in it, and one that
+    /// writes whole layers of an array (shadow maps) has them taken into the image. Off: as before.
+    var rawImageSync = true
 
     static var documents: URL {
         FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -203,6 +210,7 @@ struct AstroSettings {
         case "list_restart": listRestart = flag
         case "constant_ubo": constantUbo = flag
         case "exact_pixel_math": exactPixelMath = flag
+        case "raw_image_sync": rawImageSync = flag
         case "pause": pause = flag
         case "game": game = value
         case "game_folder": gameFolderName = value
@@ -216,6 +224,7 @@ struct AstroSettings {
         case "gs_in_pass": gsInPass = flag
         case "heap_between_passes": heapBetweenPasses = flag
         case "light_barriers": lightBarriers = flag
+        case "device_barriers": deviceBarriers = flag
         case "merge_passes": mergePasses = flag
         case "shader_cache": shaderCache = flag
         case "gpu_test": gpuTest = value
@@ -283,6 +292,9 @@ struct AstroSettings {
         env.append("KK_GS_IN_PASS=\(gsInPass ? 1 : 0)")
         env.append("KK_HEAP_BETWEEN_PASSES=\(heapBetweenPasses ? 1 : 0)")
         env.append("KK_LIGHT_BARRIERS=\(lightBarriers ? 1 : 0)")
+        if deviceBarriers {
+            env.append("KK_BARRIER_VISIBILITY=device")
+        }
         env.append("SHADPS4_MERGE_PASSES=\(mergePasses ? 1 : 0)")
         env.append("SHADPS4_GPU_BENCH=\(gpuTest == "stages" ? "stages" : "shaders")")
         env.append("SHADPS4_PIPELINE_CACHE=\(shaderCache ? 1 : 0)")
@@ -307,6 +319,7 @@ struct AstroSettings {
         env.append("SHADPS4_LIST_RESTART=\(listRestart ? 1 : 0)")
         env.append("SHADPS4_CONSTANT_UBO=\(constantUbo ? 1 : 0)")
         env.append("SHADPS4_EXACT_PIXEL_MATH=\(exactPixelMath ? 1 : 0)")
+        env.append("SHADPS4_RAW_IMAGE_SYNC=\(rawImageSync ? 1 : 0)")
         env.append("SHADPS4_CONSOLE_LANGUAGE=\(GameLanguages.tag(for: gameLanguage))")
         // KosmicKrisp keeps what it translated (Mesa's shader cache) where the app may write:
         // the VPS4 folder when there is one (it outlives the app), else the app's caches.

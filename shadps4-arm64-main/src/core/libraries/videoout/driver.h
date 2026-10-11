@@ -137,6 +137,11 @@ private:
     void SubmitHmdFrameInternal(VideoOutPort* port, const HmdFrame& hmd_frame, u32 frame_id,
                                 std::chrono::steady_clock::time_point started,
                                 std::chrono::steady_clock::time_point handed_over);
+    /// A flat picture the title hands to the headset (HmdFrame::is_screen), shown as the
+    /// screen of SubmitScreenToHeadset.
+    void SubmitScreenFrameInternal(VideoOutPort* port, const HmdFrame& hmd_frame, u32 frame_id,
+                                   std::chrono::steady_clock::time_point started,
+                                   std::chrono::steady_clock::time_point handed_over);
     void PresentThread(std::stop_token token);
     void ApplyDueLabelRetirement();
     /// A flat picture (VideoOut flip) put in the headset of the machine's own as a screen,
