@@ -1003,7 +1003,7 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                     Libraries::Hmd::SatisfyReprojectionLabelWait(
                         wait_reg_mem->Address<u32*>(),
                         static_cast<u32>(wait_reg_mem->function.Value()), wait_reg_mem->ref,
-                        wait_reg_mem->mask);
+                        wait_reg_mem->mask, true);
                 }
                 u64 wait_iterations = 0;
                 u64 label_looks = 0;
@@ -1445,7 +1445,7 @@ Liverpool::Task Liverpool::ProcessCompute(std::span<const u32> acb, u32 vqid) {
                 !wait_reg_mem->Test(regs.reg_array)) {
                 Libraries::Hmd::SatisfyReprojectionLabelWait(
                     wait_reg_mem->Address<u32*>(), static_cast<u32>(wait_reg_mem->function.Value()),
-                    wait_reg_mem->ref, wait_reg_mem->mask);
+                    wait_reg_mem->ref, wait_reg_mem->mask, true);
             }
             u64 wait_iterations = 0;
             u64 label_looks = 0;
