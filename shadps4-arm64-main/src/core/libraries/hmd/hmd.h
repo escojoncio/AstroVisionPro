@@ -321,7 +321,10 @@ void OnVblank();
 /// to the reprojection (OrbisHmdReprojectionParam::frame_label), which the console's
 /// reprojection writes once it has read the frame's eyes, the value the wait asks for is
 /// written there now (the frame has been passed on) and true is returned.
-bool SatisfyReprojectionLabelWait(u32* address, u32 function, u32 ref, u32 mask);
+/// `new_wait`: the call made as the wait begins (the others come while it lasts). A wait on a
+/// label next to known ones, for a frame not handed over yet, is released after 100 ms.
+bool SatisfyReprojectionLabelWait(u32* address, u32 function, u32 ref, u32 mask,
+                                  bool new_wait = false);
 
 void RegisterDistortion(Core::Loader::SymbolsResolver* sym);
 void RegisterReprojection(Core::Loader::SymbolsResolver* sym);

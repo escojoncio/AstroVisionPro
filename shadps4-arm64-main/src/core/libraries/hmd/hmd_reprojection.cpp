@@ -291,7 +291,8 @@ s32 PS4_SYSV_ABI sceHmdReprojectionStart(const OrbisHmdReprojectionParam* param,
     return ORBIS_OK;
 }
 
-bool SatisfyReprojectionLabelWait(u32* address, u32 function, u32 ref, u32 mask) {
+bool SatisfyReprojectionLabelWait(u32* address, u32 function, u32 ref, u32 mask,
+                                  bool new_wait) {
     if (address == nullptr) {
         return false;
     }
@@ -302,7 +303,50 @@ bool SatisfyReprojectionLabelWait(u32* address, u32 function, u32 ref, u32 mask)
             return label != 0 && at >= label && at < label + sizeof(u64);
         });
         if (!known) {
-            return false;
+            // A label next to the known ones (a title keeps one per frame in flight, side by
+            // side) that the GPU waits on (==) before the title has handed its frame over: if
+            // the title is in turn waiting for that GPU work, neither moves. Given up on once the
+            // same wait has lasted 100 ms (labels of frames handed over are released at once).
+            static constexpr uintptr_t Near = 0x80;
+            const bool near = function == 3 && (at & 3) == 0 &&
+                              std::ranges::any_of(g_reprojection.frame_labels, [&](uintptr_t l) {
+                                  return l != 0 && at + Near >= l && at < l + Near;
+                              });
+            if (!near) {
+                return false;
+            }
+            // One entry per address being waited on (gfx and the compute queues may each wait).
+            struct NearWait {
+                uintptr_t at;
+                std::chrono::steady_clock::time_point since;
+            };
+            static std::array<NearWait, 4> waits{};
+            static u32 next_slot{};
+            const auto now = std::chrono::steady_clock::now();
+            NearWait* entry = nullptr;
+            for (auto& w : waits) {
+                if (w.at == at) {
+                    entry = &w;
+                }
+            }
+            if (entry == nullptr) {
+                entry = &waits[next_slot++ % waits.size()];
+                entry->at = at;
+                entry->since = now;
+            } else if (new_wait) {
+                entry->since = now; // the wait begins now
+            }
+            if (now - entry->since < std::chrono::milliseconds{100}) {
+                return false;
+            }
+            entry->at = 0;
+            static std::atomic<u32> near_told{};
+            if (near_told.fetch_add(1, std::memory_order_relaxed) < 8) {
+                LOG_WARNING(Lib_Hmd,
+                            "REPROJECTION_LABEL_NEAR: the GPU has waited 100 ms on {} next to a "
+                            "frame label, for a frame not handed over yet: released",
+                            fmt::ptr(address));
+            }
         }
     }
     // The comparisons of WAIT_REG_MEM (pm4_cmds.h): 1 <, 2 <=, 3 ==, 4 !=, 5 >=, 6 >.
