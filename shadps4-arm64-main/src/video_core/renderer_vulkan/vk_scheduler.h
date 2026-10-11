@@ -479,6 +479,10 @@ public:
     /// A draw was recorded; `gs_hash`: its geometry shader's, 0 without one.
     void NoteDraw(u64 gs_hash = 0);
 
+    /// A compute dispatch was recorded (outside any pass): its shader's hash and its size in
+    /// groups (0 for an indirect one). The GPU time between passes is put down to these.
+    void NoteDispatch(u64 cs_hash, u32 x, u32 y, u32 z);
+
     /// True when enough has been recorded, and a render pass has ended since, for the GPU to be
     /// given it now instead of at the end of the frame. A frame takes the GPU thread about as
     /// long to translate as it takes the GPU to draw: handing everything over at the end makes

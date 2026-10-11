@@ -472,6 +472,8 @@ public:
         next_block = (next_block + 1) % Blocks;
         Block& block = blocks[current];
         block.passes.clear();
+        block.work.clear();
+        block.overflow = false;
         // The step of the GPU test whose time this command buffer is (gpu_bench.h), if any.
         block.bench_tag = GpuBench::TimingTag();
         cmdbuf.resetQueryPool(pool, current * BlockQueries, BlockQueries);
@@ -487,6 +489,7 @@ public:
         Block& block = blocks[current];
         if (block.passes.size() >= MaxPasses) {
             ++untimed_passes;
+            block.overflow = true;
             return;
         }
         Pass pass{};
@@ -515,6 +518,18 @@ public:
         if (gs_hash != 0) {
             ++gs_draws_by_hash[gs_hash];
         }
+    }
+
+    /// A dispatch recorded before the pass that begins next (or the end of the command buffer).
+    void Dispatch(u64 cs_hash, u32 x, u32 y, u32 z) {
+        if (current >= Blocks) {
+            return;
+        }
+        Block& block = blocks[current];
+        if (block.overflow || block.work.size() >= 4096) {
+            return;
+        }
+        block.work.push_back(Work{cs_hash, x, y, z, u32(block.passes.size())});
     }
 
     /// The render pass that PassBegin was told of has ended.
@@ -615,6 +630,7 @@ public:
             if (total >= 0.0) {
                 outside_ms += std::max(0.0, total - in_passes);
             }
+            AttributeGaps(block, stamps, result == vk::Result::eSuccess);
             if (block.bench_tag >= 0) {
                 // Its passes are timed on their own: they count even when the whole is not.
                 GpuBench::NoteGpuTime(id, block.bench_tag, bench_ms, scene_ms);
@@ -665,6 +681,36 @@ public:
                                        unusable_passes, untimed_passes)
                          : std::string{});
         }
+        if (!gap_totals.empty()) {
+            // The GPU's time between passes, by the compute shaders dispatched there: a stretch
+            // with several dispatches is shared out evenly among them ("alone" says how much of
+            // a shader's time came from stretches with nothing else in them).
+            std::vector<std::pair<u64, GapTotals>> sorted(gap_totals.begin(), gap_totals.end());
+            std::ranges::sort(sorted, [](const auto& a, const auto& b) {
+                return a.second.ms > b.second.ms;
+            });
+            std::string text;
+            for (size_t i = 0; i < sorted.size() && i < 10; ++i) {
+                const auto& [hash, t] = sorted[i];
+                if (hash == 0) {
+                    text += fmt::format("{}no dispatch (copies, barriers, the driver's own "
+                                        "work): {:.1f} ms/s in {:.0f} stretches/s",
+                                        i == 0 ? "" : "; ", t.ms / seconds, t.count / seconds);
+                } else {
+                    text += fmt::format(
+                        "{}cs {:#x}: {:.1f} ms/s ({:.0f}% alone), {:.0f} dispatches/s, groups "
+                        "{}x{}x{}",
+                        i == 0 ? "" : "; ", hash, t.ms / seconds,
+                        t.ms > 0.0 ? 100.0 * t.alone_ms / t.ms : 0.0, t.count / seconds, t.x,
+                        t.y, t.z);
+                }
+            }
+            LOG_INFO(Render_Vulkan, "GPU_COMPUTE[{}]: {:.1f} ms/s between passes, {} kinds; the "
+                     "heaviest: {}",
+                     id, gap_ms / seconds, gap_totals.size(), text);
+            gap_totals.clear();
+            gap_ms = 0.0;
+        }
         if (!gs_draws_by_hash.empty()) {
             // Each geometry shader's draws: in KosmicKrisp every one of them ends the Metal render
             // pass, runs the vertex and geometry shaders as compute work and begins the pass again.
@@ -712,8 +758,21 @@ private:
                    (u64(colors & 0xff) << 40) | (u64(depth) << 48);
         }
     };
+    struct Work {
+        u64 hash;
+        u32 x, y, z;
+        u32 before_pass; ///< Recorded before this pass (passes.size(): after the last one).
+    };
+    struct GapTotals {
+        double ms{};
+        double alone_ms{};
+        double count{};
+        u32 x{}, y{}, z{};
+    };
     struct Block {
         std::vector<Pass> passes;
+        std::vector<Work> work;
+        bool overflow{};
         bool pending{};
         u64 tick{};
         int bench_tag{-1};
@@ -726,6 +785,66 @@ private:
         double gs_draws{};
         Pass pass{};
     };
+    /// Puts the time between one pass and the next (and before the first and after the last)
+    /// down to the dispatches recorded there.
+    void AttributeGaps(const Block& block, const std::vector<u64>& stamps, bool usable) {
+        if (!usable) {
+            return;
+        }
+        const u32 passes = u32(block.passes.size());
+        const auto stamp_ms = [&](u32 from, u32 to) -> double {
+            if (stamps[to] < stamps[from]) {
+                return -1.0;
+            }
+            const double ms = double(stamps[to] - stamps[from]) * period_ns / 1e6;
+            return ms > 5000.0 ? -1.0 : ms;
+        };
+        size_t w = 0;
+        // Gap s: before pass s (s == passes: after the last one, up to the end).
+        for (u32 s = 0; s <= passes; ++s) {
+            const size_t first = w;
+            while (w < block.work.size() && block.work[w].before_pass == s) {
+                ++w;
+            }
+            if (s == passes && block.overflow) {
+                break; // passes went untimed: the last stretch holds some of them
+            }
+            const u32 from = s == 0 ? 0 : 3 + 2 * (s - 1);
+            const u32 to = s == passes ? 1 : 2 + 2 * s;
+            if (stamps[from] == 0 || stamps[to] == 0) {
+                continue;
+            }
+            const double ms = stamp_ms(from, to);
+            if (ms <= 0.0) {
+                continue;
+            }
+            gap_ms += ms;
+            const size_t count = w - first;
+            if (count == 0) {
+                GapTotals& t = gap_totals[0];
+                t.ms += ms;
+                t.alone_ms += ms;
+                t.count += 1;
+                continue;
+            }
+            const double share = ms / double(count);
+            for (size_t i = first; i < w; ++i) {
+                const Work& work = block.work[i];
+                GapTotals& t = gap_totals[work.hash];
+                t.ms += share;
+                if (count == 1) {
+                    t.alone_ms += share;
+                }
+                t.count += 1;
+                if (work.x != 0) { // an indirect one (0x0x0) keeps the last known size
+                    t.x = work.x;
+                    t.y = work.y;
+                    t.z = work.z;
+                }
+            }
+        }
+    }
+
     static inline std::atomic<u32> next_id{};
 
     const Instance* instance{};
@@ -740,6 +859,8 @@ private:
     std::vector<u32> order;
     std::unordered_map<u64, Totals> pass_totals;
     std::unordered_map<u64, u64> gs_draws_by_hash;
+    std::unordered_map<u64, GapTotals> gap_totals;
+    double gap_ms{};
     std::chrono::steady_clock::time_point since{};
     double busy_ms{};
     double longest_ms{};
@@ -924,6 +1045,12 @@ void Scheduler::NoteDraw(u64 gs_hash) {
     ++draws_since_flush;
     if (gpu_timer) {
         gpu_timer->PassDraw(gs_hash);
+    }
+}
+
+void Scheduler::NoteDispatch(u64 cs_hash, u32 x, u32 y, u32 z) {
+    if (gpu_timer) {
+        gpu_timer->Dispatch(cs_hash, x, y, z);
     }
 }
 
