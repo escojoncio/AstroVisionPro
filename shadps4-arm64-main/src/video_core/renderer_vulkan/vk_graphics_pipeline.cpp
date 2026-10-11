@@ -125,6 +125,7 @@ GraphicsPipeline::GraphicsPipeline(
                 key.num_samples, instance.GetColorSampleCounts() & instance.GetDepthSampleCounts()),
             .sampleShadingEnable =
                 fs_info.addr_flags.persp_sample_ena || fs_info.addr_flags.linear_sample_ena,
+            .alphaToCoverageEnable = key.alpha_to_coverage && (key.mrt_mask & 1u) != 0,
         };
     }
 
@@ -484,6 +485,7 @@ void GraphicsPipeline::PrepareSerialization(
             key.num_samples, instance.GetColorSampleCounts() & instance.GetDepthSampleCounts()),
         .sampleShadingEnable =
             fs_info.addr_flags.persp_sample_ena || fs_info.addr_flags.linear_sample_ena,
+        .alphaToCoverageEnable = key.alpha_to_coverage && (key.mrt_mask & 1u) != 0,
     };
     const bool is_rect_list = key.prim_type == AmdGpu::PrimitiveType::RectList;
     const bool is_quad_list = key.prim_type == AmdGpu::PrimitiveType::QuadList;

@@ -145,6 +145,58 @@ bool Rasterizer::FilterDraw() {
         regs.depth_render_override.force_stencil_valid && regs.depth_buffer.StencilValid() &&
         regs.depth_buffer.StencilWriteValid() &&
         regs.depth_buffer.StencilAddress() != regs.depth_buffer.StencilWriteAddress();
+    // A draw whose depth is read at one address and written at another: a copy (or a
+    // decompression into a separate surface). Reported the first times with its state.
+    if (regs.depth_buffer.DepthValid() && regs.depth_buffer.DepthWriteValid() &&
+        regs.depth_buffer.DepthAddress() != regs.depth_buffer.DepthWriteAddress()) {
+        static std::atomic<u32> told{};
+        if (told.fetch_add(1, std::memory_order_relaxed) < 12) {
+            LOG_INFO(Render_Vulkan,
+                     "DEPTH_COPY_DRAW: depth read {:#x} written {:#x}; colour mode {}, force z "
+                     "dirty {} valid {}, depth copy {}, stencil copy {}{}",
+                     regs.depth_buffer.DepthAddress(), regs.depth_buffer.DepthWriteAddress(),
+                     static_cast<u32>(regs.color_control.mode),
+                     static_cast<u32>(regs.depth_render_override.force_z_dirty),
+                     static_cast<u32>(regs.depth_render_override.force_z_valid),
+                     depth_copy, stencil_copy,
+                     cb_disabled && (depth_copy || stencil_copy) ? " → copied" : " → NOT copied");
+        }
+    }
+    // Draws that write depth at the read address while the title expects it at another
+    // (we draw into the read surface): the write surface is brought up to date when read.
+    static const bool depth_mirror_enabled = [] {
+        const char* value = std::getenv("SHADPS4_DEPTH_MIRROR");
+        return value == nullptr || *value != '0';
+    }();
+    if (!depth_mirrors.empty() && regs.depth_buffer.DepthValid()) {
+        // This draw uses a surface a pending copy was going to fill: what it holds now is newer.
+        const VAddr in_use = regs.depth_buffer.DepthAddress();
+        std::erase_if(depth_mirrors,
+                      [&](const DepthMirror& m) { return m.write_address == in_use; });
+    }
+    if (depth_mirror_enabled && !(cb_disabled && (depth_copy || stencil_copy)) &&
+        regs.depth_control.depth_enable && regs.depth_control.depth_write_enable &&
+        regs.depth_buffer.DepthValid() && regs.depth_buffer.DepthWriteValid() &&
+        regs.depth_buffer.DepthAddress() != regs.depth_buffer.DepthWriteAddress()) {
+        const VAddr write_address = regs.depth_buffer.DepthWriteAddress();
+        std::erase_if(depth_mirrors,
+                      [&](const DepthMirror& m) { return m.write_address == write_address; });
+        if (depth_mirrors.size() >= 8) {
+            depth_mirrors.erase(depth_mirrors.begin());
+        }
+        const u32 base_layer = regs.depth_view.slice_start;
+        depth_mirrors.push_back(DepthMirror{
+            .write_address = write_address,
+            .read_desc = VideoCore::TextureCache::ImageDesc(
+                regs.depth_buffer, regs.depth_view, regs.depth_control,
+                regs.depth_htile_data_base.GetAddress(), liverpool->last_db_extent, false),
+            .write_desc = VideoCore::TextureCache::ImageDesc(
+                regs.depth_buffer, regs.depth_view, regs.depth_control,
+                regs.depth_htile_data_base.GetAddress(), liverpool->last_db_extent, true),
+            .base_layer = base_layer,
+            .num_layers = regs.depth_view.NumSlices() - base_layer,
+        });
+    }
     if (cb_disabled && (depth_copy || stencil_copy)) {
         // Games may disable color buffer and enable force depth/stencil dirty and valid to
         // do a copy from one depth-stencil surface to another, without a pixel shader.
@@ -990,6 +1042,7 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
         return;
     }
 
+    RunDepthMirrors(pipeline);
     PrepareRenderState(pipeline);
     if (!BindResources(pipeline)) {
         if (trace) {
@@ -1421,6 +1474,7 @@ void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u3
         return;
     }
 
+    RunDepthMirrors(pipeline);
     PrepareRenderState(pipeline);
     if (!BindResources(pipeline)) {
         return;
@@ -1522,6 +1576,7 @@ void Rasterizer::DispatchDirect() {
         return;
     }
 
+    RunDepthMirrors(pipeline);
     if (!BindResources(pipeline)) {
         if (trace) {
             LOG_INFO(Render_Vulkan, "TRACE   dispatch dropped by BindResources");
@@ -1554,6 +1609,7 @@ void Rasterizer::DispatchIndirect(VAddr address, u32 offset, u32 size) {
         return;
     }
 
+    RunDepthMirrors(pipeline);
     if (!BindResources(pipeline)) {
         return;
     }
@@ -2454,18 +2510,31 @@ void Rasterizer::DepthStencilCopy(bool is_depth, bool is_stencil) {
     auto write_desc = VideoCore::TextureCache::ImageDesc(
         regs.depth_buffer, regs.depth_view, regs.depth_control,
         regs.depth_htile_data_base.GetAddress(), liverpool->last_db_extent, true);
+    const u32 base_layer = liverpool->regs.depth_view.slice_start;
+    CopyDepthBetween(read_desc, write_desc, base_layer,
+                     liverpool->regs.depth_view.NumSlices() - base_layer, is_depth, is_stencil);
+    // The surface is up to date now: a pending mirror of it is not needed.
+    const VAddr write_address = regs.depth_buffer.DepthWriteAddress();
+    std::erase_if(depth_mirrors,
+                  [&](const DepthMirror& m) { return m.write_address == write_address; });
+}
 
+void Rasterizer::CopyDepthBetween(VideoCore::TextureCache::ImageDesc read_desc,
+                                  VideoCore::TextureCache::ImageDesc write_desc,
+                                  u32 base_layer, u32 num_layers, bool is_depth,
+                                  bool is_stencil) {
     auto& read_image = texture_cache.GetImage(texture_cache.FindImage(read_desc));
     auto& write_image = texture_cache.GetImage(texture_cache.FindImage(write_desc));
+    if (&read_image == &write_image) {
+        return;
+    }
 
     VideoCore::SubresourceRange sub_range;
-    sub_range.base.layer = liverpool->regs.depth_view.slice_start;
-    sub_range.extent.layers = liverpool->regs.depth_view.NumSlices() - sub_range.base.layer;
+    sub_range.base.layer = base_layer;
+    sub_range.extent.layers = num_layers;
 
-    ScopeMarkerBegin(fmt::format(
-        "DepthStencilCopy:DR={:#x}:SR={:#x}:DW={:#x}:SW={:#x}", regs.depth_buffer.DepthAddress(),
-        regs.depth_buffer.StencilAddress(), regs.depth_buffer.DepthWriteAddress(),
-        regs.depth_buffer.StencilWriteAddress()));
+    ScopeMarkerBegin(fmt::format("DepthStencilCopy:{:#x}->{:#x}", read_image.info.guest_address,
+                                 write_image.info.guest_address));
 
     read_image.Transit(vk::ImageLayout::eTransferSrcOptimal, vk::AccessFlagBits2::eTransferRead,
                        sub_range);
@@ -2497,13 +2566,66 @@ void Rasterizer::DepthStencilCopy(bool is_depth, bool is_stencil) {
                 .layerCount = sub_range.extent.layers,
             },
         .dstOffset = {0, 0, 0},
-        .extent = {write_image.info.size.width, write_image.info.size.height, 1},
+        .extent = {std::min(read_image.info.size.width, write_image.info.size.width),
+                   std::min(read_image.info.size.height, write_image.info.size.height), 1},
     };
     scheduler.CommandBuffer().copyImage(read_image.GetImage(), vk::ImageLayout::eTransferSrcOptimal,
                                         write_image.GetImage(),
                                         vk::ImageLayout::eTransferDstOptimal, region);
+    // What the GPU wrote there is newer than the memory: never taken again from it by accident.
+    write_image.flags |= VideoCore::ImageFlagBits::GpuModified;
+    write_image.flags &= ~VideoCore::ImageFlagBits::Dirty;
 
     ScopeMarkerEnd();
+}
+
+void Rasterizer::RunDepthMirrors(const Pipeline* pipeline) {
+    if (depth_mirrors.empty() || pipeline == nullptr) {
+        return;
+    }
+    // Before the draw's targets are looked up: the copies may create or merge images.
+    for (const auto* stage : pipeline->GetStages()) {
+        if (!stage) {
+            continue;
+        }
+        for (const auto& image_desc : stage->images) {
+            MirrorPendingDepth(image_desc.GetSharp(*stage).Address());
+            if (depth_mirrors.empty()) {
+                return;
+            }
+        }
+    }
+}
+
+void Rasterizer::MirrorPendingDepth(VAddr address) {
+    const auto it = std::ranges::find_if(
+        depth_mirrors, [&](const DepthMirror& m) { return m.write_address == address; });
+    if (it == depth_mirrors.end()) {
+        return;
+    }
+    DepthMirror mirror = *it;
+    depth_mirrors.erase(it);
+    // Only between two depth images of the same format and layers.
+    auto& read_image = texture_cache.GetImage(texture_cache.FindImage(mirror.read_desc));
+    auto& write_image = texture_cache.GetImage(texture_cache.FindImage(mirror.write_desc));
+    if (!read_image.info.props.is_depth || !write_image.info.props.is_depth ||
+        read_image.info.pixel_format != write_image.info.pixel_format ||
+        read_image.info.num_samples != write_image.info.num_samples ||
+        mirror.base_layer + mirror.num_layers > read_image.info.resources.layers ||
+        mirror.base_layer + mirror.num_layers > write_image.info.resources.layers) {
+        return;
+    }
+    static std::atomic<u32> told{};
+    if (told.fetch_add(1, std::memory_order_relaxed) < 8) {
+        LOG_INFO(Render_Vulkan,
+                 "DEPTH_MIRROR: depth drawn at {:#x} copied to {:#x} ({}x{}, layers {}-{}), "
+                 "where the title wrote it, before it is read",
+                 read_image.info.guest_address, write_image.info.guest_address,
+                 write_image.info.size.width, write_image.info.size.height, mirror.base_layer,
+                 mirror.base_layer + mirror.num_layers - 1);
+    }
+    CopyDepthBetween(mirror.read_desc, mirror.write_desc, mirror.base_layer, mirror.num_layers,
+                     true, false);
 }
 
 bool Rasterizer::TryHtileClear(VAddr address, std::span<const u32> htile_words) {

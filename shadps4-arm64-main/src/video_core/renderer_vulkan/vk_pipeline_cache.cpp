@@ -784,6 +784,9 @@ bool PipelineCache::RefreshGraphicsKey() {
                              : AmdGpu::DepthBuffer::StencilFormat::Invalid;
     key.depth_clamp_enable = !regs.depth_render_override.disable_viewport_clamp;
     key.depth_clip_enable = regs.clipper_control.ZclipEnable();
+    // DB_ALPHA_TO_MASK (0xA2DC), bit 0: the pixel's alpha decides its coverage (hair, foliage,
+    // fences). With one sample this acts as an alpha test at 0.5.
+    key.alpha_to_coverage = (regs.reg_array[0xA2DC] & 1u) != 0;
     key.clip_space = regs.clipper_control.clip_space;
     key.provoking_vtx_last = regs.polygon_control.provoking_vtx_last;
     key.prim_type = regs.primitive_type;
