@@ -1151,6 +1151,10 @@ HmdFrames Presenter::PrepareScreenAsHmdFrame(
     auto local_settings = pp_settings;
     local_settings.sharpen = 0.0f;
     local_settings.linear_out = 1;
+    // A 10-bit picture the console calls sRGB is read through a plain view: its values are
+    // encoded already (decoding them is what the console's scan-out does).
+    local_settings.input_encoded =
+        attribute.attrib.pixel_format == Libraries::VideoOut::PixelFormat::A2R10G10B10Srgb ? 1 : 0;
     hmd_pp_pass.Render(cmdbuf, regions, *local, local_settings);
     DebugState.output_resolution = {local->width, local->height};
 
