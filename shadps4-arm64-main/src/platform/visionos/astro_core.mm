@@ -246,7 +246,7 @@ void astro_core_pad_state(const AstroPadState* state) {
             std::fclose(file);
         }
         LOG_INFO(Core, "DUMP: the render targets are written to {} within a few seconds",
-                 (Common::FS::GetUserPath(Common::FS::PathType::UserDir) / "rt_dump").string());
+                 (Common::FS::GetUserPath(Common::FS::PathType::HomeDir) / "rt_dump").string());
     }
     const std::array<int, 6> axes{state->left_x,       state->left_y,
                                   state->right_x,      state->right_y,
