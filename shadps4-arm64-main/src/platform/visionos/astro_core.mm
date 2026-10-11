@@ -26,6 +26,7 @@
 #define SDL_MAIN_HANDLED
 #include <SDL3/SDL_main.h>
 
+#include "common/diagnostics.h"
 #include "common/logging/log.h"
 #include "common/path_util.h"
 #include "common/singleton.h"
@@ -223,7 +224,7 @@ void astro_core_pad_state(const AstroPadState* state) {
     // to be measured.
     static std::atomic<bool> bench_combo{};
     const bool combo = (state->buttons & AstroPadL3) != 0 && (state->buttons & AstroPadR3) != 0;
-    if (bench_combo.exchange(combo) != combo && combo) {
+    if (bench_combo.exchange(combo) != combo && combo && Common::Diagnostics()) {
         Vulkan::GpuBench::Start();
     }
     // L1 and R1 held and R3 pressed: a mark in the log (game_clock.h), for the player to say
@@ -239,7 +240,7 @@ void astro_core_pad_state(const AstroPadState* state) {
     static std::atomic<bool> dump_combo{};
     const bool dump = (state->buttons & AstroPadL1) != 0 && (state->buttons & AstroPadR1) != 0 &&
                       (state->buttons & AstroPadL3) != 0 && (state->buttons & AstroPadR3) == 0;
-    if (dump_combo.exchange(dump) != dump && dump) {
+    if (dump_combo.exchange(dump) != dump && dump && Common::Diagnostics()) {
         const auto flag =
             Common::FS::GetUserPath(Common::FS::PathType::UserDir) / "dump_render_targets";
         if (std::FILE* file = std::fopen(flag.string().c_str(), "w")) {

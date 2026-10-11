@@ -4,6 +4,7 @@
 #pragma once
 
 #include <condition_variable>
+#include <filesystem>
 #include <span>
 
 #include "core/libraries/videoout/buffer.h"
@@ -156,6 +157,9 @@ private:
 
     /// Writes a thumbnail of every image the guest GPU rendered into to <UserDir>/rt_dump.
     void DumpGpuImages();
+    /// DumpGpuImages's depth images: layers 0 and 1 as grey pictures (min..max), into dump_dir.
+    void DumpDepthImages(std::span<VideoCore::Image* const> images,
+                         const std::filesystem::path& dump_dir, u32 thumb_width);
 
     void RecreateFrame(Frame* frame, u32 width, u32 height);
 
