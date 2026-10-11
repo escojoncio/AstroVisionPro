@@ -10,6 +10,7 @@
 #include <optional>
 #include <string>
 
+#include "common/diagnostics.h"
 #include "common/logging/log.h"
 #include "core/guest_cpu/guest_watchdog.h"
 #include "core/libraries/error_codes.h"
@@ -208,12 +209,33 @@ s32 PS4_SYSV_ABI sceHmdReprojectionSetUserEventStart(Libraries::Kernel::OrbisKer
     return ORBIS_OK;
 }
 
+namespace {
+/// The first call of a run of them (none for a second before): the title has entered VR (or
+/// shows its 2D screen in VR), which gives the diagnostic log budgets their logs again.
+void NoteVrEntry(std::atomic<s64>& last_call, const char* why) {
+    if (!Common::Diagnostics()) {
+        return;
+    }
+    const s64 now = std::chrono::duration_cast<std::chrono::milliseconds>(
+                        std::chrono::steady_clock::now().time_since_epoch())
+                        .count();
+    const s64 before = last_call.exchange(now, std::memory_order_relaxed);
+    if (before == 0 || now - before >= 1000) {
+        Common::BumpDiagEpoch(why);
+    }
+}
+} // namespace
+
 s32 PS4_SYSV_ABI sceHmdReprojectionStart(const OrbisHmdReprojectionParam* param,
                                          const OrbisHmdReprojectionTrackerState* tracker_state,
                                          s64 flip_arg, s32 option) {
     if (param == nullptr || tracker_state == nullptr || param->texture[0] == nullptr ||
         param->texture[1] == nullptr) {
         return ORBIS_HMD_ERROR_PARAMETER_NULL;
+    }
+    {
+        static std::atomic<s64> last_start{};
+        NoteVrEntry(last_start, "sceHmdReprojectionStart");
     }
 
     Libraries::VideoOut::HmdFrame frame{};
@@ -342,8 +364,8 @@ bool SatisfyReprojectionLabelWait(u32* address, u32 function, u32 ref, u32 mask,
                 return false;
             }
             entry->at = 0;
-            static std::atomic<u32> near_told{};
-            if (near_told.fetch_add(1, std::memory_order_relaxed) < 8) {
+            static Common::DiagBudget near_told{8};
+            if (near_told.Take()) {
                 LOG_WARNING(Lib_Hmd,
                             "REPROJECTION_LABEL_NEAR: the GPU has waited 100 ms on {} next to a "
                             "frame label, for a frame not handed over yet: released",
@@ -374,8 +396,8 @@ bool SatisfyReprojectionLabelWait(u32* address, u32 function, u32 ref, u32 mask,
                                                    sizeof(value))) {
         std::memcpy(address, &value, sizeof(value));
     }
-    static std::atomic<u32> told{};
-    if (told.fetch_add(1, std::memory_order_relaxed) < 8) {
+    static Common::DiagBudget told{8};
+    if (told.Take()) {
         LOG_INFO(Lib_Hmd,
                  "REPROJECTION_LABEL: the GPU waits on a frame's label at {} (comparison {}, "
                  "{:#x} under mask {:#x}); it held {:#x}, now {:#x}, as once the reprojection has "
@@ -513,8 +535,14 @@ s32 PS4_SYSV_ABI sceHmdReprojectionStart2dVr(u64 a0, u64 a1, u64 a2, u64 a3, u64
     static std::atomic<u32> calls{};
     const u32 call = calls.fetch_add(1, std::memory_order_relaxed);
     const std::array<u64, 6> args{a0, a1, a2, a3, a4, a5};
-    constexpr u32 LoggedCalls = 3;
-    if (call < LoggedCalls) {
+    {
+        static std::atomic<s64> last_2dvr{};
+        NoteVrEntry(last_2dvr, "sceHmdReprojectionStart2dVr");
+    }
+    // The first 3 calls of each diagnostics epoch are described (diagnostics mode only).
+    static Common::DiagBudget dumps{3};
+    const bool logged = dumps.Take();
+    if (logged) {
         LOG_INFO(Lib_Hmd, "2dVr call {}: args {:#x} {:#x} {:#x} {:#x} {:#x} {:#x}", call, a0, a1,
                  a2, a3, a4, a5);
         for (u32 i = 0; i < args.size(); ++i) {
@@ -549,7 +577,7 @@ s32 PS4_SYSV_ABI sceHmdReprojectionStart2dVr(u64 a0, u64 a1, u64 a2, u64 a3, u64
                 break;
             }
         }
-        if (call >= LoggedCalls) {
+        if (!logged) {
             continue;
         }
         for (u32 slot = 0; slot < slot_count; ++slot) {
@@ -600,7 +628,7 @@ s32 PS4_SYSV_ABI sceHmdReprojectionStart2dVr(u64 a0, u64 a1, u64 a2, u64 a3, u64
         const u32 frame_number = g_reprojection.submitted_frames++;
         frame.display_index = g_reprojection.display_index[frame_number & 1];
     }
-    if (call < LoggedCalls) {
+    if (logged) {
         LOG_INFO(Lib_Hmd,
                  "2dVr call {}: texture at {} ({}x{} at {:#x}, dfmt {} nfmt {}, dst_sel "
                  "{}{}{}{}, tile mode {})",

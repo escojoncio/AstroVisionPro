@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <ranges>
 #include "common/assert.h"
+#include "common/diagnostics.h"
 #include "common/logging/log.h"
 #include "video_core/renderer_vulkan/liverpool_to_vk.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
@@ -287,8 +288,8 @@ Image::Image(const Vulkan::Instance& instance_, Vulkan::Scheduler& scheduler_,
     };
     SetHostSamples(image_ci, info.num_samples);
     if (info.num_samples > 1) {
-        static std::atomic<u32> told{};
-        if (told.fetch_add(1, std::memory_order_relaxed) < 12) {
+        static Common::DiagBudget told{12};
+        if (told.Take()) {
             LOG_INFO(Render_Vulkan,
                      "MSAA: image {}x{} {} at {:#x}: the title's {} samples, {} on the host",
                      info.size.width, info.size.height, vk::to_string(info.pixel_format),
@@ -960,8 +961,8 @@ void Image::Resolve(Image& src_image, const VideoCore::SubresourceRange& mrt0_ra
     SetBackingSamples(1, false);
     scheduler->EndRendering();
     {
-        static std::atomic<u32> told{};
-        if (told.fetch_add(1, std::memory_order_relaxed) < 6) {
+        static Common::DiagBudget told{6};
+        if (told.Take()) {
             LOG_INFO(Render_Vulkan,
                      "MSAA: resolve {}x{} {} from {:#x} ({} samples, {} on the host) to {:#x}",
                      info.size.width, info.size.height, vk::to_string(src_image.info.pixel_format),

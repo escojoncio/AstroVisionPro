@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include "common/debug.h"
+#include "common/diagnostics.h"
+#include "common/hash.h"
 #include "common/scope_exit.h"
 #include "core/emulator_settings.h"
 #include "core/memory.h"
@@ -28,6 +30,8 @@
 #include <bit>
 #include <cmath>
 #include <cstdlib>
+#include <cstring>
+#include <unordered_set>
 
 #include <vk_mem_alloc.h>
 #include "video_core/texture_cache/image_view.h"
@@ -107,8 +111,8 @@ bool Rasterizer::FilterDraw() {
     if (regs.color_control.mode == AmdGpu::ColorControl::OperationMode::FmaskDecompress) {
         // TODO: check for a valid MRT1 to promote the draw to the resolve pass.
         LOG_TRACE(Render_Vulkan, "FMask decompression pass skipped");
-        static std::atomic<u32> fmask_told{};
-        if (fmask_told.fetch_add(1, std::memory_order_relaxed) < 4) {
+        static Common::DiagBudget fmask_told{4};
+        if (fmask_told.Take()) {
             LOG_INFO(Render_Vulkan, "MSAA: FMask decompression of {:#x} ({} samples) skipped",
                      regs.color_buffers[0].Address(), regs.color_buffers[0].NumSamples());
         }
@@ -149,8 +153,8 @@ bool Rasterizer::FilterDraw() {
     // decompression into a separate surface). Reported the first times with its state.
     if (regs.depth_buffer.DepthValid() && regs.depth_buffer.DepthWriteValid() &&
         regs.depth_buffer.DepthAddress() != regs.depth_buffer.DepthWriteAddress()) {
-        static std::atomic<u32> told{};
-        if (told.fetch_add(1, std::memory_order_relaxed) < 12) {
+        static Common::DiagBudget told{2};
+        if (told.Take(regs.depth_buffer.DepthWriteAddress())) {
             LOG_INFO(Render_Vulkan,
                      "DEPTH_COPY_DRAW: depth read {:#x} written {:#x}; colour mode {}, force z "
                      "dirty {} valid {}, depth copy {}, stencil copy {}{}",
@@ -896,6 +900,10 @@ void StartShaderTest() {
 } // namespace
 
 void Start() {
+    // A test shortcut of diagnostics mode only.
+    if (!Common::Diagnostics()) {
+        return;
+    }
     if (!UseStageTest()) {
         StartShaderTest();
         return;
@@ -1964,6 +1972,11 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, Shader::Backend::Binding
                                           vk::PipelineStageFlagBits2::eAllCommands)) {
                 buffer_barriers.emplace_back(*barrier);
             }
+            if (desc.is_written && size <= 256 && stage.stage == Shader::Stage::Compute &&
+                g_draw_trace_budget.load(std::memory_order_relaxed) > 0 &&
+                Common::Diagnostics()) {
+                NoteTracedSmallBuffer(vsharp.base_address, static_cast<u32>(size), stage.pgm_hash);
+            }
             if (desc.is_written && desc.is_formatted) {
                 texture_cache.InvalidateMemoryFromGPU(vsharp.base_address, size);
             } else if (desc.is_written) {
@@ -2047,6 +2060,145 @@ void Rasterizer::RetireIsolatedReadConstSnapshots() {
     }
     scheduler.Finish();
     isolated_readconst_buffers.clear();
+}
+
+// Diagnostics: a depth image (or one laid out as a depth target) that a shader samples or
+// stores to while the GPU has never written it (only ever taken from memory): a pass reading
+// an input nothing drew. Once per shader and address, budgets renewed on entering VR.
+void Rasterizer::LogReadUnwritten(const Shader::Info& stage, u32 binding,
+                                  const VideoCore::Image& image, bool is_storage) {
+    const auto& info = image.info;
+    const bool depth_layout = static_cast<u32>(info.tile_mode) <=
+                              static_cast<u32>(AmdGpu::TileMode::Depth2DThinPrt1K);
+    const bool target = info.props.is_depth || depth_layout || image.usage.render_target ||
+                        image.usage.depth_target;
+    if (!target || True(image.flags & VideoCore::ImageFlagBits::GpuModified) ||
+        info.guest_address == 0) {
+        return;
+    }
+    static Common::DiagBudget budget{1};
+    if (!budget.Take(HashCombine(stage.pgm_hash, static_cast<u64>(info.guest_address)))) {
+        return;
+    }
+    LOG_INFO(Render_Vulkan,
+             "READ_UNWRITTEN: {} shader {:#x} binding {} ({}) reads {:#x}, never written by the "
+             "GPU: {}x{} {}, layers {}, levels {}, samples {}, tile mode {}, flags {:#x}{}{}{}",
+             stage.stage, stage.pgm_hash, binding, is_storage ? "storage" : "sampled",
+             info.guest_address, info.size.width, info.size.height,
+             vk::to_string(info.pixel_format), info.resources.layers, info.resources.levels,
+             info.num_samples, static_cast<u32>(info.tile_mode), static_cast<u32>(image.flags),
+             info.props.is_depth ? ", depth" : "", depth_layout ? ", depth tiling" : "",
+             image.usage.render_target ? ", was a colour target" : "");
+}
+
+void Rasterizer::NoteTracedSmallBuffer(VAddr address, u32 size, u64 cs_hash) {
+    const auto& cs = liverpool->GetCsRegs();
+    std::scoped_lock lock{small_buffer_mutex};
+    if (small_buffer_writes.size() >= 16 ||
+        std::ranges::any_of(small_buffer_writes, [&](const SmallBufferWrite& w) {
+            return w.address == address && w.size == size && w.cs_hash == cs_hash;
+        })) {
+        return;
+    }
+    small_buffer_writes.push_back({address, size, cs_hash, {cs.dim_x, cs.dim_y, cs.dim_z}});
+}
+
+void Rasterizer::ReadBackTracedSmallBuffers() {
+    if (!Common::Diagnostics() || g_draw_trace_budget.load(std::memory_order_relaxed) > 0) {
+        return;
+    }
+    std::vector<SmallBufferWrite> writes;
+    {
+        std::scoped_lock lock{small_buffer_mutex};
+        writes.swap(small_buffer_writes);
+    }
+    if (writes.empty()) {
+        return;
+    }
+    // Each into its own 256-byte slot of one host-visible buffer, after everything before.
+    constexpr u32 Slot = 256;
+    VideoCore::Buffer staging{instance,
+                              scheduler,
+                              VideoCore::MemoryUsage::Download,
+                              0,
+                              vk::BufferUsageFlagBits::eTransferDst,
+                              u64{Slot} * writes.size()};
+    if (staging.mapped_data.size() < u64{Slot} * writes.size()) {
+        LOG_WARNING(Render_Vulkan, "SMALL_BUFFER: no host-visible staging buffer");
+        return;
+    }
+    // First what a shader reading them would get (uploads from memory may be recorded for
+    // parts the GPU has not written since), then the copies.
+    scheduler.EndRendering();
+    std::vector<std::pair<vk::Buffer, u64>> sources(writes.size());
+    for (size_t i = 0; i < writes.size(); ++i) {
+        const auto [buffer, offset] = buffer_cache.ObtainBuffer(writes[i].address, writes[i].size,
+                                                                false);
+        if (buffer != nullptr && buffer->Handle() != VK_NULL_HANDLE &&
+            u64{offset} + writes[i].size <= buffer->SizeBytes()) {
+            sources[i] = {buffer->Handle(), offset};
+        }
+    }
+    scheduler.EndRendering();
+    const auto cmdbuf = scheduler.CommandBuffer();
+    const vk::MemoryBarrier2 before{
+        .srcStageMask = vk::PipelineStageFlagBits2::eAllCommands,
+        .srcAccessMask = vk::AccessFlagBits2::eMemoryWrite,
+        .dstStageMask = vk::PipelineStageFlagBits2::eTransfer,
+        .dstAccessMask = vk::AccessFlagBits2::eTransferRead,
+    };
+    cmdbuf.pipelineBarrier2(vk::DependencyInfo{
+        .memoryBarrierCount = 1,
+        .pMemoryBarriers = &before,
+    });
+    std::vector<bool> copied(writes.size(), false);
+    for (size_t i = 0; i < writes.size(); ++i) {
+        if (!sources[i].first) {
+            continue;
+        }
+        cmdbuf.copyBuffer(sources[i].first, staging.Handle(),
+                          vk::BufferCopy{
+                              .srcOffset = sources[i].second,
+                              .dstOffset = u64{Slot} * i,
+                              .size = writes[i].size,
+                          });
+        copied[i] = true;
+    }
+    const vk::MemoryBarrier2 after{
+        .srcStageMask = vk::PipelineStageFlagBits2::eTransfer,
+        .srcAccessMask = vk::AccessFlagBits2::eTransferRead | vk::AccessFlagBits2::eTransferWrite,
+        .dstStageMask = vk::PipelineStageFlagBits2::eAllCommands,
+        .dstAccessMask = vk::AccessFlagBits2::eMemoryRead | vk::AccessFlagBits2::eMemoryWrite,
+    };
+    cmdbuf.pipelineBarrier2(vk::DependencyInfo{
+        .memoryBarrierCount = 1,
+        .pMemoryBarriers = &after,
+    });
+    scheduler.Finish();
+    if (!staging.is_coherent) {
+        vmaInvalidateAllocation(instance.GetAllocator(), staging.buffer.allocation, 0,
+                                VK_WHOLE_SIZE);
+    }
+    for (size_t i = 0; i < writes.size(); ++i) {
+        const auto& w = writes[i];
+        if (!copied[i]) {
+            LOG_INFO(Render_Vulkan, "SMALL_BUFFER {:#x} {} cs: {:#x}: no GPU buffer any more",
+                     w.address, w.size, w.cs_hash);
+            continue;
+        }
+        const u8* bytes = staging.mapped_data.data() + u64{Slot} * i;
+        std::string floats;
+        std::string hex;
+        for (u32 at = 0; at + 4 <= w.size; at += 4) {
+            u32 word;
+            std::memcpy(&word, bytes + at, sizeof(word));
+            floats += fmt::format(" {:.6g}", std::bit_cast<float>(word));
+            hex += fmt::format(" {:08x}", word);
+        }
+        LOG_INFO(Render_Vulkan,
+                 "SMALL_BUFFER {:#x} {} cs: {:#x} groups {}x{}x{}; floats:{}; hex:{}", w.address,
+                 w.size, w.cs_hash, w.groups[0], w.groups[1], w.groups[2], floats, hex);
+    }
 }
 
 void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindings& binding) {
@@ -2153,7 +2305,9 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
     }
 
     // Second pass to re-bind images that were updated after binding
+    u32 binding_index = 0;
     for (auto& [image_id, desc] : image_bindings) {
+        const u32 this_binding = binding_index++;
         bool is_storage = desc.type == VideoCore::TextureCache::BindingType::Storage;
         if (!image_id) {
             if (instance.IsNullDescriptorSupported()) {
@@ -2173,6 +2327,10 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
             bound_images.emplace_back(image_id);
 
             auto& image = texture_cache.GetImage(image_id);
+            if (Common::Diagnostics()) {
+                // Before FindTexture, which marks a storage image GPU-modified.
+                LogReadUnwritten(stage, this_binding, image, is_storage);
+            }
             auto& image_view = texture_cache.FindTexture(image_id, desc);
 
             // The image is either bound as storage in a separate descriptor or bound as render
@@ -2615,8 +2773,8 @@ void Rasterizer::MirrorPendingDepth(VAddr address) {
         mirror.base_layer + mirror.num_layers > write_image.info.resources.layers) {
         return;
     }
-    static std::atomic<u32> told{};
-    if (told.fetch_add(1, std::memory_order_relaxed) < 8) {
+    static Common::DiagBudget told{2};
+    if (told.Take(write_image.info.guest_address)) {
         LOG_INFO(Render_Vulkan,
                  "DEPTH_MIRROR: depth drawn at {:#x} copied to {:#x} ({}x{}, layers {}-{}), "
                  "where the title wrote it, before it is read",

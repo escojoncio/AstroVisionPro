@@ -3,7 +3,9 @@
 
 #pragma once
 
+#include <array>
 #include <memory>
+#include <mutex>
 #include <utility>
 #include <vector>
 
@@ -47,6 +49,11 @@ public:
 
     /// Logs the next `count` guest draws, dispatches and markers. Debugging aid.
     static void StartDrawTrace(s32 count);
+
+    /// Diagnostics: once the draw trace is over, the small buffers (<= 256 bytes) compute
+    /// shaders wrote during it are read back from the GPU and logged (SMALL_BUFFER). Waits for
+    /// the GPU then; nothing to do otherwise.
+    void ReadBackTracedSmallBuffers();
 
     [[nodiscard]] VideoCore::BufferCache& GetBufferCache() noexcept {
         return buffer_cache;
@@ -103,6 +110,11 @@ private:
     /// triangles, their viewports) reach, rounded up to whole 32-pixel tiles.
     std::pair<u32, u32> AttachmentlessExtent() const;
     void Resolve();
+    /// Diagnostics: READ_UNWRITTEN (a depth or target image bound while never GPU-written).
+    void LogReadUnwritten(const Shader::Info& stage, u32 binding, const VideoCore::Image& image,
+                          bool is_storage);
+    /// Diagnostics: a small buffer a dispatch writes while the draw trace runs.
+    void NoteTracedSmallBuffer(VAddr address, u32 size, u64 cs_hash);
     void DepthStencilCopy(bool is_depth, bool is_stencil);
     /// Copies the depth of `read_desc`'s image into `write_desc`'s (layers given).
     void CopyDepthBetween(VideoCore::TextureCache::ImageDesc read_desc,
@@ -227,6 +239,16 @@ private:
         u32 num_layers;
     };
     std::vector<DepthMirror> depth_mirrors;
+
+    /// Small buffers written by dispatches during the draw trace (diagnostics, at most 16).
+    struct SmallBufferWrite {
+        VAddr address;
+        u32 size;
+        u64 cs_hash;
+        std::array<u32, 3> groups;
+    };
+    std::mutex small_buffer_mutex;
+    std::vector<SmallBufferWrite> small_buffer_writes;
 };
 
 } // namespace Vulkan

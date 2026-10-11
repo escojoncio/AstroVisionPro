@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 
+#include "common/diagnostics.h"
 #include "common/logging/log.h"
 #include "core/libraries/error_codes.h"
 #include "core/libraries/kernel/time.h"
@@ -154,20 +155,22 @@ s32 PS4_SYSV_ABI sceVrTrackerInit(const OrbisVrTrackerInitParam* param) {
     if (param->calibration_settings.move_position == ORBIS_VR_TRACKER_CALIBRATION_AUTO) {
         required_onion_size *= 2;
     }
-    LOG_INFO(Lib_VrTracker,
-             "init: size {} (expected {}), onion {:#x} at {}, garlic {:#x} at {}, work {:#x} at "
-             "{}, alignments {:#x}/{:#x}/{:#x}, compute pipe {} queue {}, calibration pad {} hmd "
-             "{} move {} gun {}",
-             param->size, sizeof(OrbisVrTrackerInitParam), param->direct_memory_onion_size,
-             fmt::ptr(param->direct_memory_onion), param->direct_memory_garlic_size,
-             fmt::ptr(param->direct_memory_garlic), param->work_memory_size,
-             fmt::ptr(param->work_memory), param->direct_memory_onion_alignment,
-             param->direct_memory_garlic_alignment, param->work_memory_alignment,
-             param->gpu_pipe_id, param->gpu_queue_id,
-             static_cast<u32>(param->calibration_settings.pad_position),
-             static_cast<u32>(param->calibration_settings.hmd_position),
-             static_cast<u32>(param->calibration_settings.move_position),
-             static_cast<u32>(param->calibration_settings.gun_position));
+    if (Common::Diagnostics()) {
+        LOG_INFO(Lib_VrTracker,
+                 "init: size {} (expected {}), onion {:#x} at {}, garlic {:#x} at {}, work "
+                 "{:#x} at {}, alignments {:#x}/{:#x}/{:#x}, compute pipe {} queue {}, "
+                 "calibration pad {} hmd {} move {} gun {}",
+                 param->size, sizeof(OrbisVrTrackerInitParam), param->direct_memory_onion_size,
+                 fmt::ptr(param->direct_memory_onion), param->direct_memory_garlic_size,
+                 fmt::ptr(param->direct_memory_garlic), param->work_memory_size,
+                 fmt::ptr(param->work_memory), param->direct_memory_onion_alignment,
+                 param->direct_memory_garlic_alignment, param->work_memory_alignment,
+                 param->gpu_pipe_id, param->gpu_queue_id,
+                 static_cast<u32>(param->calibration_settings.pad_position),
+                 static_cast<u32>(param->calibration_settings.hmd_position),
+                 static_cast<u32>(param->calibration_settings.move_position),
+                 static_cast<u32>(param->calibration_settings.gun_position));
+    }
     const bool as_console = param->size == sizeof(OrbisVrTrackerInitParam) &&
                             param->direct_memory_garlic != nullptr &&
                             param->direct_memory_garlic_size == ORBIS_VR_TRACKER_GARLIC_SIZE &&
@@ -182,7 +185,7 @@ s32 PS4_SYSV_ABI sceVrTrackerInit(const OrbisVrTrackerInitParam* param) {
     if (!as_console) {
         LOG_WARNING(Lib_VrTracker, "init: parameters a console's library would check differ "
                                    "from this SDK's; accepted (none of the memory is used)");
-        // The block as the title laid it out, to tell another SDK's layout.
+        // The block as the title laid it out, to tell another SDK's layout (diagnostics).
         const auto* words = reinterpret_cast<const u32*>(param);
         const u32 count = std::min<u32>(std::max<u32>(param->size, 16),
                                          static_cast<u32>(sizeof(OrbisVrTrackerInitParam))) / 4;
@@ -190,7 +193,9 @@ s32 PS4_SYSV_ABI sceVrTrackerInit(const OrbisVrTrackerInitParam* param) {
         for (u32 i = 0; i < count; ++i) {
             dump += fmt::format(" {:08x}", words[i]);
         }
-        LOG_WARNING(Lib_VrTracker, "init: parameter block:{}", dump);
+        if (Common::Diagnostics()) {
+            LOG_WARNING(Lib_VrTracker, "init: parameter block:{}", dump);
+        }
     }
 
     // Kept for reference only; nothing reads or writes the title's memory.
