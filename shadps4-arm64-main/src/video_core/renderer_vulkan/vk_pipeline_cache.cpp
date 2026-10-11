@@ -16,6 +16,7 @@
 #include <vector>
 #include <ranges>
 
+#include "common/diagnostics.h"
 #include "common/hash.h"
 #include "common/io_file.h"
 #include "common/path_util.h"
@@ -1145,8 +1146,8 @@ static void LogMsaaReads(const Shader::Info& info, const Shader::StageSpecializa
     if (multisampled == 0 && info.fmasks.empty()) {
         return;
     }
-    static std::atomic<u32> told{};
-    if (told.fetch_add(1, std::memory_order_relaxed) < 16) {
+    static Common::DiagBudget told{16};
+    if (told.Take()) {
         LOG_INFO(Render_Vulkan, "MSAA: {} shader {:#x} reads {} multisampled image(s), {} FMask(s)",
                  info.stage, info.pgm_hash, multisampled, info.fmasks.size());
     }

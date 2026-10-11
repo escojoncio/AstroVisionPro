@@ -25,22 +25,15 @@ struct AstroSettings {
     var fovOf = "headset"
     /// Sharpening of the picture on its way to the headset, 0 to 1.
     var sharpen = "0.3"
-    /// No longer used (the old MSAA key, kept so older settings files read).
-    var msaa = ""
     /// The most samples a pixel the game's own antialiasing (MSAA) is drawn with
     /// (SHADPS4_MAX_MSAA): "1" none, "2", "4". The console draws ASTRO BOT's scene with more.
     var msaaSamples = "2"
-    /// Where the game resolves a multisampled picture (held with one sample a pixel here), the
-    /// edges are smoothed on the way (SmoothInto, SHADPS4_RESOLVE_AA). Off (the default): copied
-    /// as they are; the headset's SMAA smooths the picture anyway (no difference seen).
-    var antialias = false
     /// The hands holding the controller place it in the game.
     var hands = true
     /// How far beyond the next picture the head position is predicted, in milliseconds.
     var predictMs = 20
     var stickTouchpad = true
     var surround = true
-    var realTime = true
     /// The game waits while nobody looks at it.
     var pause = true
     var game = ""
@@ -61,73 +54,23 @@ struct AstroSettings {
     var jitArenaMB = 512
     /// Show the hands (and the controller in them) in front of the game.
     var showHands = false
-    /// The Vulkan driver: "kosmickrisp" (Mesa's, with geometry shaders; the default when the app
-    /// carries it) or "moltenvk" (no geometry shaders).
-    var vulkanDriver = "kosmickrisp"
-    /// Pipelines are made on threads of their own: no stalls while Metal compiles, at the cost
-    /// of what they draw appearing a moment late the first time.
-    var asyncShaders = true
-    /// KosmicKrisp runs the geometry shaders' work inside the render pass (as vertex-only draws)
-    /// instead of breaking the pass for a compute pass on every such draw.
-    var gsInPass = true
-    /// KosmicKrisp frees the geometry shaders' memory between render passes instead of cutting
-    /// a pass at its first geometry shader draw (KK_HEAP_BETWEEN_PASSES).
-    var heapBetweenPasses = true
-    /// Experimental: KosmicKrisp lets the next render pass start its vertex work while the one
-    /// before is still drawing, instead of waiting for all of it (KK_LIGHT_BARRIERS).
-    var lightBarriers = false
-    /// Experimental: the barrier at the end of each KosmicKrisp render encoder makes memory
-    /// visible to the device only, without the alias flush (KK_BARRIER_VISIBILITY=device).
-    var deviceBarriers = false
-    /// A draw that uses fewer of the targets of the render pass that is open is made in that pass
-    /// instead of ending it (SHADPS4_MERGE_PASSES).
-    var mergePasses = true
-    /// The pipelines the game used are kept in VPS4 (Partidas/cache) and, at the next start,
-    /// made again in the background before the game asks for them (SHADPS4_PIPELINE_CACHE):
-    /// no effects shown late or left out, no compiling in the middle of the game. Its own key
-    /// ("shader_cache"): the old "pipeline_cache" was off and stays in older settings files.
-    var shaderCache = true
-    /// The GPU test that L3 + R3 start in the game (gpu_bench.h, SHADPS4_GPU_BENCH): "shaders"
-    /// what each of the scene's pixel shaders costs, "stages" the older test by stages (pixels,
-    /// geometry, depth-only passes, geometry shaders). Any other value is "shaders".
-    var gpuTest = "shaders"
     /// The headset's 3D audio, as PlayStation VR renders it: each of the title's 3D sounds and
     /// surround speakers rendered by Apple's PHASE, head-locked (SHADPS4_SPATIAL_AUDIO).
     var spatialAudio = true
-    /// GPU diagnostics in the log: every few seconds what a frame is made of, and one frame's
-    /// render passes with the code that ended each (SHADPS4_FRAME_STATS=2).
-    var passDiagnostics = true
+    /// «Modo diagnóstico» (SHADPS4_DIAGNOSTICS=1): the GPU's statistics, the emulator's
+    /// diagnostic logs, the GPU test with L3 + R3 and the dump with L1 + R1 + L3. Off: none of
+    /// them, a clean log at no cost.
+    var diagnostics = false
     /// The game's picture antialiased (SMAA 1x, Render/EdgeSmoother.swift) before it is shown.
     var edgeSmoothing = true
     /// The language the game is played in: "system" (the headset's) or a language tag
     /// (GameLanguages.swift).
     var gameLanguage = "system"
-    /// The launcher's window closes when the game's space opens. Off: it stays open (behind the
-    /// game) - a test of whether the controller's rumble stops because the app is left without
-    /// a window (GameController then takes it for an app in the background).
-    var closeLauncher = true
-    /// The title's GPU clocks run at this fraction of real time ("1", "0.5", "0.25";
-    /// SHADPS4_GPU_CLOCK_SCALE): it times its drawing with them and leaves shadows and effects
-    /// out when the drawing looks slow. "auto": slowed within each frame by as much as keeps what
-    /// the title measures within a console's budget, back on real time at every frame's end.
-    var gpuClockScale = "auto"
+    /// The launcher's window closes when the game's space opens.
+    let closeLauncher = true
     /// The launcher's view takes the controller's events through GameController
     /// (handlesGameControllerEvents): the app is then the controller's, for its rumble too.
-    var controllerToApp = true
-    /// Primitive restart on lists of vertices (SHADPS4_LIST_RESTART): off by default, as
-    /// shadPS4 has it for KosmicKrisp (titles leave it on without using it; KosmicKrisp then
-    /// unrolls every such draw with a compute pass).
-    var listRestart = false
-    /// The title's read-only constant buffers reach its shaders as uniform buffers
-    /// (SHADPS4_CONSTANT_UBO): Metal's constant memory, read faster than a storage buffer.
-    var constantUbo = true
-    /// The pixel shaders' arithmetic exactly as the console's, operation by operation
-    /// (SHADPS4_EXACT_PIXEL_MATH): off, Metal may fuse and reorder it as in any shader of its own.
-    var exactPixelMath = false
-    /// Raw shader copies keep the GPU's images (SHADPS4_RAW_IMAGE_SYNC): a compute shader that
-    /// reads an image's memory as plain bytes first gets what was drawn in it, and one that
-    /// writes whole layers of an array (shadow maps) has them taken into the image. Off: as before.
-    var rawImageSync = true
+    let controllerToApp = true
 
     static var documents: URL {
         FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -196,21 +139,11 @@ struct AstroSettings {
         case "fov": fov = Int(value) ?? fov
         case "fov_of": fovOf = value
         case "sharpen": sharpen = value
-        case "msaa": msaa = value
         case "msaa_samples": msaaSamples = ["1", "2", "4"].contains(value) ? value : msaaSamples
-        case "antialias": antialias = flag
         case "hands": hands = flag
         case "predict_ms": predictMs = Int(value) ?? predictMs
         case "stick_touchpad": stickTouchpad = flag
         case "surround": surround = flag
-        case "real_time": realTime = flag
-        case "close_launcher": closeLauncher = flag
-        case "gpu_clock_scale": gpuClockScale = value
-        case "controller_to_app": controllerToApp = flag
-        case "list_restart": listRestart = flag
-        case "constant_ubo": constantUbo = flag
-        case "exact_pixel_math": exactPixelMath = flag
-        case "raw_image_sync": rawImageSync = flag
         case "pause": pause = flag
         case "game": game = value
         case "game_folder": gameFolderName = value
@@ -219,19 +152,12 @@ struct AstroSettings {
         case "render_quality": renderQuality = min(max(Float(value) ?? renderQuality, 0.1), 1.0)
         case "jit_arena_mb": jitArenaMB = min(max(Int(value) ?? jitArenaMB, 64), 2048)
         case "show_hands": showHands = flag
-        case "vulkan_driver": vulkanDriver = value.lowercased()
-        case "async_shaders": asyncShaders = flag
-        case "gs_in_pass": gsInPass = flag
-        case "heap_between_passes": heapBetweenPasses = flag
-        case "light_barriers": lightBarriers = flag
-        case "device_barriers": deviceBarriers = flag
-        case "merge_passes": mergePasses = flag
-        case "shader_cache": shaderCache = flag
-        case "gpu_test": gpuTest = value
         case "smaa": edgeSmoothing = flag
         case "spatial_audio": spatialAudio = flag
-        case "pass_diagnostics": passDiagnostics = flag
+        case "diagnostics": diagnostics = value == "1"
         case "game_language": gameLanguage = value
+        // Settings that are now fixed or gone (async_shaders, vulkan_driver, real_time…) stay in
+        // older files and are not read.
         default: break
         }
     }
@@ -261,7 +187,6 @@ struct AstroSettings {
         }
         env.append("SHADPS4_VR_SHARPEN=\(sharpen)")
         env.append("SHADPS4_MAX_MSAA=\(msaaSamples)")
-        env.append("SHADPS4_RESOLVE_AA=\(antialias ? 1 : 0)")
         if !hands {
             env.append("SHADPS4_XR_HANDS=0")
         }
@@ -271,9 +196,6 @@ struct AstroSettings {
         }
         if !surround {
             env.append("SHADPS4_VIRTUAL_SURROUND=0")
-        }
-        if !realTime {
-            env.append("SHADPS4_TITLE_TIMESTEP=0")
         }
         if fov != 100 {
             env.append("SHADPS4_VR_FOV=\(fov)")
@@ -287,39 +209,39 @@ struct AstroSettings {
         }
         // The headset is the app's: it is there from the start.
         env.append("SHADPS4_XR_WAIT=0")
-        env.append("SHADPS4_VK_DRIVER=\(vulkanDriver)")
-        env.append("SHADPS4_ASYNC_PIPELINES=\(asyncShaders ? 1 : 0)")
-        env.append("KK_GS_IN_PASS=\(gsInPass ? 1 : 0)")
-        env.append("KK_HEAP_BETWEEN_PASSES=\(heapBetweenPasses ? 1 : 0)")
-        env.append("KK_LIGHT_BARRIERS=\(lightBarriers ? 1 : 0)")
-        if deviceBarriers {
-            env.append("KK_BARRIER_VISIBILITY=device")
-        }
-        env.append("SHADPS4_MERGE_PASSES=\(mergePasses ? 1 : 0)")
-        env.append("SHADPS4_GPU_BENCH=\(gpuTest == "stages" ? "stages" : "shaders")")
-        env.append("SHADPS4_PIPELINE_CACHE=\(shaderCache ? 1 : 0)")
         env.append("SHADPS4_SPATIAL_AUDIO=\(spatialAudio ? 1 : 0)")
-        if passDiagnostics {
+        // Fixed: what was measured best (bitacora.md, «Informe de rendimiento»). KosmicKrisp
+        // (geometry shaders; MoltenVK ran at half the speed); pipelines made in the background
+        // and kept for the next start; geometry shaders' work inside the pass and their memory
+        // freed between passes; passes merged; no restart on lists; constants as uniform
+        // buffers; pixel arithmetic free to be fused; raw compute copies of images coherent; the
+        // title's GPU clock adjusted every frame (only for titles the emulator knows, ASTRO BOT).
+        env.append("SHADPS4_VK_DRIVER=kosmickrisp")
+        env.append("SHADPS4_ASYNC_PIPELINES=1")
+        env.append("SHADPS4_PIPELINE_CACHE=1")
+        env.append("KK_GS_IN_PASS=1")
+        env.append("KK_HEAP_BETWEEN_PASSES=1")
+        env.append("KK_LIGHT_BARRIERS=0")
+        env.append("SHADPS4_MERGE_PASSES=1")
+        env.append("SHADPS4_LIST_RESTART=0")
+        env.append("SHADPS4_CONSTANT_UBO=1")
+        env.append("SHADPS4_EXACT_PIXEL_MATH=0")
+        env.append("SHADPS4_RAW_IMAGE_SYNC=1")
+        env.append("SHADPS4_RESOLVE_AA=0")
+        env.append("SHADPS4_GPU_CLOCK_SCALE=auto")
+        if diagnostics {
+            env.append("SHADPS4_DIAGNOSTICS=1")
+            // What a frame is made of every few seconds and one frame's render passes; the GPU
+            // test with L3 + R3, shader by shader.
             env.append("SHADPS4_FRAME_STATS=2")
+            env.append("SHADPS4_GPU_BENCH=shaders")
             // The title's GPU clock stamps and its size control object (game_clock.h,
-            // known_title.cpp), to find what it leaves out when its GPU looks slow.
+            // known_title.cpp).
             env.append("SHADPS4_GPU_STAMP_LOG=1")
             env.append("SHADPS4_QUALITY_DUMP=1")
             // KosmicKrisp: Metal encoders a second and what cut each render encoder short.
             env.append("KK_CENSUS=1")
         }
-        if gpuClockScale == "auto" {
-            env.append("SHADPS4_GPU_CLOCK_SCALE=auto")
-        } else if let scale = Double(gpuClockScale), scale > 0, scale < 1 {
-            env.append("SHADPS4_GPU_CLOCK_SCALE=\(gpuClockScale)")
-            if !passDiagnostics {
-                env.append("SHADPS4_GPU_STAMP_LOG=1")
-            }
-        }
-        env.append("SHADPS4_LIST_RESTART=\(listRestart ? 1 : 0)")
-        env.append("SHADPS4_CONSTANT_UBO=\(constantUbo ? 1 : 0)")
-        env.append("SHADPS4_EXACT_PIXEL_MATH=\(exactPixelMath ? 1 : 0)")
-        env.append("SHADPS4_RAW_IMAGE_SYNC=\(rawImageSync ? 1 : 0)")
         env.append("SHADPS4_CONSOLE_LANGUAGE=\(GameLanguages.tag(for: gameLanguage))")
         // KosmicKrisp keeps what it translated (Mesa's shader cache) where the app may write:
         // the VPS4 folder when there is one (it outlives the app), else the app's caches.
@@ -357,8 +279,6 @@ struct AstroSettings {
     # Nitidez de la imagen camino del visor, de 0 a 1.
     sharpen=0.3
 
-    #antialias=0
-
     # 0: las manos no colocan el mando en el juego.
     hands=1
 
@@ -367,7 +287,6 @@ struct AstroSettings {
 
     #stick_touchpad=1
     #surround=1
-    #real_time=1
 
     # 0: el juego no espera mientras nadie lo mira.
     #pause=1
@@ -387,16 +306,6 @@ struct AstroSettings {
     jit_arena_mb=512
     # 1: se ven las manos (y el mando en ellas) delante del juego.
     show_hands=0
-    # Driver de Vulkan: kosmickrisp (Mesa, con geometry shaders) o moltenvk (sin ellos).
-    vulkan_driver=kosmickrisp
-    # 1: los shaders se compilan en segundo plano (sin tirones; lo nuevo aparece un instante tarde).
-    async_shaders=1
-    # 1: KosmicKrisp hace el trabajo de los geometry shaders dentro de la pasada de render.
-    gs_in_pass=1
-    # 1 (experimental): cada pasada de render empieza sus vértices sin esperar a que acabe la anterior.
-    light_barriers=0
-    # 1: un dibujo que usa menos destinos que la pasada abierta se hace en ella en vez de cortarla.
-    merge_passes=1
     # 1: antialiasing SMAA de la imagen del juego (bordes suaves sin emborronar las texturas).
     smaa=1
     # 1: audio 3D como el de PlayStation VR (cada sonido y altavoz con el HRTF de Apple, PHASE).

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include "common/debug.h"
+#include "common/diagnostics.h"
 #include "common/elf_info.h"
 #include "common/io_file.h"
 #include "common/path_util.h"
@@ -29,6 +30,7 @@
 
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <atomic>
 #include <cctype>
 #include <chrono>
@@ -861,7 +863,10 @@ HmdFrames Presenter::PrepareHmdFrame(std::span<const AmdGpu::Image, 2> eye_textu
 
     // Diagnostics: creating <UserDir>/dump_render_targets dumps what the guest has rendered so
     // far, once, to tell a guest that draws nothing apart from output that gets lost on the way.
-    {
+    // (Diagnostics mode only.) After the draw trace it starts, the small buffers compute shaders
+    // wrote during it are read back (SMALL_BUFFER).
+    if (Common::Diagnostics()) {
+        rasterizer->ReadBackTracedSmallBuffers();
         std::error_code ec;
         const auto dump_flag =
             Common::FS::GetUserPath(Common::FS::PathType::UserDir) / "dump_render_targets";
@@ -877,7 +882,8 @@ HmdFrames Presenter::PrepareHmdFrame(std::span<const AmdGpu::Image, 2> eye_textu
     }
 
     static u32 logged_frames = 0;
-    if (logged_frames < 3 || (logged_frames % 600) == 0) {
+    static Common::DiagBudget hmd_frames_told{3};
+    if (hmd_frames_told.Take() || (Common::Diagnostics() && (logged_frames % 600) == 0)) {
         for (u32 eye = 0; eye < 2; ++eye) {
             const auto& image = texture_cache.GetImage(image_ids[eye]);
             // The view is made with the descriptor's dst_sel (ImageViewInfo), which undoes a
@@ -1239,6 +1245,7 @@ void Presenter::DumpGpuImages() {
 
     // Collect first: transitions and submits below must not run under the cache lock.
     std::vector<VideoCore::Image*> images;
+    std::vector<VideoCore::Image*> depth_images;
     texture_cache.ForEachImage([&](VideoCore::Image& image) {
         const auto& info = image.info;
         LOG_INFO(Render_Vulkan,
@@ -1247,6 +1254,11 @@ void Presenter::DumpGpuImages() {
                  vk::to_string(info.pixel_format), info.num_samples, info.resources.levels,
                  info.resources.layers, static_cast<u32>(image.flags),
                  info.props.is_depth ? ", depth" : "");
+        if (info.props.is_depth && !info.props.is_volume && info.size.width >= 16 &&
+            info.size.height >= 16 && depth_images.size() < 48) {
+            depth_images.push_back(&image); // drawn or not: an empty one is the question
+            return;
+        }
         if (!(image.flags & VideoCore::ImageFlagBits::GpuModified) || info.props.is_depth ||
             info.props.is_volume || info.size.width < 64 || info.size.height < 64) {
             return;
@@ -1381,7 +1393,7 @@ void Presenter::DumpGpuImages() {
         for (size_t i = 3; i < rgba.size(); i += 4) {
             rgba[i] = 0xff;
         }
-        const auto path = dump_dir / fmt::format("{:03}_{:x}_{}x{}_{}_s{}.png", index++,
+        const auto path = dump_dir / fmt::format("{:03}_{:x}_{}x{}_{}_s{}_gpu.png", index++,
                                                  info.guest_address, info.size.width,
                                                  info.size.height,
                                                  vk::to_string(info.pixel_format), samples);
@@ -1392,6 +1404,7 @@ void Presenter::DumpGpuImages() {
         }
     }
     LOG_INFO(Render_Vulkan, "Dumped {} render targets to {}", index, dump_dir.string());
+    DumpDepthImages(depth_images, dump_dir, ThumbWidth);
 
     // SHADPS4_DUMP_IMAGE=<address>: the texture at that address as it is held, every level with
     // all its layers, raw (rt_dump/image_<address>_level<n>_<w>x<h>x<layers>_<format>.bin): for
@@ -1478,6 +1491,153 @@ void Presenter::DumpGpuImages() {
                  info.guest_address, info.resources.levels, info.resources.layers,
                  static_cast<u32>(info.tile_mode), info.guest_size, static_cast<u32>(image->flags));
     }
+}
+
+void Presenter::DumpDepthImages(std::span<VideoCore::Image* const> images,
+                                const std::filesystem::path& dump_dir, u32 thumb_width) {
+    // Depth cannot be blitted into RGBA8: its depth aspect is copied into a buffer and made a
+    // grey picture here, from its own nearest (black) to farthest (white) value.
+    u32 index = 0;
+    for (VideoCore::Image* image : images) {
+        const auto& info = image->info;
+        const bool gpu_written = True(image->flags & VideoCore::ImageFlagBits::GpuModified);
+        // The image's own format on the host, which can differ from the one asked for (D16S8 is
+        // made as D24S8 or D32S8 where the device lacks it): it decides the copy's texel size.
+        const vk::Format host_format = image->backing->image.image_ci.format;
+        u32 texel_bytes = 0;
+        switch (host_format) {
+        case vk::Format::eD16Unorm:
+        case vk::Format::eD16UnormS8Uint:
+            texel_bytes = 2;
+            break;
+        case vk::Format::eD32Sfloat:
+        case vk::Format::eD32SfloatS8Uint:
+        case vk::Format::eD24UnormS8Uint:
+        case vk::Format::eX8D24UnormPack32:
+            texel_bytes = 4;
+            break;
+        default:
+            break;
+        }
+        const u32 host_samples = static_cast<u32>(image->backing->image.image_ci.samples);
+        if (texel_bytes == 0 || host_samples != 1 ||
+            !(image->aspect_mask & vk::ImageAspectFlagBits::eDepth)) {
+            LOG_INFO(Render_Vulkan, "DUMP depth {:#x} skipped: format {}, {} samples on the host",
+                     info.guest_address, vk::to_string(host_format), host_samples);
+            continue;
+        }
+        const u32 width = info.size.width;
+        const u32 height = info.size.height;
+        const u32 layers = std::min(info.resources.layers, 2u);
+        // Each layer's offset in the buffer must be a multiple of 4 for a depth copy.
+        const u64 layer_bytes = (u64{width} * height * texel_bytes + 3) & ~u64{3};
+        VideoCore::Buffer buffer{instance,
+                                 draw_scheduler,
+                                 VideoCore::MemoryUsage::Download,
+                                 0,
+                                 vk::BufferUsageFlagBits::eTransferDst,
+                                 layer_bytes * layers};
+        if (buffer.mapped_data.size() < layer_bytes * layers) {
+            LOG_WARNING(Render_Vulkan, "DUMP depth {:#x}: no host-visible buffer",
+                        info.guest_address);
+            continue;
+        }
+        draw_scheduler.EndRendering();
+        const auto cmdbuf = draw_scheduler.CommandBuffer();
+        image->Transit(vk::ImageLayout::eTransferSrcOptimal, vk::AccessFlagBits2::eTransferRead, {},
+                       cmdbuf);
+        std::array<vk::BufferImageCopy, 2> regions{};
+        for (u32 layer = 0; layer < layers; ++layer) {
+            regions[layer] = vk::BufferImageCopy{
+                .bufferOffset = layer_bytes * layer,
+                .bufferRowLength = 0,
+                .bufferImageHeight = 0,
+                .imageSubresource{
+                    .aspectMask = vk::ImageAspectFlagBits::eDepth,
+                    .mipLevel = 0,
+                    .baseArrayLayer = layer,
+                    .layerCount = 1,
+                },
+                .imageOffset = {0, 0, 0},
+                .imageExtent = {width, height, 1},
+            };
+        }
+        cmdbuf.copyImageToBuffer(image->GetImage(), vk::ImageLayout::eTransferSrcOptimal,
+                                 buffer.Handle(),
+                                 vk::ArrayProxy<const vk::BufferImageCopy>{layers, regions.data()});
+        draw_scheduler.Finish();
+        if (!buffer.is_coherent) {
+            vmaInvalidateAllocation(instance.GetAllocator(), buffer.buffer.allocation, 0,
+                                    VK_WHOLE_SIZE);
+        }
+
+        const u32 out_width = std::min(width, thumb_width);
+        const u32 out_height = std::max(1u, height * out_width / width);
+        for (u32 layer = 0; layer < layers; ++layer) {
+            const u8* bytes = buffer.mapped_data.data() + layer_bytes * layer;
+            const auto depth_at = [&](u64 i) -> float {
+                if (texel_bytes == 2) {
+                    u16 v;
+                    std::memcpy(&v, bytes + i * 2, 2);
+                    return static_cast<float>(v) / 65535.0f;
+                }
+                u32 v;
+                std::memcpy(&v, bytes + i * 4, 4);
+                if (host_format == vk::Format::eD24UnormS8Uint ||
+                    host_format == vk::Format::eX8D24UnormPack32) {
+                    return static_cast<float>(v & 0xFFFFFF) / 16777215.0f;
+                }
+                return std::bit_cast<float>(v);
+            };
+            float lo = std::numeric_limits<float>::infinity();
+            float hi = -std::numeric_limits<float>::infinity();
+            const u64 count = u64{width} * height;
+            for (u64 i = 0; i < count; ++i) {
+                const float d = depth_at(i);
+                if (std::isfinite(d)) {
+                    lo = std::min(lo, d);
+                    hi = std::max(hi, d);
+                }
+            }
+            const bool flat = !(hi > lo);
+            std::vector<u8> rgba(static_cast<size_t>(out_width) * out_height * 4);
+            for (u32 y = 0; y < out_height; ++y) {
+                const u32 sy = std::min(height - 1, y * height / out_height);
+                for (u32 x = 0; x < out_width; ++x) {
+                    const u32 sx = std::min(width - 1, x * width / out_width);
+                    const float d = depth_at(u64{sy} * width + sx);
+                    u8 grey = 128;
+                    if (!flat && std::isfinite(d)) {
+                        const float t = std::clamp((d - lo) / (hi - lo), 0.0f, 1.0f);
+                        grey = static_cast<u8>(t * 255.0f);
+                    }
+                    u8* px = rgba.data() + (static_cast<size_t>(y) * out_width + x) * 4;
+                    px[0] = px[1] = px[2] = grey;
+                    px[3] = 0xff;
+                }
+            }
+            const auto path =
+                dump_dir / fmt::format("d{:03}_{:x}_{}x{}x{}_{}_layer{}_{}{}.png", index,
+                                       info.guest_address, width, height, info.resources.layers,
+                                       vk::to_string(info.pixel_format), layer,
+                                       gpu_written ? "gpu" : "notgpu", flat ? "_flat" : "");
+            WritePng(path, rgba, out_width, out_height);
+            if (flat) {
+                LOG_INFO(Render_Vulkan,
+                         "DUMP depth {:#x} layer {} ({}x{}x{} {}, flags {:#x}): flat, all {}",
+                         info.guest_address, layer, width, height, info.resources.layers,
+                         vk::to_string(info.pixel_format), static_cast<u32>(image->flags),
+                         std::isfinite(lo) ? lo : std::numeric_limits<float>::quiet_NaN());
+            } else {
+                LOG_INFO(Render_Vulkan,
+                         "DUMP depth {:#x} layer {} ({}x{}x{} {}, flags {:#x}): min {} max {}",
+                         info.guest_address, layer, width, height, info.resources.layers,
+                         vk::to_string(info.pixel_format), static_cast<u32>(image->flags), lo, hi);
+            }
+        }
+        ++index;
+    }
+    LOG_INFO(Render_Vulkan, "Dumped {} depth images to {}", index, dump_dir.string());
 }
 
 Frame* Presenter::PrepareBlankFrame(bool present_thread) {

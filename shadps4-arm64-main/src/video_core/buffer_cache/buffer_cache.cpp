@@ -9,6 +9,7 @@
 #include "common/alignment.h"
 #include "common/assert.h"
 #include "common/debug.h"
+#include "common/diagnostics.h"
 #include "common/logging/log.h"
 #include "common/scope_exit.h"
 #include "core/emulator_settings.h"
@@ -1171,8 +1172,8 @@ void BufferCache::SynchronizeRawReadFromImage(Buffer& buffer, VAddr device_addr,
         .pBufferMemoryBarriers = &pre_barrier,
     });
     gpu_modified_ranges.Add(info.guest_address, info.guest_size);
-    static std::atomic<u32> logged{};
-    if (logged.fetch_add(1, std::memory_order_relaxed) < 16) {
+    static Common::DiagBudget logged{2};
+    if (logged.Take(image.info.guest_address)) {
         LOG_INFO(Render_Vulkan,
                  "RAW_READ: a shader reads the memory of image {:#x} ({}x{}x{} {}{}, layers {}-{}): "
                  "what was drawn in it written there first",

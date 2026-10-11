@@ -17,6 +17,7 @@
 
 #include "common/assert.h"
 #include "common/debug.h"
+#include "common/diagnostics.h"
 #include "common/div_ceil.h"
 #include "common/logging/log.h"
 #include "common/scope_exit.h"
@@ -281,7 +282,9 @@ bool TextureCache::RawImageSyncEnabled() {
     static const bool enabled = [] {
         const char* value = std::getenv("SHADPS4_RAW_IMAGE_SYNC");
         const bool on = !(value && value[0] == '0');
-        LOG_INFO(Render_Vulkan, "RAW_IMAGE_SYNC: {}", on ? "on" : "off");
+        if (Common::Diagnostics()) {
+            LOG_INFO(Render_Vulkan, "RAW_IMAGE_SYNC: {}", on ? "on" : "off");
+        }
         return on;
     }();
     return enabled;
@@ -375,8 +378,8 @@ void TextureCache::InvalidateWholeImagesFromGPU(VAddr address, size_t size) {
             }
             image.flags |= ImageFlagBits::GpuDirty;
             raw_marked_in_bind.insert(image.image_uid);
-            static std::atomic<u32> logged{};
-            if (logged.fetch_add(1, std::memory_order_relaxed) < 16) {
+            static Common::DiagBudget logged{2};
+            if (logged.Take(image.info.guest_address)) {
                 LOG_INFO(Render_Vulkan,
                          "RAW_WRITE: a shader rewrote the memory of image {:#x} ({}x{} {}{}, {:#x} "
                          "bytes): taken again from memory",
@@ -398,8 +401,8 @@ void TextureCache::InvalidateWholeImagesFromGPU(VAddr address, size_t size) {
             raw_layer_writes[image.image_uid] |= bits;
             image.flags |= ImageFlagBits::GpuDirty;
             raw_marked_in_bind.insert(image.image_uid);
-            static std::atomic<u32> logged{};
-            if (logged.fetch_add(1, std::memory_order_relaxed) < 16) {
+            static Common::DiagBudget logged{4};
+            if (logged.Take(image.info.guest_address)) {
                 LOG_INFO(Render_Vulkan,
                          "RAW_WRITE: a shader rewrote layers {}-{} of image {:#x} ({}x{}x{} {}{}): "
                          "those layers taken again from memory",
@@ -1245,7 +1248,7 @@ void TextureCache::UploadRawLayers(Image& image, u64 mask) {
     const u32 extent_width = mip.pitch ? std::min(mip.pitch, width) : width;
     const u32 extent_height = mip.height ? std::min(mip.height, height) : height;
     const auto aspect = image.aspect_mask & ~vk::ImageAspectFlagBits::eStencil;
-    static std::atomic<u32> logged{};
+    static Common::DiagBudget logged{4};
     for (u32 first = 0; first < layers;) {
         if (((mask >> first) & 1) == 0) {
             ++first;
@@ -1304,7 +1307,7 @@ void TextureCache::UploadRawLayers(Image& image, u64 mask) {
                                  copy);
         image.Transit(vk::ImageLayout::eGeneral,
                       vk::AccessFlagBits2::eShaderRead | vk::AccessFlagBits2::eTransferRead, {});
-        if (logged.fetch_add(1, std::memory_order_relaxed) < 16) {
+        if (logged.Take(image.info.guest_address)) {
             LOG_INFO(Render_Vulkan, "RAW_WRITE: layers {}-{} of image {:#x} taken from memory{}",
                      first, first + count - 1, image.info.guest_address,
                      image.info.props.is_tiled ? " (detiled on their own)" : "");

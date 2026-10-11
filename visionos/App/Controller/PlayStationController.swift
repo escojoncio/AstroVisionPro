@@ -375,12 +375,6 @@ final class PlayStationController: @unchecked Sendable {
 
     @MainActor
     private func remakeRumbleNow(reason: String) {
-        // Not while the rumble test runs: it makes its own engines, and the game's motors are
-        // made anew when it ends.
-        if RumbleTest.isRunning {
-            LogFiles.log("Controller rumble: not made anew (\(reason)) while the rumble test runs")
-            return
-        }
         lock.lock()
         let chosen = controller
         let senses = [senseLeft, senseRight].compactMap { $0 }
@@ -544,32 +538,6 @@ final class PlayStationController: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return controller
-    }
-
-    /// The settings' «Probar vibración» (RumbleTest.swift): five ways of making the controller
-    /// rumble, one after the other, with the game's own motors stopped meanwhile (made anew
-    /// afterwards), so that no other engine of the app is on the controller during the test.
-    /// `report` is told each step as it starts and "" at the end. On the main thread.
-    @MainActor
-    func testRumble(report: @escaping (String) -> Void) {
-        guard !RumbleTest.isRunning else { return }
-        lock.lock()
-        let chosen = controller
-        let motors = [lowFrequency, highFrequency].compactMap { $0 }
-        lowFrequency = nil
-        highFrequency = nil
-        lock.unlock()
-        LogFiles.log("Controller rumble test: \(Self.appState())")
-        var stopped = Set<ObjectIdentifier>()
-        for motor in motors where stopped.insert(ObjectIdentifier(motor)).inserted {
-            motor.stop()
-        }
-        RumbleTest.run(controller: chosen) { [weak self] step in
-            report(step)
-            if step.isEmpty {
-                self?.remakeRumble(after: 0.1, reason: "after the rumble test")
-            }
-        }
     }
 
     /// Reads the buttons, sticks, triggers and touchpad, and passes on what the game asks of the

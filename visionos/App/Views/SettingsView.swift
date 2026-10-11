@@ -1,15 +1,13 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //
-// The settings that matter most, changed in place. Each change is written to settings.txt
-// (AstroSettings.write), which keeps the rest (and the less common settings, still changed in
-// the file itself); a game started afterwards uses them.
+// The player's settings, changed in place. Each change is written to settings.txt
+// (AstroSettings.write); a game started afterwards uses them. What was measured best is fixed
+// (AstroSettings.environment); the emulator's diagnostics are one switch, «Modo diagnóstico».
 
 import SwiftUI
 
 struct SettingsView: View {
     @Environment(AppModel.self) private var model
-    /// The rumble test's step now («Probar vibración»), "" when it is not running.
-    @State private var rumbleStep = ""
 
     var body: some View {
         NavigationStack {
@@ -28,29 +26,12 @@ struct SettingsView: View {
 
                 Section {
                     GameLanguagePicker()
-                    Toggle(L("Tiempo real", "Real time"), isOn: flag("real_time", \.realTime))
-                    Button(L("Probar vibración del mando (5 pruebas)", "Test the controller's rumble (5 tries)")) {
-                        PlayStationController.shared.testRumble { step in
-                            rumbleStep = step
-                        }
-                    }
-                    .disabled(!rumbleStep.isEmpty)
-                    if !rumbleStep.isEmpty {
-                        Text(rumbleStep)
-                            .font(.headline)
-                            .foregroundStyle(.orange)
-                    }
-                    Toggle(L("El mando es de la app (para la vibración)", "The controller is the app's (for rumble)"), isOn: flag("controller_to_app", \.controllerToApp))
-                    Toggle(L("Cerrar el lanzador al jugar", "Close the launcher while playing"), isOn: flag("close_launcher", \.closeLauncher))
                     Toggle(L("Audio 3D como PlayStation VR", "3D audio as on PlayStation VR"), isOn: flag("spatial_audio", \.spatialAudio))
                 } header: {
                     Text(L("Juego", "Game"))
                 } footer: {
                     Text([
                         gameLanguageFooter,
-                        L("«Tiempo real»: el juego avanza al ritmo del reloj aunque dibuje menos de 60 imágenes por segundo. Desactivado, cada imagen avanza 1/60 s (cámara lenta cuando va lento); sirve para comprobar si los fallos de física, como atravesar paredes, vienen de pasos de tiempo largos.", "«Real time»: the game moves at the clock's pace even when it draws fewer than 60 frames a second. Off, every frame moves it 1/60 s (slow motion when it runs slow); it shows whether physics faults, like going through walls, come from long time steps."),
-                        L("«Probar vibración»: hace 5 pruebas seguidas, cada una dice en pantalla cuál es; apoya los dedos en L2 y R2 para la 5 (gatillos). Dime en cuáles notaste algo. «El mando es de la app»: la ventana recibe el mando por GameController, como pide Apple en visionOS; se aplica al abrir la app.", "«Test rumble»: 5 tries in a row, each says on screen which it is; rest your fingers on L2 and R2 for the 5th (triggers). Tell which ones you felt. «The controller is the app's»: the window takes the controller through GameController, as Apple asks on visionOS; it applies when the app opens."),
-                        L("«Cerrar el lanzador al jugar» desactivado: la ventana sigue abierta durante la partida (prueba de si la vibración se pierde al quedarse la app sin ventanas).", "«Close the launcher while playing» off: the window stays open during the game (a test of whether rumble is lost when the app is left without windows)."),
                         L("«Audio 3D como PlayStation VR»: cada sonido 3D del juego y cada altavoz del 7.1 suena desde su dirección con el audio espacial de Apple, girando con el juego como en el visor de PS4.", "«3D audio as on PlayStation VR»: every 3D sound of the game and every 7.1 speaker is heard from its direction through Apple's spatial audio, turning with the game as in the PS4 headset."),
                     ].joined(separator: " "))
                 }
@@ -68,7 +49,6 @@ struct SettingsView: View {
                         Text(L("4x · más memoria y GPU", "4x · more memory and GPU")).tag("4")
                     }
                     Toggle(L("Antialiasing SMAA", "SMAA antialiasing"), isOn: flag("smaa", \.edgeSmoothing))
-                    Toggle(L("Suavizado del juego al resolver", "The game's smoothing on resolve"), isOn: flag("antialias", \.antialias))
                     Picker(L("Imágenes por segundo", "Frames per second"), selection: number("fps", \.fps)) {
                         Text("60").tag(60)
                         Text("45").tag(45)
@@ -89,40 +69,17 @@ struct SettingsView: View {
                 } header: {
                     Text(L("Imagen", "Picture"))
                 } footer: {
-                    Text(L("Los píxeles cuestan poco al visor: más resolución se ve más nítida y suaviza los bordes casi sin perder rendimiento. El límite es la memoria: si al entrar en un mundo la app se cierra sin aviso, baja un paso. «Suavizado del juego al resolver»: donde la consola usaría MSAA, el emulador suaviza los bordes al copiar la imagen (4 pasadas por imagen); desactivado (lo normal) se copia tal cual y el SMAA del visor sigue suavizando. Se aplica al abrir el juego, no a mitad de partida.", "Pixels cost the headset little: a larger size looks sharper and smooths the edges at almost no cost in speed. The limit is memory: if the app closes without a word on entering a world, go one step down. «The game's smoothing on resolve»: where the console would use MSAA, the emulator smooths the edges as it copies the picture (4 passes a frame); off (the usual), it is copied as it is and the headset's SMAA still smooths it. It applies when the game opens, not midway."))
+                    Text(L("Los píxeles cuestan poco al visor: más resolución se ve más nítida y suaviza los bordes casi sin perder rendimiento. El límite es la memoria: si al entrar en un mundo la app se cierra sin aviso, baja un paso. Se aplica al abrir el juego, no a mitad de partida.", "Pixels cost the headset little: a larger size looks sharper and smooths the edges at almost no cost in speed. The limit is memory: if the app closes without a word on entering a world, go one step down. It applies when the game opens, not midway."))
                 }
 
                 Section {
-                    Picker(L("Driver de Vulkan", "Vulkan driver"), selection: text("vulkan_driver", \.vulkanDriver)) {
-                        Text(L("KosmicKrisp · con geometry shaders", "KosmicKrisp · with geometry shaders")).tag("kosmickrisp")
-                        Text(L("MoltenVK · el anterior", "MoltenVK · the previous one")).tag("moltenvk")
-                    }
-                    Toggle(L("Compilar shaders en segundo plano", "Compile shaders in the background"), isOn: flag("async_shaders", \.asyncShaders))
-                    Toggle(L("Guardar y precargar shaders", "Keep and preload shaders"), isOn: flag("shader_cache", \.shaderCache))
-                    Toggle(L("Geometry shaders sin cortar la pasada", "Geometry shaders without breaking the pass"), isOn: flag("gs_in_pass", \.gsInPass))
-                    Toggle(L("Memoria de geometry shaders entre pasadas", "Geometry shader memory between passes"), isOn: flag("heap_between_passes", \.heapBetweenPasses))
-                    Toggle(L("Juntar pasadas", "Merge passes"), isOn: flag("merge_passes", \.mergePasses))
-                    Toggle(L("Pasadas solapadas (experimental)", "Overlapping passes (experimental)"), isOn: flag("light_barriers", \.lightBarriers))
-                    Toggle(L("Barreras ligeras entre pasadas (experimental)", "Lighter barriers between passes (experimental)"), isOn: flag("device_barriers", \.deviceBarriers))
-                    Toggle(L("Diagnóstico de pasadas en el registro", "Pass diagnostics in the log"), isOn: flag("pass_diagnostics", \.passDiagnostics))
-                    Toggle(L("Primitive restart en listas", "Primitive restart on lists"), isOn: flag("list_restart", \.listRestart))
-                    Toggle(L("Constantes como uniform buffers (experimental)", "Constants as uniform buffers (experimental)"), isOn: flag("constant_ubo", \.constantUbo))
-                    Toggle(L("Cálculo exacto en los shaders de píxel (desactivado = experimental)", "Exact arithmetic in pixel shaders (off = experimental)"), isOn: flag("exact_pixel_math", \.exactPixelMath))
-                    Toggle(L("Copias de imágenes por compute coherentes (sombras, TAA)", "Coherent compute copies of images (shadows, TAA)"), isOn: flag("raw_image_sync", \.rawImageSync))
-                    Picker(L("Prueba de GPU con L3 + R3", "GPU test with L3 + R3"), selection: Binding(get: { model.settings.gpuTest == "stages" ? "stages" : "shaders" }, set: { save("gpu_test", $0) })) {
-                        Text(L("Por shader · ~1 min", "By shader · ~1 min")).tag("shaders")
-                        Text(L("Por etapas · ~2 min", "By stages · ~2 min")).tag("stages")
-                    }
-                    Picker(L("Reloj de GPU que ve el juego", "GPU clock the game sees"), selection: text("gpu_clock_scale", \.gpuClockScale)) {
-                        Text(L("Automático · se ajusta en cada imagen", "Automatic · adjusted every frame")).tag("auto")
-                        Text(L("Real", "Real")).tag("1")
-                        Text(L("×0,5 · la GPU parece el doble de rápida", "×0.5 · the GPU looks twice as fast")).tag("0.5")
-                        Text(L("×0,25 · cuatro veces más rápida", "×0.25 · four times as fast")).tag("0.25")
-                    }
+                    Toggle(L("Modo diagnóstico", "Diagnostics mode"), isOn: Binding(
+                        get: { model.settings.diagnostics },
+                        set: { save("diagnostics", $0 ? "1" : "0") }))
                 } header: {
-                    Text(L("Gráficos", "Graphics"))
+                    Text(L("Diagnóstico", "Diagnostics"))
                 } footer: {
-                    Text(L("KosmicKrisp dibuja los efectos y ambos ojos como en la consola. Si no arranca o va peor, vuelve a MoltenVK. Con los shaders en segundo plano no hay tirones: lo que aparece por primera vez tarda un instante en verse. Si los efectos o partículas se ven mal, desactiva «Geometry shaders sin cortar la pasada». «Memoria de geometry shaders entre pasadas» evita cortar la pasada en el primer efecto de cada una (unas 6 por imagen); si los efectos o partículas parpadean o se rompen, desactívalo. L3 + R3 a la vez dentro del juego: prueba de GPU (quédate quieto; partes de la imagen desaparecen mientras dura). «Por shader» (~1 min) mide cuánto cuesta cada shader de la escena quitándolos uno a uno; «Por etapas» (~2 min) es la prueba anterior. Se aplica al abrir el juego. «Juntar pasadas» evita cortar la pasada cuando un dibujo usa menos destinos que ella (menos memoria movida por frame); si ves sombras o capas mal, desactívalo. «Pasadas solapadas» deja que cada pasada empiece antes de que acabe la anterior: más rápido, pero si ves parpadeos o imágenes rotas, desactívalo. «Reloj de GPU que ve el juego»: el juego quita sombras y efectos cuando mide su GPU lenta. «Automático» (lo normal) la hace parecer tan rápida como haga falta para que tenga todo el detalle, y vuelve a la hora real al acabar cada imagen (sin desfase). ×0,5 y ×0,25 son fijos, para comparar; si el juego se cuelga o va raro, prueba Real. Dentro del juego, L1 + R1 sujetos y pulsar R3: marca en el registro el momento en que ves las sombras. «Primitive restart en listas» desactivado (lo normal, como en shadPS4 con KosmicKrisp): KosmicKrisp no rehace cada dibujo con una pasada de cálculo; si ves geometría rota, actívalo. «Constantes como uniform buffers»: los shaders leen sus constantes (luces, matrices) por la vía rápida de Metal; si ves luces, colores o geometría raros, desactívalo. Se aplica al abrir el juego.", "KosmicKrisp draws the effects and both eyes as the console does. If it does not start or runs worse, go back to MoltenVK. With shaders in the background there are no stalls: what appears for the first time shows a moment late. If effects or particles look wrong, turn off «Geometry shaders without breaking the pass». «Geometry shader memory between passes» avoids cutting a pass at its first effect (about 6 a frame); if effects or particles flicker or break, turn it off. L3 + R3 together in the game: a GPU test (keep still; parts of the picture vanish while it runs). «By shader» (~1 min) measures what each of the scene's shaders costs by leaving them out one at a time; «By stages» (~2 min) is the older test. It applies when the game opens. «Merge passes» keeps the pass going when a draw uses fewer of its targets (less memory moved a frame); turn it off if shadows or layers look wrong. «Overlapping passes» lets each pass start before the one before it ends: faster, but turn it off if you see flicker or broken pictures. «GPU clock the game sees»: the game leaves shadows and effects out when it finds its GPU slow. «Automatic» (the usual) makes it look as fast as needed for full detail and puts it back on real time at the end of every frame (no drift). ×0.5 and ×0.25 are fixed, to compare; if the game hangs or acts oddly, try Real. In the game, hold L1 + R1 and press R3: marks in the log the moment you see the shadows. «Primitive restart on lists» off (the usual, as shadPS4 has it with KosmicKrisp): KosmicKrisp does not redo each such draw with a compute pass; turn it on if geometry looks broken. «Constants as uniform buffers»: the shaders read their constants (lights, matrices) through Metal's fast path; turn it off if lights, colours or geometry look odd. It applies when the game opens."))
+                    Text(L("Solo para buscar fallos; apagado, el registro queda limpio y no cuesta nada. Encendido: estadísticas de la GPU y avisos del emulador en el registro; dentro del juego, L3 + R3 a la vez mide cuánto cuesta cada shader (~1 min, quédate quieto) y L1 + R1 sujetos + L3 vuelca las imágenes de la GPU a VPS4/Partidas/rt_dump. Se aplica al abrir el juego.", "Only for finding faults; off, the log stays clean and it costs nothing. On: the GPU's statistics and the emulator's notes in the log; in the game, L3 + R3 together measures what each shader costs (~1 min, keep still) and holding L1 + R1 and pressing L3 dumps the GPU's pictures to VPS4/Partidas/rt_dump. It applies when the game opens."))
                 }
 
                 Section {
@@ -165,7 +122,7 @@ struct SettingsView: View {
                 } header: {
                     Text("JIT")
                 } footer: {
-                    Text(L("Los cambios se aplican la próxima vez que empieces el juego. El resto de ajustes están en settings.txt, en la carpeta de AstroQuest de la app Archivos.", "Changes apply the next time you start the game. The other settings are in settings.txt, in AstroQuest's folder in the Files app."))
+                    Text(L("Los cambios se aplican la próxima vez que empieces el juego.", "Changes apply the next time you start the game."))
                 }
             }
             .navigationTitle(L("Ajustes", "Settings"))
