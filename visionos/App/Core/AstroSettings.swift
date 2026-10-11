@@ -25,8 +25,11 @@ struct AstroSettings {
     var fovOf = "headset"
     /// Sharpening of the picture on its way to the headset, 0 to 1.
     var sharpen = "0.3"
-    /// No longer used: the game is drawn with one sample a pixel (SHADPS4_MAX_MSAA=1).
+    /// No longer used (the old MSAA key, kept so older settings files read).
     var msaa = ""
+    /// The most samples a pixel the game's own antialiasing (MSAA) is drawn with
+    /// (SHADPS4_MAX_MSAA): "1" none, "2", "4". The console draws ASTRO BOT's scene with more.
+    var msaaSamples = "2"
     /// Where the game resolves a multisampled picture (held with one sample a pixel here), the
     /// edges are smoothed on the way (SmoothInto, SHADPS4_RESOLVE_AA). Off (the default): copied
     /// as they are; the headset's SMAA smooths the picture anyway (no difference seen).
@@ -187,6 +190,7 @@ struct AstroSettings {
         case "fov_of": fovOf = value
         case "sharpen": sharpen = value
         case "msaa": msaa = value
+        case "msaa_samples": msaaSamples = ["1", "2", "4"].contains(value) ? value : msaaSamples
         case "antialias": antialias = flag
         case "hands": hands = flag
         case "predict_ms": predictMs = Int(value) ?? predictMs
@@ -247,8 +251,7 @@ struct AstroSettings {
             }
         }
         env.append("SHADPS4_VR_SHARPEN=\(sharpen)")
-        // No MSAA: on the headset 2 or 4 samples cost and smooth nothing that shows.
-        env.append("SHADPS4_MAX_MSAA=1")
+        env.append("SHADPS4_MAX_MSAA=\(msaaSamples)")
         env.append("SHADPS4_RESOLVE_AA=\(antialias ? 1 : 0)")
         if !hands {
             env.append("SHADPS4_XR_HANDS=0")
