@@ -3,6 +3,7 @@
 
 #include <xxhash.h>
 
+#include <atomic>
 #include <chrono>
 #include <mutex>
 #include <string>
@@ -265,6 +266,31 @@ void TextureCache::InvalidateMemoryFromGPU(VAddr address, size_t max_size) {
         }
         // Ensure image is reuploaded when accessed again.
         image.flags |= ImageFlagBits::GpuDirty;
+    });
+}
+
+void TextureCache::InvalidateWholeImagesFromGPU(VAddr address, size_t size) {
+    std::scoped_lock lock{mutex};
+    ForEachImageInRegion(address, size, [&](ImageId image_id, Image& image) {
+        // Only an image the written range fits (whole, and not much more): a write to part of
+        // one would bring back stale memory for the rest (what the GPU drew there is not in
+        // memory), and a large buffer that merely starts there says nothing about the image.
+        // Multisampled images are never taken from memory (RefreshImage leaves them).
+        if (image.info.guest_address != address || image.info.guest_size > size ||
+            size > image.info.guest_size + 0x10000 || image.info.num_samples > 1 ||
+            True(image.flags & ImageFlagBits::GpuDirty)) {
+            return;
+        }
+        image.flags |= ImageFlagBits::GpuDirty;
+        static std::atomic<u32> logged{};
+        if (logged.fetch_add(1, std::memory_order_relaxed) < 16) {
+            LOG_INFO(Render_Vulkan,
+                     "RAW_WRITE: a shader rewrote the memory of image {:#x} ({}x{} {}{}, {:#x} "
+                     "bytes): taken again from memory",
+                     image.info.guest_address, image.info.size.width, image.info.size.height,
+                     vk::to_string(image.info.pixel_format),
+                     image.info.props.is_depth ? ", depth" : "", image.info.guest_size);
+        }
     });
 }
 
