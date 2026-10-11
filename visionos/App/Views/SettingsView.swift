@@ -62,6 +62,11 @@ struct SettingsView: View {
                         Text(L("2880 · PC VR, la más nítida", "2880 · PC VR, the sharpest")).tag("2880")
                         Text(L("La que elija el juego", "The game's choice")).tag("game")
                     }
+                    Picker(L("Antialiasing del juego (MSAA)", "The game's antialiasing (MSAA)"), selection: text("msaa_samples", \.msaaSamples)) {
+                        Text(L("Desactivado · 1x", "Off · 1x")).tag("1")
+                        Text("2x").tag("2")
+                        Text(L("4x · más memoria y GPU", "4x · more memory and GPU")).tag("4")
+                    }
                     Toggle(L("Antialiasing SMAA", "SMAA antialiasing"), isOn: flag("smaa", \.edgeSmoothing))
                     Toggle(L("Suavizado del juego al resolver", "The game's smoothing on resolve"), isOn: flag("antialias", \.antialias))
                     Picker(L("Imágenes por segundo", "Frames per second"), selection: number("fps", \.fps)) {
