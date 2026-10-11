@@ -1515,6 +1515,7 @@ void Rasterizer::DispatchDirect() {
     const auto cmdbuf = scheduler.CommandBuffer();
     cmdbuf.bindPipeline(vk::PipelineBindPoint::eCompute, pipeline->Handle());
     cmdbuf.dispatch(cs_program.dim_x, cs_program.dim_y, cs_program.dim_z);
+    scheduler.NoteDispatch(cs.pgm_hash, cs_program.dim_x, cs_program.dim_y, cs_program.dim_z);
 
     ResetBindings();
 }
@@ -1545,6 +1546,7 @@ void Rasterizer::DispatchIndirect(VAddr address, u32 offset, u32 size) {
     const auto cmdbuf = scheduler.CommandBuffer();
     cmdbuf.bindPipeline(vk::PipelineBindPoint::eCompute, pipeline->Handle());
     cmdbuf.dispatchIndirect(buffer->Handle(), base);
+    scheduler.NoteDispatch(pipeline->GetStage(Shader::LogicalStage::Compute).pgm_hash, 0, 0, 0);
 
     ResetBindings();
 }
