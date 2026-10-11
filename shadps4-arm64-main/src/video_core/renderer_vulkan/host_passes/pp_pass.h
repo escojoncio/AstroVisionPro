@@ -26,6 +26,9 @@ public:
         float sharpen = 0.0f;
         /// For an output image of an sRGB format, which does the encoding for display itself.
         u32 linear_out = 0;
+        /// The input holds sRGB-encoded values read as they are (a 10-bit picture the console
+        /// calls sRGB, which Vulkan has no sRGB format for): decoded when read.
+        u32 input_encoded = 0;
     };
 
     void Create(const Instance& instance, MasterSemaphore* master_semaphore,
