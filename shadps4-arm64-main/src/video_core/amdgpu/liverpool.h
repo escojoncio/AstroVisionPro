@@ -3,6 +3,10 @@
 
 #pragma once
 
+#include <chrono>
+#include <deque>
+#include <utility>
+
 #include <atomic>
 #include <condition_variable>
 #include <coroutine>
@@ -140,6 +144,22 @@ public:
         }
     }
 
+    /// Runs `func` on the GPU thread once every graphics submission made so far has been
+    /// processed: what is to read what those draw (a headset frame handed over right after
+    /// its drawing was submitted, which the console's reprojection reads once it is done).
+    /// Commands otherwise run before any queued submission, even in the middle of one.
+    void SendCommandAfterGfx(Common::UniqueFunction<void> func) {
+        std::scoped_lock lk{submit_mutex};
+        if (gfx_done >= gfx_submitted) {
+            command_queue.emplace(std::move(func));
+            ++num_commands;
+            submit_cv.notify_one();
+            return;
+        }
+        after_gfx.push_back({gfx_submitted, std::chrono::steady_clock::now(), std::move(func)});
+        has_after_gfx.store(true, std::memory_order_relaxed);
+    }
+
     void ReserveCopyBufferSpace() {
         GpuQueue& gfx_queue = mapped_queues[GfxQueueId];
         std::scoped_lock lk(gfx_queue.m_access);
@@ -253,6 +273,21 @@ private:
     std::mutex submit_mutex;
     std::condition_variable_any submit_cv;
     std::queue<Common::UniqueFunction<void>> command_queue{};
+    // Graphics submissions made and processed (under submit_mutex), and the commands waiting
+    // for a number of them (SendCommandAfterGfx).
+    u64 gfx_submitted{};
+    u64 gfx_done{};
+    struct AfterGfx {
+        u64 target;
+        std::chrono::steady_clock::time_point since;
+        Common::UniqueFunction<void> func;
+    };
+    std::deque<AfterGfx> after_gfx{};
+    std::atomic<bool> has_after_gfx{};
+    /// Moves to the commands those waiting for submissions now processed, or waiting too long
+    /// (a submission that waits for what the command would do: no worse than running it at
+    /// once, as before). Under submit_mutex.
+    void ReleaseAfterGfxLocked();
     std::thread::id gpu_id;
     std::atomic<bool> in_gfx_task{false};
     s32 curr_qid{-1};

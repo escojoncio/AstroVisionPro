@@ -114,6 +114,25 @@ void Liverpool::ProcessCommands() {
     }
 }
 
+void Liverpool::ReleaseAfterGfxLocked() {
+    constexpr auto MostWait = std::chrono::milliseconds{50};
+    const auto now = std::chrono::steady_clock::now();
+    while (!after_gfx.empty() &&
+           (after_gfx.front().target <= gfx_done || now - after_gfx.front().since > MostWait)) {
+        if (after_gfx.front().target > gfx_done) {
+            static bool told = false;
+            if (!std::exchange(told, true)) {
+                LOG_WARNING(Render_Vulkan, "A command waited 50 ms for the drawing submitted "
+                                           "before it (a submission may wait for it): run now");
+            }
+        }
+        command_queue.emplace(std::move(after_gfx.front().func));
+        after_gfx.pop_front();
+        ++num_commands;
+    }
+    has_after_gfx.store(!after_gfx.empty(), std::memory_order_relaxed);
+}
+
 void Liverpool::Process(std::stop_token stoken) {
     Common::SetCurrentThreadName("shadPS4:GpuCommandProcessor");
     gpu_id = std::this_thread::get_id();
@@ -173,7 +192,14 @@ void Liverpool::Process(std::stop_token stoken) {
 
                 --num_submits;
                 std::scoped_lock lock2{submit_mutex};
+                if (curr_qid == static_cast<s32>(GfxQueueId)) {
+                    ++gfx_done;
+                }
+                ReleaseAfterGfxLocked();
                 submit_cv.notify_all();
+            } else if (has_after_gfx.load(std::memory_order_relaxed)) {
+                std::scoped_lock lock2{submit_mutex};
+                ReleaseAfterGfxLocked();
             }
         }
 
@@ -1543,6 +1569,11 @@ void Liverpool::SubmitGfx(std::span<const u32> dcb, std::span<const u32> ccb) {
         std::tie(dcb, ccb) = CopyCmdBuffers(dcb, ccb);
     }
 
+    {
+        // Counted before it can be processed (SendCommandAfterGfx).
+        std::scoped_lock lk{submit_mutex};
+        ++gfx_submitted;
+    }
     auto task = ProcessGraphics(dcb, ccb);
     if (resync_next_gfx.exchange(false, std::memory_order_relaxed)) {
         resync_task.store(task.handle.address(), std::memory_order_relaxed);

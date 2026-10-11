@@ -596,7 +596,9 @@ bool VideoOutDriver::SubmitHmdFrame(VideoOutPort* port, const HmdFrame& hmd_fram
     if (started != std::chrono::steady_clock::time_point{}) {
         Vulkan::FrameStats::Time(Vulkan::FrameStats::Stage::Submitting, handed_over - started);
     }
-    liverpool->SendCommand([=, this]() {
+    // After the drawing of it the title has submitted: the console's reprojection reads the
+    // eyes once that is done (a title may hand the frame over right after submitting it).
+    liverpool->SendCommandAfterGfx([=, this]() {
         SubmitHmdFrameInternal(port, frame, frame_id, started, handed_over);
     });
     return true;
