@@ -1192,7 +1192,12 @@ void Presenter::DumpGpuImages() {
         const int width = value != nullptr ? std::atoi(value) : 0;
         return width >= 64 ? static_cast<u32>(width) : 640u;
     }();
+#if defined(SHADPS4_VISIONOS)
+    // The app's container is out of the user's reach: next to the saves (VPS4/Partidas).
+    const auto dump_dir = Common::FS::GetUserPath(Common::FS::PathType::HomeDir) / "rt_dump";
+#else
     const auto dump_dir = Common::FS::GetUserPath(Common::FS::PathType::UserDir) / "rt_dump";
+#endif
     std::error_code ec;
     std::filesystem::remove_all(dump_dir, ec);
     std::filesystem::create_directories(dump_dir, ec);
