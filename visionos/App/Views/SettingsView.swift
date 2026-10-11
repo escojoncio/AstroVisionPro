@@ -79,7 +79,7 @@ struct SettingsView: View {
                 } header: {
                     Text(L("Diagnóstico", "Diagnostics"))
                 } footer: {
-                    Text(L("Solo para buscar fallos; apagado, el registro queda limpio y no cuesta nada. Encendido: estadísticas de la GPU y avisos del emulador en el registro; dentro del juego, L3 + R3 a la vez mide cuánto cuesta cada shader (~1 min, quédate quieto) y L1 + R1 sujetos + L3 vuelca las imágenes de la GPU a VPS4/Partidas/rt_dump. Se aplica al abrir el juego.", "Only for finding faults; off, the log stays clean and it costs nothing. On: the GPU's statistics and the emulator's notes in the log; in the game, L3 + R3 together measures what each shader costs (~1 min, keep still) and holding L1 + R1 and pressing L3 dumps the GPU's pictures to VPS4/Partidas/rt_dump. It applies when the game opens."))
+                    Text(L("Solo para buscar fallos; apagado, el registro queda limpio y no cuesta nada. Encendido: estadísticas de la GPU y avisos del emulador en el registro; dentro del juego, L3 + R3 a la vez mide cuánto cuesta cada shader (~1 min, quédate quieto) y L1 + R1 sujetos + L3 vuelca las imágenes de la GPU a VPS4/Partidas/rt_dump. Además guarda el código de cada shader en VPS4/VPEngine/shaders. Se aplica al abrir el juego.", "Only for finding faults; off, the log stays clean and it costs nothing. On: the GPU's statistics and the emulator's notes in the log; in the game, L3 + R3 together measures what each shader costs (~1 min, keep still) and holding L1 + R1 and pressing L3 dumps the GPU's pictures to VPS4/Partidas/rt_dump. It also saves each shader's code to VPS4/VPEngine/shaders. It applies when the game opens."))
                 }
 
                 Section {
