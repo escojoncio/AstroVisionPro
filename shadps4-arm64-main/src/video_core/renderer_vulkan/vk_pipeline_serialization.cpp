@@ -17,6 +17,10 @@
 #include "video_core/renderer_vulkan/vk_pipeline_cache.h"
 #include "video_core/renderer_vulkan/vk_shader_util.h"
 
+namespace Shader::Backend::SPIRV {
+bool ExactPixelMath(); // emit_spirv_floating_point.cpp
+} // namespace Shader::Backend::SPIRV
+
 namespace Serialization {
 /* You should increment versions below once corresponding serialization scheme is changed. */
 // Recompile cached shaders with the corrected geometry input ABI and invocation ID.
@@ -34,6 +38,7 @@ struct CacheTag {
     u32 info_size = 0;
     u32 key_size = 0;
     u32 runtime_info_size = 0;
+    u32 exact_pixel_math = 1;
 };
 } // namespace Serialization
 
@@ -392,6 +397,7 @@ void PipelineCache::WarmUp() {
         .info_size = static_cast<u32>(sizeof(Shader::InfoPersistent)),
         .key_size = static_cast<u32>(sizeof(GraphicsPipelineKey)),
         .runtime_info_size = static_cast<u32>(sizeof(Shader::RuntimeInfo)),
+        .exact_pixel_math = Shader::Backend::SPIRV::ExactPixelMath() ? 1u : 0u,
     };
     std::vector<u8> expected(sizeof(profile) + sizeof(tag));
     std::memcpy(expected.data(), &profile, sizeof(profile));

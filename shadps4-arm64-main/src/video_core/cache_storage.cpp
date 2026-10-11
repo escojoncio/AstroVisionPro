@@ -14,6 +14,8 @@
 #include <miniz.h>
 
 #include <condition_variable>
+#include <cstdlib>
+#include <string_view>
 #include <functional>
 #include <future>
 #include <mutex>
@@ -111,6 +113,12 @@ void DataBase::Open() {
         }
     } else {
         cache_path = GetUserPath(PathType::CacheDir) / game_info.GameSerial();
+        // One cache for each Vulkan driver (SHADPS4_VK_DRIVER, visionOS): their shaders and
+        // profiles differ, and going from one to the other emptied the other's.
+        if (const char* driver = std::getenv("SHADPS4_VK_DRIVER");
+            driver != nullptr && *driver && std::string_view{driver} != "kosmickrisp") {
+            cache_path += std::string{"-"} + driver;
+        }
         if (!std::filesystem::exists(cache_path)) {
             std::filesystem::create_directories(cache_path);
         }
