@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: Copyright 2024 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <cstdlib>
+
 #include "shader_recompiler/backend/spirv/emit_spirv_instructions.h"
 #include "shader_recompiler/backend/spirv/fma_split_diag.h"
 #include "shader_recompiler/backend/spirv/recip_refine_fix.h"
@@ -8,7 +10,20 @@
 
 namespace Shader::Backend::SPIRV {
 
+bool ExactPixelMath() {
+    // SHADPS4_EXACT_PIXEL_MATH=0: the pixel shaders' arithmetic without NoContraction, so that
+    // the driver may fuse a multiply and an add into one fma and reorder as it does for any
+    // shader (NIR leaves "exact" operations alone). Vertex and other stages keep it: the
+    // positions of a depth prepass and of the pass after it must come out the same.
+    // Read each time (cheap): a game started again in the same process follows the setting.
+    const char* value = std::getenv("SHADPS4_EXACT_PIXEL_MATH");
+    return value == nullptr || *value != '0';
+}
+
 Id Decorate(EmitContext& ctx, IR::Inst* inst, Id op) {
+    if (ctx.info.stage == Stage::Fragment && !ExactPixelMath()) {
+        return op;
+    }
     ctx.Decorate(op, spv::Decoration::NoContraction);
     return op;
 }

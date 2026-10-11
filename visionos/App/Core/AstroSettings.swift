@@ -41,6 +41,9 @@ struct AstroSettings {
     /// The game waits while nobody looks at it.
     var pause = true
     var game = ""
+    /// The game chosen in the launcher among those found (the name of its folder, e.g.
+    /// CUSA06799); empty: ASTRO BOT (CUSA12392) if it is there, else the first one.
+    var gameFolderName = ""
     var extraEnvironment: [String] = []
 
     // Apple Vision Pro only.
@@ -112,6 +115,9 @@ struct AstroSettings {
     /// The title's read-only constant buffers reach its shaders as uniform buffers
     /// (SHADPS4_CONSTANT_UBO): Metal's constant memory, read faster than a storage buffer.
     var constantUbo = true
+    /// The pixel shaders' arithmetic exactly as the console's, operation by operation
+    /// (SHADPS4_EXACT_PIXEL_MATH): off, Metal may fuse and reorder it as in any shader of its own.
+    var exactPixelMath = false
 
     static var documents: URL {
         FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -192,8 +198,10 @@ struct AstroSettings {
         case "controller_to_app": controllerToApp = flag
         case "list_restart": listRestart = flag
         case "constant_ubo": constantUbo = flag
+        case "exact_pixel_math": exactPixelMath = flag
         case "pause": pause = flag
         case "game": game = value
+        case "game_folder": gameFolderName = value
         case "env": extraEnvironment.append(value)
         case "foveation": foveation = flag
         case "render_quality": renderQuality = min(max(Float(value) ?? renderQuality, 0.1), 1.0)
@@ -295,6 +303,7 @@ struct AstroSettings {
         }
         env.append("SHADPS4_LIST_RESTART=\(listRestart ? 1 : 0)")
         env.append("SHADPS4_CONSTANT_UBO=\(constantUbo ? 1 : 0)")
+        env.append("SHADPS4_EXACT_PIXEL_MATH=\(exactPixelMath ? 1 : 0)")
         env.append("SHADPS4_CONSOLE_LANGUAGE=\(GameLanguages.tag(for: gameLanguage))")
         // KosmicKrisp keeps what it translated (Mesa's shader cache) where the app may write:
         // the VPS4 folder when there is one (it outlives the app), else the app's caches.
