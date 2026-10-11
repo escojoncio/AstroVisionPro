@@ -13,6 +13,7 @@
 #include "common/thread.h"
 #include "core/debug_state.h"
 #include "core/emulator_settings.h"
+#include "core/libraries/hmd/hmd.h"
 #include "core/libraries/kernel/process.h"
 #include "common/logging/log.h"
 #include "core/libraries/videoout/driver.h"
@@ -971,9 +972,25 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                     vo_port->WaitVoLabel([&] { return wait_reg_mem->Test(regs.reg_array); });
                     break;
                 }
+                if (wait_reg_mem->mem_space.Value() == PM4CmdWaitRegMem::MemSpace::Memory &&
+                    !wait_reg_mem->Test(regs.reg_array)) {
+                    Libraries::Hmd::SatisfyReprojectionLabelWait(
+                        wait_reg_mem->Address<u32*>(),
+                        static_cast<u32>(wait_reg_mem->function.Value()), wait_reg_mem->ref,
+                        wait_reg_mem->mask);
+                }
                 u64 wait_iterations = 0;
+                u64 label_looks = 0;
                 while (!wait_reg_mem->Test(regs.reg_array)) {
-#ifdef ENABLE_BACHATA_RUNTIME
+                    // The frame the label belongs to may be handed over after the wait began.
+                    if ((++label_looks & 0x3ff) == 0 &&
+                        wait_reg_mem->mem_space.Value() == PM4CmdWaitRegMem::MemSpace::Memory) {
+                        Libraries::Hmd::SatisfyReprojectionLabelWait(
+                            wait_reg_mem->Address<u32*>(),
+                            static_cast<u32>(wait_reg_mem->function.Value()), wait_reg_mem->ref,
+                            wait_reg_mem->mask);
+                    }
+#if defined(ENABLE_BACHATA_RUNTIME) || defined(SHADPS4_VISIONOS)
                     if (ShouldLogStallIteration(++wait_iterations)) {
                         const bool is_memory = wait_reg_mem->mem_space.Value() ==
                                                PM4CmdWaitRegMem::MemSpace::Memory;
@@ -1398,9 +1415,23 @@ Liverpool::Task Liverpool::ProcessCompute(std::span<const u32> acb, u32 vqid) {
                 LOG_ERROR(Lib_GnmDriver, "ASC IT_WAIT_REG_MEM null address — skipping");
                 break;
             }
+            if (wait_reg_mem->mem_space.Value() == PM4CmdWaitRegMem::MemSpace::Memory &&
+                !wait_reg_mem->Test(regs.reg_array)) {
+                Libraries::Hmd::SatisfyReprojectionLabelWait(
+                    wait_reg_mem->Address<u32*>(), static_cast<u32>(wait_reg_mem->function.Value()),
+                    wait_reg_mem->ref, wait_reg_mem->mask);
+            }
             u64 wait_iterations = 0;
+            u64 label_looks = 0;
             while (!wait_reg_mem->Test(regs.reg_array)) {
-#ifdef ENABLE_BACHATA_RUNTIME
+                if ((++label_looks & 0x3ff) == 0 &&
+                    wait_reg_mem->mem_space.Value() == PM4CmdWaitRegMem::MemSpace::Memory) {
+                    Libraries::Hmd::SatisfyReprojectionLabelWait(
+                        wait_reg_mem->Address<u32*>(),
+                        static_cast<u32>(wait_reg_mem->function.Value()), wait_reg_mem->ref,
+                        wait_reg_mem->mask);
+                }
+#if defined(ENABLE_BACHATA_RUNTIME) || defined(SHADPS4_VISIONOS)
                 if (ShouldLogStallIteration(++wait_iterations)) {
                     const bool is_memory = wait_reg_mem->mem_space.Value() ==
                                            PM4CmdWaitRegMem::MemSpace::Memory;
