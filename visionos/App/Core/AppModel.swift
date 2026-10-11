@@ -30,6 +30,8 @@ final class AppModel {
             }
         }
     }
+    /// Every game found (a folder with eboot.bin), for the launcher's choice of game.
+    var games: [URL] = []
     /// The language codes in the game's files (GameLanguages.swift), read when the game is found.
     var gameLanguageCodes: [String] = []
     /// The VPS4 folder (GameFolder.swift), once chosen and reachable.
@@ -258,6 +260,27 @@ final class AppModel {
         func preferred(_ url: URL) -> Bool {
             url.lastPathComponent.caseInsensitiveCompare("CUSA12392") == .orderedSame
         }
+        // Every game at hand: the VPS4 folder first (GameFolder.swift: its Juegos folder, and
+        // the folder itself), then the app's documents.
+        var vps4: [URL] = []
+        if let root = GameFolder.url() {
+            for folder in [root.appendingPathComponent("Juegos"), root] {
+                let inside = (try? manager.contentsOfDirectory(at: folder, includingPropertiesForKeys: [.isDirectoryKey])) ?? []
+                vps4.append(contentsOf: inside.sorted { $0.lastPathComponent < $1.lastPathComponent })
+            }
+        }
+        let documents = AstroSettings.documents
+        var local = [documents, documents.appendingPathComponent("games")]
+        for folder in [documents, documents.appendingPathComponent("games")] {
+            let inside = (try? manager.contentsOfDirectory(at: folder, includingPropertiesForKeys: [.isDirectoryKey])) ?? []
+            local.append(contentsOf: inside.sorted { $0.lastPathComponent < $1.lastPathComponent })
+        }
+        var found: [URL] = []
+        for url in (vps4 + local).filter(isGame) where !found.contains(where: { $0.lastPathComponent == url.lastPathComponent }) {
+            found.append(url)
+        }
+        games = found
+
         if !settings.game.isEmpty {
             var url = URL(fileURLWithPath: settings.game)
             if url.lastPathComponent == "eboot.bin" {
@@ -268,30 +291,24 @@ final class AppModel {
                 return
             }
         }
-        // The VPS4 folder first (GameFolder.swift): its Juegos folder, and the folder itself.
-        if let root = GameFolder.url() {
-            var places: [URL] = []
-            for folder in [root.appendingPathComponent("Juegos"), root] {
-                let inside = (try? manager.contentsOfDirectory(at: folder, includingPropertiesForKeys: [.isDirectoryKey])) ?? []
-                places.append(contentsOf: inside.sorted { $0.lastPathComponent < $1.lastPathComponent })
-            }
-            if let found = places.first(where: { preferred($0) && isGame($0) }) ?? places.first(where: isGame) {
-                gamePath = found
-                return
-            }
-        }
-        let documents = AstroSettings.documents
-        var places = [documents, documents.appendingPathComponent("games")]
-        for folder in [documents, documents.appendingPathComponent("games")] {
-            let inside = (try? manager.contentsOfDirectory(at: folder, includingPropertiesForKeys: [.isDirectoryKey])) ?? []
-            places.append(contentsOf: inside.sorted { $0.lastPathComponent < $1.lastPathComponent })
-        }
-        // The European release the fixes are made for first, as the PC launcher prefers it.
-        if let found = places.first(where: { preferred($0) && isGame($0) }) {
-            gamePath = found
+        // The one chosen in the launcher, then ASTRO BOT's European release (the fixes are made
+        // for it, as the PC launcher prefers it), then the first.
+        let chosen = settings.gameFolderName
+        if !chosen.isEmpty, let url = found.first(where: { $0.lastPathComponent.caseInsensitiveCompare(chosen) == .orderedSame }) {
+            gamePath = url
             return
         }
-        gamePath = places.first(where: isGame)
+        let inVps4 = found.filter { url in vps4.contains(where: { $0.path == url.path }) }
+        gamePath = inVps4.first(where: preferred) ?? inVps4.first ?? found.first(where: preferred) ?? found.first
+    }
+
+    /// The launcher's choice of game (a folder of those found).
+    func chooseGame(_ url: URL) {
+        AstroSettings.write("game_folder", url.lastPathComponent)
+        // An old fixed path («game») would win over the choice.
+        AstroSettings.write("game", "")
+        findGame()
+        LogFiles.log("Game chosen: \(url.lastPathComponent)")
     }
 
     var canStart: Bool {

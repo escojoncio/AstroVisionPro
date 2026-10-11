@@ -123,6 +123,28 @@ struct HomeView: View {
                 Button(L("Buscar", "Find")) {
                     model.findGame()
                 }
+            } else if model.games.count > 1 {
+                Menu(L("Cambiar", "Change")) {
+                    ForEach(model.games, id: \.self) { game in
+                        Button {
+                            model.chooseGame(game)
+                        } label: {
+                            if game == model.gamePath {
+                                Label(game.lastPathComponent, systemImage: "checkmark")
+                            } else {
+                                Text(game.lastPathComponent)
+                            }
+                        }
+                    }
+                    Button(L("Buscar de nuevo", "Find again")) {
+                        model.findGame()
+                    }
+                }
+                .disabled(model.coreState != AstroCoreStateIdle)
+            } else {
+                Button(L("Buscar", "Find")) {
+                    model.findGame()
+                }
             }
         }
         .fileImporter(isPresented: $choosingFolder, allowedContentTypes: [.folder]) { result in
