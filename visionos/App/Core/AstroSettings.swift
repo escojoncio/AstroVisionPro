@@ -27,7 +27,7 @@ struct AstroSettings {
     var sharpen = "0.3"
     /// The most samples a pixel the game's own antialiasing (MSAA) is drawn with
     /// (SHADPS4_MAX_MSAA): "1" none, "2", "4". The console draws ASTRO BOT's scene with more.
-    var msaaSamples = "2"
+
     /// The hands holding the controller place it in the game.
     var hands = true
     /// How far beyond the next picture the head position is predicted, in milliseconds.
@@ -139,7 +139,6 @@ struct AstroSettings {
         case "fov": fov = Int(value) ?? fov
         case "fov_of": fovOf = value
         case "sharpen": sharpen = value
-        case "msaa_samples": msaaSamples = ["1", "2", "4"].contains(value) ? value : msaaSamples
         case "hands": hands = flag
         case "predict_ms": predictMs = Int(value) ?? predictMs
         case "stick_touchpad": stickTouchpad = flag
@@ -186,7 +185,7 @@ struct AstroSettings {
             }
         }
         env.append("SHADPS4_VR_SHARPEN=\(sharpen)")
-        env.append("SHADPS4_MAX_MSAA=\(msaaSamples)")
+        // (No MSAA: VPEngine draws every target at 1 sample; antialiasing is temporal, VPKTAA.)
         if !hands {
             env.append("SHADPS4_XR_HANDS=0")
         }
