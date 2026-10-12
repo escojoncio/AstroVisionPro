@@ -1604,15 +1604,16 @@ void Rasterizer::DispatchDirect() {
     }
 
     const auto& cs = pipeline->GetStage(Shader::LogicalStage::Compute);
-#ifdef SHADPS4_VPENGINE_SHADER_CHECK
-    VpengineShaderCheck::NoteDispatch(cs.pgm_hash);
-#endif
     if (ExecuteShaderHLE(cs, liverpool->regs, cs_program, *this)) {
         if (trace) {
             LOG_INFO(Render_Vulkan, "TRACE   dispatch handled by shader HLE");
         }
         return;
     }
+#ifdef SHADPS4_VPENGINE_SHADER_CHECK
+    // (after the HLE: those dispatches never reach the shader compiler)
+    VpengineShaderCheck::NoteDispatch(cs.pgm_hash);
+#endif
 
     RunDepthMirrors(pipeline);
     if (!BindResources(pipeline)) {

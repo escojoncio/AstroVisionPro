@@ -18,6 +18,8 @@
 #include <unordered_map>
 #include <vector>
 
+#include <fmt/format.h>
+
 #include "common/logging/log.h"
 #include "common/path_util.h"
 #include "shader_recompiler/frontend/fetch_shader.h"
@@ -330,16 +332,22 @@ void EndFrame() {
     std::lock_guard g(c.lock);
     ++c.frames;
     const auto now = std::chrono::steady_clock::now();
-    if (now - c.since < std::chrono::seconds(10) || c.frames == 0) return;
+    if (now - c.since < std::chrono::seconds(10)) return;
     const double n = c.frames;
-    auto pct = [](uint64_t part, uint64_t whole) { return whole ? 100.0 * double(part) / double(whole) : 100.0; };
+    auto pct = [](uint64_t part, uint64_t whole) {
+        return whole ? fmt::format("{:.1f}%", 100.0 * double(part) / double(whole)) : std::string("n/a");
+    };
+    // Ready = every shader lifted and compiled by Metal; waiting = a shader not checked (yet): compiled
+    // before diagnostic mode or still in the queue; the rest is blocked (listed below).
     LOG_INFO(Render_Vulkan,
-             "VPENGINE_DRAWS: {} frames, per frame {:.0f} draws ({:.1f}% with every shader running in VPEngine, "
-             "{:.1f}% waiting for a shader not checked yet) and {:.1f} dispatches ({:.1f}% / {:.1f}%); {} programs known",
-             c.frames, c.draws / n, pct(c.drawsOk, c.draws), pct(c.drawsPending, c.draws), c.dispatches / n,
-             pct(c.dispatchesOk, c.dispatches), pct(c.dispatchesPending, c.dispatches), c.programs.size());
+             "VPENGINE_DRAWS: {} frames, per frame {:.0f} draws ({} ready in VPEngine, {} waiting, {} blocked) and "
+             "{:.1f} dispatches ({} ready, {} waiting, {} blocked); {} programs known",
+             c.frames, c.draws / n, pct(c.drawsOk, c.draws), pct(c.drawsPending, c.draws),
+             pct(c.draws - c.drawsOk - c.drawsPending, c.draws), c.dispatches / n, pct(c.dispatchesOk, c.dispatches),
+             pct(c.dispatchesPending, c.dispatches), pct(c.dispatches - c.dispatchesOk - c.dispatchesPending, c.dispatches),
+             c.programs.size());
     std::vector<std::pair<uint64_t, uint64_t>> top(c.blocking.begin(), c.blocking.end());
-    std::sort(top.begin(), top.end(), [](auto& a, auto& b) { return a.second > b.second; });
+    std::sort(top.begin(), top.end(), [](const auto& a, const auto& b) { return a.second > b.second; });
     for (size_t k = 0; k < top.size() && k < 8; ++k) {
         const Program& p = c.programs[top[k].first];
         LOG_INFO(Render_Vulkan, "VPENGINE_DRAWS   blocked by {}_{:016x}: {:.1f} per frame ({})", p.stage, top[k].first,
