@@ -24,4 +24,12 @@ bool Enabled();
 void Check(std::span<const uint32_t> code, const Shader::Info& info, const Shader::RuntimeInfo& runtime,
            size_t perm_idx);
 
+// Draw census: how much of what the game draws VPEngine could already run. Each draw / dispatch
+// the emulator records names its shaders (program hashes, 0 = no such stage); every ten seconds
+// the log gets "VPENGINE_DRAWS ..." with the share of draws whose shaders VPEngine lifted and
+// Metal compiled, and the shaders that block the most draws (with the reason).
+void NoteDraw(const uint64_t* stage_hashes, size_t count);
+void NoteDispatch(uint64_t cs_hash);
+void EndFrame();
+
 } // namespace VpengineShaderCheck

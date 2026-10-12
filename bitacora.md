@@ -38,6 +38,12 @@ Compactada el 2026-10-11: lo resuelto queda en «Histórico» como una línea; e
   <st>_<hash>_<perm> OK: lift X ms, N bytes, Metal Y ms` o `lift:/verifier:/Metal:` + primera línea; resumen
   `VPENGINE_SHADERS: ...` cada 10. Fallos → `<ShaderDir>/vpengine/<nombre>.metal(.txt)` / `.lift.txt`
   (ShaderDir = `VPS4/VPEngine/shaders` en modo diagnóstico). No cambia el render.
+- Censo de draws (mismo modo): estado por `pgm_hash` (pendiente/OK/fallo pegajoso/etapa no soportada, primer error);
+  `vk_rasterizer.cpp` `NoteVpengineDraw` (Draw y DrawIndirect, tras tener pipeline: hashes de `GetStages()`) y
+  `NoteDispatch` (DispatchDirect antes del HLE, DispatchIndirect); `vk_presenter.cpp` `Present` → `EndFrame`. Cada 10 s:
+  `VPENGINE_DRAWS: N frames, per frame D draws (X% with every shader running in VPEngine, Y% waiting …)` + hasta 8
+  líneas `VPENGINE_DRAWS   blocked by <st>_<hash>: n per frame (motivo)`. Traductor: VPEngine 682a004 (semántica
+  exacta validada con test diferencial).
 
 ## Volcado de shaders para VPEngine (va en la misma build que la limpieza)
 - `emulator.cpp` (`#ifdef SHADPS4_VISIONOS`, tras `SHADPS4_PIPELINE_CACHE`): `SHADPS4_DUMP_SHADERS=<carpeta>` → crea la carpeta,

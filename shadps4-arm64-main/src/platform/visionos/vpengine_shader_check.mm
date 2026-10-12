@@ -4,6 +4,7 @@
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstdio>
@@ -14,6 +15,7 @@
 #include <map>
 #include <mutex>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "common/logging/log.h"
@@ -38,6 +40,53 @@ struct Tally {
 Tally& tally() {
     static Tally t;
     return t;
+}
+
+// Per program hash: what VPEngine made of it (any permutation failing makes it Failed).
+enum class Status : uint8_t { Pending, Ok, Failed, Unsupported };
+struct Program {
+    Status status = Status::Pending;
+    const char* stage = "??";
+    std::string reason;  // first error
+};
+struct Census {
+    std::mutex lock;
+    std::unordered_map<uint64_t, Program> programs;
+    // Since the last report.
+    unsigned frames = 0;
+    uint64_t draws = 0, drawsOk = 0, drawsPending = 0, dispatches = 0, dispatchesOk = 0, dispatchesPending = 0;
+    std::unordered_map<uint64_t, uint64_t> blocking;  // hash -> draws + dispatches it kept from VPEngine
+    std::chrono::steady_clock::time_point since = std::chrono::steady_clock::now();
+};
+Census& census() {
+    static Census c;
+    return c;
+}
+void setStatus(uint64_t hash, const char* stage, Status s, const std::string& reason = {}) {
+    Census& c = census();
+    std::lock_guard g(c.lock);
+    Program& p = c.programs[hash];
+    p.stage = stage;
+    if (p.status == Status::Failed || p.status == Status::Unsupported) return;  // sticky
+    if (s == Status::Pending && p.status == Status::Ok) return;                // another permutation
+    p.status = s;
+    if (!reason.empty()) p.reason = reason.substr(0, 160);
+}
+// Worst status of a draw's shaders (lock held). Unknown hashes (compiled before the check, or
+// loaded from the pipeline cache) count as pending.
+Status worst(Census& c, const uint64_t* hashes, size_t n, uint64_t& blocker) {
+    Status w = Status::Ok;
+    for (size_t k = 0; k < n; ++k) {
+        if (hashes[k] == 0) continue;
+        auto it = c.programs.find(hashes[k]);
+        Status s = it == c.programs.end() ? Status::Pending : it->second.status;
+        auto rank = [](Status x) { return x == Status::Ok ? 0 : x == Status::Pending ? 1 : 2; };
+        if (rank(s) > rank(w)) {
+            w = s;
+            blocker = hashes[k];
+        }
+    }
+    return w;
 }
 
 // At most this many Metal compiles in flight: a game compiles hundreds of shaders at once.
@@ -155,12 +204,17 @@ void Check(std::span<const uint32_t> code, const Shader::Info& info, const Shade
         in.ldsBytes = runtime.cs_info.shared_memory_size;
         break;
     default: {
+        setStatus(info.pgm_hash, stageName(info.stage), Status::Unsupported,
+                  std::string("stage ") + stageName(info.stage) + " not lifted yet");
         std::lock_guard g(t.lock);
         ++t.seen;
         ++t.skipped;
         return;
     }
     }
+    const uint64_t hash = info.pgm_hash;
+    const char* stage = stageName(info.stage);
+    setStatus(hash, stage, Status::Pending);
     in.code = code;
     in.fetch = fetch;
     in.userSgprs = runtime.num_user_data;
@@ -173,6 +227,7 @@ void Check(std::span<const uint32_t> code, const Shader::Info& info, const Shade
         for (const std::string& e : r.errors) all += e + "\n";
         LOG_WARNING(Render_Vulkan, "VPENGINE_SHADER {} lift: {}", name, r.errors.front());
         std::ofstream(outDir() / (name + ".lift.txt")) << all;
+        setStatus(hash, stage, Status::Failed, "lift: " + r.errors.front());
         std::lock_guard g(t.lock);
         ++t.seen;
         ++t.liftFailed;
@@ -183,6 +238,7 @@ void Check(std::span<const uint32_t> code, const Shader::Info& info, const Shade
     vpmsl::EmitResult m = vpmsl::emitMsl(r.module);
     if (!m.errors.empty()) {
         LOG_WARNING(Render_Vulkan, "VPENGINE_SHADER {} verifier: {}", name, m.errors.front());
+        setStatus(hash, stage, Status::Failed, "verify: " + m.errors.front());
         std::lock_guard g(t.lock);
         ++t.seen;
         ++t.emitFailed;
@@ -199,6 +255,7 @@ void Check(std::span<const uint32_t> code, const Shader::Info& info, const Shade
     id<MTLDevice> dev = device();
     if (!dev) {
         LOG_WARNING(Render_Vulkan, "VPENGINE_SHADER no Metal device");
+        setStatus(hash, stage, Status::Failed, "no Metal device");
         return;
     }
     const size_t mslBytes = m.shader.source.size();
@@ -220,6 +277,7 @@ void Check(std::span<const uint32_t> code, const Shader::Info& info, const Shade
                   std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - c0).count();
               Tally& tt = tally();
               if (library) {
+                  setStatus(hash, stage, Status::Ok);
                   LOG_INFO(Render_Vulkan,
                            "VPENGINE_SHADER {} OK: lift {:.2f} ms ({}), {} bytes of MSL, Metal {:.1f} ms, {} notes",
                            name, liftMs, structured ? "structured" : "dispatch loop", mslBytes, ms, notes);
@@ -231,6 +289,7 @@ void Check(std::span<const uint32_t> code, const Shader::Info& info, const Shade
               }
               const std::string msg = firstLine(error.localizedDescription);
               LOG_WARNING(Render_Vulkan, "VPENGINE_SHADER {} Metal: {}", name, msg);
+              setStatus(hash, stage, Status::Failed, "Metal: " + msg);
               std::ofstream(outDir() / (name + ".metal")) << source;
               std::ofstream(outDir() / (name + ".metal.txt"))
                   << (error ? [error.localizedDescription UTF8String] : "(no message)");
@@ -239,6 +298,57 @@ void Check(std::span<const uint32_t> code, const Shader::Info& info, const Shade
               countError(tt, "Metal: " + msg);
               logTally(tt);
             }];
+}
+
+void NoteDraw(const uint64_t* stage_hashes, size_t count) {
+    if (!Enabled()) return;
+    Census& c = census();
+    std::lock_guard g(c.lock);
+    uint64_t blocker = 0;
+    const Status s = worst(c, stage_hashes, count, blocker);
+    ++c.draws;
+    c.drawsOk += s == Status::Ok;
+    c.drawsPending += s == Status::Pending;
+    if (s == Status::Failed || s == Status::Unsupported) ++c.blocking[blocker];
+}
+
+void NoteDispatch(uint64_t cs_hash) {
+    if (!Enabled()) return;
+    Census& c = census();
+    std::lock_guard g(c.lock);
+    uint64_t blocker = 0;
+    const Status s = worst(c, &cs_hash, 1, blocker);
+    ++c.dispatches;
+    c.dispatchesOk += s == Status::Ok;
+    c.dispatchesPending += s == Status::Pending;
+    if (s == Status::Failed || s == Status::Unsupported) ++c.blocking[blocker];
+}
+
+void EndFrame() {
+    if (!Enabled()) return;
+    Census& c = census();
+    std::lock_guard g(c.lock);
+    ++c.frames;
+    const auto now = std::chrono::steady_clock::now();
+    if (now - c.since < std::chrono::seconds(10) || c.frames == 0) return;
+    const double n = c.frames;
+    auto pct = [](uint64_t part, uint64_t whole) { return whole ? 100.0 * double(part) / double(whole) : 100.0; };
+    LOG_INFO(Render_Vulkan,
+             "VPENGINE_DRAWS: {} frames, per frame {:.0f} draws ({:.1f}% with every shader running in VPEngine, "
+             "{:.1f}% waiting for a shader not checked yet) and {:.1f} dispatches ({:.1f}% / {:.1f}%); {} programs known",
+             c.frames, c.draws / n, pct(c.drawsOk, c.draws), pct(c.drawsPending, c.draws), c.dispatches / n,
+             pct(c.dispatchesOk, c.dispatches), pct(c.dispatchesPending, c.dispatches), c.programs.size());
+    std::vector<std::pair<uint64_t, uint64_t>> top(c.blocking.begin(), c.blocking.end());
+    std::sort(top.begin(), top.end(), [](auto& a, auto& b) { return a.second > b.second; });
+    for (size_t k = 0; k < top.size() && k < 8; ++k) {
+        const Program& p = c.programs[top[k].first];
+        LOG_INFO(Render_Vulkan, "VPENGINE_DRAWS   blocked by {}_{:016x}: {:.1f} per frame ({})", p.stage, top[k].first,
+                 top[k].second / n, p.reason.empty() ? "?" : p.reason);
+    }
+    c.frames = 0;
+    c.draws = c.drawsOk = c.drawsPending = c.dispatches = c.dispatchesOk = c.dispatchesPending = 0;
+    c.blocking.clear();
+    c.since = now;
 }
 
 } // namespace VpengineShaderCheck

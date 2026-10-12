@@ -1,6 +1,9 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#ifdef SHADPS4_VPENGINE_SHADER_CHECK
+#include "vpengine_shader_check.h"
+#endif
 #include "common/debug.h"
 #include "common/diagnostics.h"
 #include "common/elf_info.h"
@@ -1722,6 +1725,9 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame) {
     const u32 trace_id = present_traces.fetch_add(1, std::memory_order_relaxed);
     if (!is_reusing_frame) {
         FrameStats::EndFrame();
+#ifdef SHADPS4_VPENGINE_SHADER_CHECK
+        VpengineShaderCheck::EndFrame();
+#endif
     }
 
     // Bachata diagnostics: dump the guest output buffer every N presents when

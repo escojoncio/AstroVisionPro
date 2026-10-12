@@ -17,6 +17,9 @@
 #include "video_core/renderer_vulkan/vk_rasterizer.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
 #include "video_core/renderer_vulkan/vk_shader_hle.h"
+#ifdef SHADPS4_VPENGINE_SHADER_CHECK
+#include "vpengine_shader_check.h"
+#endif
 
 #include <array>
 #include <atomic>
@@ -942,6 +945,28 @@ Mode Current() {
 
 } // namespace GpuBench
 
+namespace {
+#ifdef SHADPS4_VPENGINE_SHADER_CHECK
+// «Modo diagnóstico»: the draw census of the VPEngine shader check (which of the shaders behind
+// what is drawn VPEngine runs already).
+void NoteVpengineDraw(const Vulkan::GraphicsPipeline* pipeline) {
+    if (!VpengineShaderCheck::Enabled()) {
+        return;
+    }
+    std::array<u64, Shader::MaxStageTypes> hashes{};
+    size_t n = 0;
+    for (const Shader::Info* info : pipeline->GetStages()) {
+        if (info != nullptr) {
+            hashes[n++] = info->pgm_hash;
+        }
+    }
+    VpengineShaderCheck::NoteDraw(hashes.data(), n);
+}
+#else
+void NoteVpengineDraw(const Vulkan::GraphicsPipeline*) {}
+#endif
+} // namespace
+
 void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
     RENDERER_TRACE;
 
@@ -1049,6 +1074,7 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
     if (!pipeline) {
         return;
     }
+    NoteVpengineDraw(pipeline);
 
     RunDepthMirrors(pipeline);
     PrepareRenderState(pipeline);
@@ -1481,6 +1507,7 @@ void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u3
     if (!pipeline) {
         return;
     }
+    NoteVpengineDraw(pipeline);
 
     RunDepthMirrors(pipeline);
     PrepareRenderState(pipeline);
@@ -1577,6 +1604,9 @@ void Rasterizer::DispatchDirect() {
     }
 
     const auto& cs = pipeline->GetStage(Shader::LogicalStage::Compute);
+#ifdef SHADPS4_VPENGINE_SHADER_CHECK
+    VpengineShaderCheck::NoteDispatch(cs.pgm_hash);
+#endif
     if (ExecuteShaderHLE(cs, liverpool->regs, cs_program, *this)) {
         if (trace) {
             LOG_INFO(Render_Vulkan, "TRACE   dispatch handled by shader HLE");
@@ -1616,6 +1646,9 @@ void Rasterizer::DispatchIndirect(VAddr address, u32 offset, u32 size) {
     if (!pipeline) {
         return;
     }
+#ifdef SHADPS4_VPENGINE_SHADER_CHECK
+    VpengineShaderCheck::NoteDispatch(pipeline->GetStage(Shader::LogicalStage::Compute).pgm_hash);
+#endif
 
     RunDepthMirrors(pipeline);
     if (!BindResources(pipeline)) {
