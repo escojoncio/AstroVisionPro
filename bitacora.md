@@ -6,24 +6,30 @@ App visionOS en `visionos/` (SwiftUI + Compositor Services + ARKit + GameControl
 JIT: arena RWX preparada por StikDebug (protocolo `brk #0xf00d` + universal.js); la app hace detach al terminar.
 Compactada el 2026-10-11: lo resuelto queda en «Histórico» como una línea; el detalle está en el historial de git de este fichero (`git log -p bitacora.md`).
 
-## Estado (2026-10-12) y siguiente sesión
-- **VPEngine en sombra**, pruebas en ASTRO BOT VR:
-  - a1eab54: crash por target MSAA de 8 muestras (M2 no lo admite) → ruta VPEngine sin MSAA (`setMaxSamples(1)`; el AA
-    será VPKTAA); resolves del juego (`FilterDraw`, CB_COLOR_CONTROL resolve) → `VpengineRenderer::Resolve` (copia).
-  - log 11:31: VPEngine nunca enviaba su frame (en casco el frame acaba en `videoout/driver.cpp`, rama `req.is_hmd`, no
-    en `Presenter::Present`) → 2,4 fps, +3 GB. Arreglado: ahí también `VpengineShaderCheck::EndFrame()` y
-    `VpengineRenderer::EndFrame()`.
-  - log 11:54: `gpu.frame f=0` OK (34 encoders); frame 1 → hang de GPU (`kIOGPUCommandBufferCallbackErrorHang`) → reset
-    de la GPU → KK `ErrorDeviceLost` → crash. Arreglo: VPEngine db5a468 (guarda de bucles en el MSL emitido) y
-    `vpengine_renderer.mm`: tras `gpu.err what=command_buffer`, `gpuFault` apaga VPEngine el resto de la sesión (log
-    `VPENGINE_GPU off for this session`). `visionos/vpengine-gpu.ref` = db5a468.
-- Probar: «VPEngine en sombra» encendido, 1–2 min en el mundo, log (`vpps4.frame`, `gpu.frame`, `gpu.time`, `gpu.err`).
-- Siguiente build grande (plan en la bitácora de VPEngine «SIGUIENTE BUILD»): opción «VPEngine (imagen propia)».
-- Pendiente KITCHEN (KK): imagen casi negra (30 fps, ojos 960x1080 A2B10G10R10); hipótesis exposición/HDR del juego o
-  10 bits en `hmd_pp_pass`/`linear_out`; volcado L1+R1+L3 → `VPS4/Partidas/rt_dump`. MSAA en ASTRO BOT por KK: 4/8 → 2.
-- Herramientas aquí: comprobación de sintaxis con `clang++ -std=c++23 -fsyntax-only`, submódulos (`git submodule update --init --depth 1`, de uno en uno si falla): fmt spdlog vulkan-headers robin-map magic_enum ext-boost sirit (+ `externals/sirit/externals/SPIRV-Headers`) toml11 xbyak zydis vma miniz half json xxhash tracy dear_imgui sdl3; `-DSPDLOG_FMT_EXTERNAL`, `-DVK_NO_PROTOTYPES -DVULKAN_HPP_NO_CONSTRUCTORS -DVULKAN_HPP_NO_STRUCT_SETTERS -DVULKAN_HPP_HAS_SPACESHIP_OPERATOR -DVULKAN_HPP_DISPATCH_LOADER_DYNAMIC=1 -DVULKAN_HPP_NO_EXCEPTIONS`, `-DSHADPS4_VISIONOS -DENABLE_OPENXR_HOST`, un `miniz_export.h` vacío. `vk_presenter.cpp` da 2 errores ajenos de ImGui (ImVec2) sin el imconfig del proyecto. Fuente de KK: `git fetch --depth 1 --filter=blob:none https://github.com/shadexternals/mesa.git b628375fb1fd99476bfbaaa0532deb6fe3a6870e` con sparse `src/kosmickrisp/`.
-- Comprobar que el visor tiene la build nueva antes de leer un log: `VPENGINE_GPU msaa limit 1 samples` / ajustes nuevos
-  en la app (SideStore a veces deja la anterior). Historial detallado de builds: `git log -p bitacora.md`.
+## Estado (2026-10-12, tarde) y siguiente sesión
+- **VPEngine es el único renderer en visionOS** (decisión: fuera KosmicKrisp, la sombra y el ajuste «Motor gráfico»).
+  Build pendiente de probar: arranca, ¿hay imagen en el visor?, log `VPENGINE_GPU` / `VPENGINE_PRESENT`.
+  - `src/platform/visionos/vpengine_renderer.{h,mm}`: `VpengineRenderer::Rasterizer` (RasterizerInterface; draws,
+    indirectos con argumentos en memoria del juego, dispatch, DMA en la GPU, GDS propio, PageManager propio que
+    vigila las páginas de las texturas subidas → invalidate), `Present::` (compone los ojos lado a lado en texturas
+    Metal propias del compositor con `MetalBackend::encodeInterop`, sRGB, nitidez CAS; pantallas 2D como pantalla
+    de 70°). `vpengine_presenter.{h,cpp}`: fachada para `videoout/driver.cpp` (tokens `Vulkan::Frame`,
+    `vk_frame.h` separado de `vk_presenter.h`).
+  - `gnmdriver.cpp` (`SHADPS4_VPENGINE_ONLY`): crea Rasterizer + Presenter de VPEngine en vez de `Vulkan::Presenter`
+    (`presenter` Vulkan queda nulo; `video_out.cpp` comprueba nulo; `astro_core.mm` sin GpuBench).
+  - `openxr_host_visionos.mm`: `StartMetal`/`BeginMetalFrame` (ranuras RGBA8 sRGB propias, liberadas con retardo).
+  - App: sin ajuste de motor ni variables KK/Vulkan; workflow sin KosmicKrisp. El código Vulkan sigue compilado
+    (MoltenVK enlazado) pero nunca se inicia: quitarlo del binario queda para la limpieza.
+  - Ganchos de la sombra eliminados de `vk_rasterizer/vk_presenter/vk_scheduler/driver`.
+- Límites conocidos (log): ES/LS (GS de ASTRO BOT) saltados; V# dinámico de `s_buffer_load` sin hacer; texturas
+  escritas por la GPU (compute) no se invalidan; profundidad al compositor y VPKTAA pendientes; etiquetas EOP se
+  escriben en CPU al procesar (posibles lecturas adelantadas).
+- Herramientas aquí: comprobación de sintaxis con `clang++ -std=c++23 -fsyntax-only` (flags en sesión: defines
+  `SHADPS4_VISIONOS ENABLE_OPENXR_HOST SHADPS4_VPENGINE_ONLY`, includes de externals y de VPEngine), submódulos
+  `git submodule update --init --depth 1` (fmt spdlog vulkan-headers robin-map magic_enum ext-boost sirit +
+  SPIRV-Headers toml11 xbyak zydis vma miniz half json xxhash tracy dear_imgui sdl3), `miniz_export.h` vacío.
+  `vk_presenter.cpp` da 2 errores ajenos de ImGui (ImVec2). Los .mm no se pueden comprobar aquí.
+- Comprobar que el visor tiene la build nueva: `VPENGINE_GPU renderer on` al arrancar.
 
 ## VPEngine en sombra (hito 3 del cliente VPEngine)
 - Ajuste «Motor gráfico → VPEngine en sombra (experimental)» (`AstroSettings.vpengineShadow`, clave `vpengine_shadow`,

@@ -11,6 +11,7 @@
 #include "imgui/imgui_texture.h"
 #include "video_core/renderer_vulkan/host_passes/fsr_pass.h"
 #include "video_core/renderer_vulkan/host_passes/pp_pass.h"
+#include "video_core/renderer_vulkan/vk_frame.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
 #include "video_core/renderer_vulkan/vk_swapchain.h"
@@ -26,37 +27,6 @@ struct Liverpool;
 }
 
 namespace Vulkan {
-
-struct Frame {
-    u32 width;
-    u32 height;
-    VmaAllocation allocation;
-    vk::Image image;
-    vk::ImageView image_view;
-    vk::Fence present_done;
-    /// The timeline the frame's commands were submitted on, and its tick once they have run.
-    MasterSemaphore* ready_timeline{};
-    vk::Semaphore ready_semaphore;
-    u64 ready_tick;
-    bool is_hdr{false};
-    u8 id{};
-    /// The VR host buffer this frame lives in, or -1 for a frame that is shown on the window.
-    s8 host_buffer{-1};
-
-    ImTextureID imgui_texture;
-};
-
-/// What a frame of the emulated headset is drawn into: the frame that goes on the window (or to
-/// the application that owns the headset, on a machine where that is another process), and,
-/// where the machine has a headset of its own, the frame that goes there.
-struct HmdFrames {
-    Frame* shown{};
-    Frame* exported{};
-
-    explicit operator bool() const {
-        return shown != nullptr || exported != nullptr;
-    }
-};
 
 enum SchedulerType {
     Draw,

@@ -406,15 +406,6 @@ public:
         if (!wanted) {
             return nullptr;
         }
-#ifdef SHADPS4_VPENGINE_RENDERER
-        // With VPEngine on, VPEngine times its own GPU work (gpu.time). Outside a render pass
-        // KosmicKrisp writes each timestamp through a compute encoder of its own (log 12:15:
-        // crash in kk_dispatch_precomp from GpuTimer::End), so the Vulkan timer stays off.
-        if (const char* vp = std::getenv("SHADPS4_VPENGINE_RENDERER"); vp != nullptr && vp[0] == '1') {
-            LOG_INFO(Render_Vulkan, "GPU_TIME: off (VPEngine times its own GPU work)");
-            return nullptr;
-        }
-#endif
         const auto properties = instance.GetPhysicalDevice().getProperties();
         if (!properties.limits.timestampComputeAndGraphics ||
             properties.limits.timestampPeriod <= 0.0f) {
