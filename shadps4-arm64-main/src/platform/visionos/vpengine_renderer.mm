@@ -123,12 +123,18 @@ struct Engine {
             for (auto [a, n] : work) renderer->invalidate(a, n);
     }
     bool failed = false;
+    // A command buffer of ours failed on the GPU (hang, page fault): VPEngine stops recording for the
+    // rest of the session, so one bad shader cannot reset the GPU again and again. Set from Metal's
+    // completion thread, read under `lock`.
+    std::atomic<bool> gpuFault{false};
 
     // Per-frame lines of the core ("gpu.frame/cut/pso/enc", GPU times) only every kEvery frames;
     // errors always (up to 200 lines).
     static constexpr u64 kEvery = 120;
     void log(const std::string& line) {
         const bool error = line.rfind("gpu.err", 0) == 0 || line.rfind("vpps4.shader error", 0) == 0;
+        if (line.rfind("gpu.err what=command_buffer", 0) == 0 && !gpuFault.exchange(true))
+            LOG_WARNING(Render_Vulkan, "VPENGINE_GPU off for this session: a VPEngine command buffer failed on the GPU");
         if (error) {
             if (errorLines++ < 200) LOG_WARNING(Render_Vulkan, "VPENGINE_GPU {}", line);
             return;
@@ -215,7 +221,7 @@ bool Enabled() {
 void Draw(const AmdGpu::Regs& regs, const Shader::Info& vs, const Shader::Info* ps, bool indexed, u32 index_offset) {
     Engine& e = engine();
     std::lock_guard g(e.lock);
-    if (!e.start()) return;
+    if (e.gpuFault.load() || !e.start()) return;
     e.applyPending();
     vpps4::DrawState d;
     if (vs.stage != Shader::Stage::Vertex) {
@@ -324,7 +330,7 @@ void Dispatch(const AmdGpu::ComputeProgram& cs, const Shader::Info&) {
     if (cs.address == 0) return;
     Engine& e = engine();
     std::lock_guard g(e.lock);
-    if (!e.start()) return;
+    if (e.gpuFault.load() || !e.start()) return;
     e.applyPending();
     vpps4::DispatchState d;
     const auto params = AmdGpu::GetParams(cs);
@@ -349,7 +355,7 @@ void Resolve(const AmdGpu::Regs& regs) {
     if (!regs.color_buffers[0] || !regs.color_buffers[1]) return;
     Engine& e = engine();
     std::lock_guard g(e.lock);
-    if (!e.start()) return;
+    if (e.gpuFault.load() || !e.start()) return;
     e.applyPending();
     e.renderer->resolve(colorTarget(regs, 0), colorTarget(regs, 1));
 }
@@ -367,7 +373,7 @@ void Invalidate(VAddr address, u64 size) {
 void EndFrame() {
     Engine& e = engine();
     std::lock_guard g(e.lock);
-    if (!e.renderer) return;
+    if (!e.renderer || e.gpuFault.load()) return;
     ++e.frames;
     e.renderer->submit();
 }

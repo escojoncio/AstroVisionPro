@@ -7,28 +7,25 @@ JIT: arena RWX preparada por StikDebug (protocolo `brk #0xf00d` + universal.js);
 Compactada el 2026-10-11: lo resuelto queda en «Histórico» como una línea; el detalle está en el historial de git de este fichero (`git log -p bitacora.md`).
 
 ## Estado (2026-10-12) y siguiente sesión
-- Log 11:31 (VPEngine en sombra en VR): VPEngine nunca enviaba su frame: en modo casco el frame acaba en
-  `src/core/libraries/videoout/driver.cpp` (rama `req.is_hmd`, `FrameStats::EndFrame`) y no pasa por `Presenter::Present`.
-  Arreglado: ahí también `VpengineShaderCheck::EndFrame()` y `VpengineRenderer::EndFrame()`. Efecto del fallo: frame
-  infinito, GPU thread 100 %, 2,4 fps, memoria +3 GB. Ref de VPEngine con guarda `frame_not_ended`.
-- Arreglado el crash de la prueba de VPEngine en sombra (a1eab54: target MSAA de 8 muestras, no admitido en M2):
-  en la ruta de VPEngine no hay MSAA (el AA será VPKTAA): `vpengine_renderer.mm` llama `setMaxSamples(1)`; log
-  `VPENGINE_GPU msaa limit 1 samples`. Resolves del juego (CB_COLOR_CONTROL resolve, `FilterDraw` en
-  `vk_rasterizer.cpp`) → `VpengineRenderer::Resolve(regs)` → `vpps4::Renderer::resolve` (copia; `resolves=` en el log). VPEngine 197f014 (incluye VPVulkan fase 3 de la otra sesión): una cuenta de muestras por draw y guarda en `MetalBackend`
-  (cuenta no soportada → `gpu.err`, no abort). `visionos/vpengine-gpu.ref` = 197f014.
-- Probar: ajuste «VPEngine en sombra» encendido en ASTRO BOT, jugar 1–2 min en el mundo y pasar el log (`VPENGINE_GPU`).
-  Con el ajuste apagado la app es como antes.
+- **VPEngine en sombra**, pruebas en ASTRO BOT VR:
+  - a1eab54: crash por target MSAA de 8 muestras (M2 no lo admite) → ruta VPEngine sin MSAA (`setMaxSamples(1)`; el AA
+    será VPKTAA); resolves del juego (`FilterDraw`, CB_COLOR_CONTROL resolve) → `VpengineRenderer::Resolve` (copia).
+  - log 11:31: VPEngine nunca enviaba su frame (en casco el frame acaba en `videoout/driver.cpp`, rama `req.is_hmd`, no
+    en `Presenter::Present`) → 2,4 fps, +3 GB. Arreglado: ahí también `VpengineShaderCheck::EndFrame()` y
+    `VpengineRenderer::EndFrame()`.
+  - log 11:54: `gpu.frame f=0` OK (34 encoders); frame 1 → hang de GPU (`kIOGPUCommandBufferCallbackErrorHang`) → reset
+    de la GPU → KK `ErrorDeviceLost` → crash. Arreglo: VPEngine db5a468 (guarda de bucles en el MSL emitido) y
+    `vpengine_renderer.mm`: tras `gpu.err what=command_buffer`, `gpuFault` apaga VPEngine el resto de la sesión (log
+    `VPENGINE_GPU off for this session`). `visionos/vpengine-gpu.ref` = db5a468.
+- Probar: «VPEngine en sombra» encendido, 1–2 min en el mundo, log (`vpps4.frame`, `gpu.frame`, `gpu.time`, `gpu.err`).
+- Siguiente build grande (plan en la bitácora de VPEngine «SIGUIENTE BUILD»): opción «VPEngine (imagen propia)».
+- Pendiente KITCHEN (KK): imagen casi negra (30 fps, ojos 960x1080 A2B10G10R10); hipótesis exposición/HDR del juego o
+  10 bits en `hmd_pp_pass`/`linear_out`; volcado L1+R1+L3 → `VPS4/Partidas/rt_dump`. MSAA en ASTRO BOT por KK: 4/8 → 2.
+- Herramientas aquí: comprobación de sintaxis con `clang++ -std=c++23 -fsyntax-only`, submódulos (`git submodule update --init --depth 1`, de uno en uno si falla): fmt spdlog vulkan-headers robin-map magic_enum ext-boost sirit (+ `externals/sirit/externals/SPIRV-Headers`) toml11 xbyak zydis vma miniz half json xxhash tracy dear_imgui sdl3; `-DSPDLOG_FMT_EXTERNAL`, `-DVK_NO_PROTOTYPES -DVULKAN_HPP_NO_CONSTRUCTORS -DVULKAN_HPP_NO_STRUCT_SETTERS -DVULKAN_HPP_HAS_SPACESHIP_OPERATOR -DVULKAN_HPP_DISPATCH_LOADER_DYNAMIC=1 -DVULKAN_HPP_NO_EXCEPTIONS`, `-DSHADPS4_VISIONOS -DENABLE_OPENXR_HOST`, un `miniz_export.h` vacío. `vk_presenter.cpp` da 2 errores ajenos de ImGui (ImVec2) sin el imconfig del proyecto. Fuente de KK: `git fetch --depth 1 --filter=blob:none https://github.com/shadexternals/mesa.git b628375fb1fd99476bfbaaa0532deb6fe3a6870e` con sparse `src/kosmickrisp/`.
+- Comprobar que el visor tiene la build nueva antes de leer un log: `VPENGINE_GPU msaa limit 1 samples` / ajustes nuevos
+  en la app (SideStore a veces deja la anterior). Historial detallado de builds: `git log -p bitacora.md`.
 
-## Estado anterior (2026-10-11, noche)
-- Build en curso: limpieza de ajustes + «Modo diagnóstico» único + diagnósticos de KITCHEN + volcado de shaders para VPEngine (secciones siguientes). Probar: ASTRO BOT con diagnóstico apagado (no debe empeorar; log limpio) y KITCHEN con diagnóstico encendido + volcado L1+R1+L3 ya dentro de la escena → buscar `READ_UNWRITTEN`, `SMALL_BUFFER`, `DIAG: budgets reset`, PNG `d*_…_notgpu` de profundidad/sombras.
-- Build faa8cfa (profundidad en dirección de escritura + alpha-to-coverage): probada, sin cambio visual en KITCHEN (abajo). Build e8e0180 (copias en bruto, 2dVr, barreras): sin cambio visual en KITCHEN. Build 34050d6: KITCHEN ya entra y se ve la escena (log 20:53), pero con aspecto incorrecto (usuario: «como 030_…240x135»), sin los paneles emergentes/subtítulos; 26 fps, ~37,6 ms (antes 32: ahora la escena pasa la prueba de profundidad y se sombrea de verdad; `960x1080 1 colour` 200 → 255 ms/s). `REPROJECTION_LABEL_NEAR` no saltó esta vez. `sceHmdReprojectionStart2dVr` (stub) llamado 119 veces solo en la transición de carga (20:54:15–20), no en juego. `RAW_WRITE` agotó sus 16 logs en el menú (no se ve si tocó la profundidad en VR). Pendiente: volcado de esta sesión (VPS4/Partidas/rt_dump, 67 imágenes). Build e9697ac: KITCHEN colgado al entrar en VR (log 20:38). Build 0b1aaf8 (run 38160653309): probada (log 19:55, volcado OK) — volcado en VPS4/Partidas/rt_dump + `GPU_COMPUTE` (abajo; la de 4293712 se canceló). Build 4148263 (run 38159260534): OK, sin probar — atajo de volcado + color de las imágenes planas de 10 bits + frames de casco leídos tras su dibujo (abajo). Última probada: 50110d0 (logs 19:02 KITCHEN, 19:04 ASTRO BOT).
-- **KITCHEN arranca y corre**: la etiqueta de frame lo desbloqueó (`REPROJECTION_LABEL`: el juego pone la etiqueta a un contador, p. ej. 0x555, y la GPU espera ==0; escrito 0). Esperas de arranque en gfx (`0x786d640e20/28/30` ==0) y asc1 (`0x7019f28e38/ec8`, `0x7019f260f8` ==1) que se resuelven solas. 30 fps, GPU 98 %, ~360 draws/imagen, ~33 ms/imagen; ojos 960x1080 A2B10G10R10UnormPack32, tan 1.732/1.0/1.0/1.192. **Problema: imagen casi negra** (se ven siluetas con luces; no se ven subtítulos). Hipótesis: exposición/HDR del juego (compute asíncrono) o color de los ojos de 10 bits UNORM mal tratado en `hmd_pp_pass`/`linear_out`, o subtítulos en una capa que no emulamos.
-- **MSAA en ASTRO BOT funciona técnicamente**: color 4 muestras / profundidad 8 (EQAA) → 2 en el host; `Image::Resolve` por `resolveImage` (`4 samples, 2 on the host`); ningún shader lee MS ni FMask; sin `FMask decompression`. Poco visible por 2x + ampliación ~2,5× al visor; el MSAA no trata aliasing de shader/texturas. Coste 2x: ~+7–10 ms/imagen.
-- Siguiente: con la build en curso, en KITCHEN L1+R1+L3 → `VPS4/Partidas/rt_dump/*.png` (+ lista `cache image at …` y traza de 3000 draws en el log) → ver si los ojos ya salen oscuros del juego (exposición) o se oscurecen en nuestra composición (formato 10 bits).
-- Herramientas aquí: comprobación de sintaxis con `clang++ -std=c++23 -fsyntax-only`, submódulos (`git submodule update --init --depth 1`, de uno en uno si falla): fmt spdlog vulkan-headers robin-map magic_enum ext-boost sirit (+ `externals/sirit/externals/SPIRV-Headers`) toml11 xbyak zydis vma miniz half json xxhash tracy dear_imgui sdl3; `-DSPDLOG_FMT_EXTERNAL`, `-DVK_NO_PROTOTYPES -DVULKAN_HPP_NO_CONSTRUCTORS -DVULKAN_HPP_NO_STRUCT_SETTERS -DVULKAN_HPP_HAS_SPACESHIP_OPERATOR -DVULKAN_HPP_DISPATCH_LOADER_DYNAMIC=1 -DVULKAN_HPP_NO_EXCEPTIONS`, `-DSHADPS4_VISIONOS -DENABLE_OPENXR_HOST`, un `miniz_export.h` vacío. `vk_presenter.cpp` da 2 errores ajenos de ImGui (ImVec2) sin el imconfig del proyecto. spirv-cross: compilar KhronosGroup/SPIRV-Cross con cmake. Fuente de KK: `git fetch --depth 1 --filter=blob:none https://github.com/shadexternals/mesa.git b628375fb1fd99476bfbaaa0532deb6fe3a6870e` con sparse `src/kosmickrisp/`.
-- Comprobar que el visor tiene la build nueva antes de leer un log: línea de `vr_tracker.cpp:NNN` / `Multisampling limited to N` / ajustes nuevos en la app (SideStore a veces deja la anterior).
-
-## VPEngine en sombra (hito 3 del cliente VPEngine) — build lanzada, sin probar
+## VPEngine en sombra (hito 3 del cliente VPEngine)
 - Ajuste «Motor gráfico → VPEngine en sombra (experimental)» (`AstroSettings.vpengineShadow`, clave `vpengine_shadow`,
   `SettingsView.swift`) → `SHADPS4_VPENGINE_RENDERER=1`. La imagen sigue siendo de KosmicKrisp.
 - `src/platform/visionos/vpengine_renderer.{h,mm}` (ARC): registros de Liverpool → `vpps4::DrawState`/`DispatchState` →
