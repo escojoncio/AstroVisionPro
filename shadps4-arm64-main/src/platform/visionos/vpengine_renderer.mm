@@ -293,7 +293,10 @@ void leftOut(const char* why) {
     static std::mutex m;
     static std::map<std::string, u64> counts;
     std::scoped_lock l{m};
-    if (counts[why]++ == 0) LOG_INFO(Render_Vulkan, "VPENGINE_GPU first draw left out: {}", why);
+    const u64 n = ++counts[why];
+    if (n == 1) LOG_INFO(Render_Vulkan, "VPENGINE_GPU first draw left out: {}", why);
+    else if (n == 1000 || n == 10000 || n == 100000 || n % 1000000 == 0)
+        LOG_INFO(Render_Vulkan, "VPENGINE_GPU draws left out: {} x{}", why, n);
 }
 
 } // namespace
