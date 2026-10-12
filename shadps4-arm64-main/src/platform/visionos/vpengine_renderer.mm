@@ -100,11 +100,59 @@ bool mappedSpan(u64 address, u64 from, u64 to, u64& begin, u64& end) {
     return true;
 }
 
+// mappedSpan answers cached: it walks the VM map with vm_region_64 syscalls (often tens per call)
+// and is asked for every buffer binding of every draw. The span of an address inside a window is
+// unique, so (window, span) pairs are kept until the GPU mappings change (MapMemory/UnmapMemory).
+struct SpanCache {
+    struct Entry {
+        u64 from = 0, to = 0, begin = 0, end = 0;
+    };
+    std::mutex m;
+    std::array<Entry, 128> entries{};
+    unsigned used = 0, next = 0, last = 0;
+    void clear() {
+        std::scoped_lock l{m};
+        used = next = last = 0;
+    }
+};
+SpanCache& spanCache() {
+    static SpanCache& c = *new SpanCache;
+    return c;
+}
+
+bool cachedSpan(u64 address, u64 from, u64 to, u64& begin, u64& end) {
+    SpanCache& c = spanCache();
+    {
+        std::scoped_lock l{c.m};
+        const auto hit = [&](const SpanCache::Entry& x) {
+            return x.from == from && x.to == to && address >= x.begin && address < x.end;
+        };
+        if (c.used && hit(c.entries[c.last])) {
+            begin = c.entries[c.last].begin;
+            end = c.entries[c.last].end;
+            return true;
+        }
+        for (unsigned k = 0; k < c.used; ++k)
+            if (hit(c.entries[k])) {
+                c.last = k;
+                begin = c.entries[k].begin;
+                end = c.entries[k].end;
+                return true;
+            }
+    }
+    if (!mappedSpan(address, from, to, begin, end)) return false;  // (misses are not cached)
+    std::scoped_lock l{c.m};
+    const unsigned k = c.used < c.entries.size() ? c.used++ : (c.next++ % unsigned(c.entries.size()));
+    c.entries[k] = {from, to, begin, end};
+    c.last = k;
+    return true;
+}
+
 // Bytes readable from `address` on (up to `want`), 0 if it is not mapped.
 u64 readable(u64 address, u64 want) {
     const u64 from = address & ~(kWindow - 1);
     u64 begin, end;
-    if (!mappedSpan(address, from, from + kWindow, begin, end)) return 0;
+    if (!cachedSpan(address, from, from + kWindow, begin, end)) return 0;
     return std::min<u64>(want, end - address);
 }
 
@@ -150,6 +198,7 @@ struct Engine {
             for (auto [a, n] : work) renderer->invalidate(a, n);
     }
     bool failed = false;
+    u64 dmaUnsynced = 0, dmaSynced = 0;  // DMA packets done on the CPU without / after a GPU wait
 
     static constexpr u64 kEvery = 120;  // per-frame lines of the core every kEvery submits
     void log(const std::string& line) {
@@ -178,7 +227,7 @@ struct Engine {
             const u64 from = address & ~(kWindow - 1);
             const u64 to = std::max(from + kWindow, (address + size + kWindow - 1) & ~(kWindow - 1));
             u64 begin, end;
-            if (!mappedSpan(address, from, to, begin, end) || address + size > end) return false;
+            if (!cachedSpan(address, from, to, begin, end) || address + size > end) return false;
             out = {begin, end - begin, reinterpret_cast<void*>(begin)};
             return true;
         };
@@ -200,6 +249,9 @@ struct Engine {
     void submit() {
         if (!renderer) return;
         ++submits;
+        if (submits % kEvery == 1)
+            LOG_INFO(Render_Vulkan, "VPENGINE_GPU dma: {} packets without a GPU wait, {} after one (so far)", dmaUnsynced,
+                     dmaSynced);
         renderer->submit();
     }
 };
@@ -526,6 +578,7 @@ void Rasterizer::FillBuffer(VAddr address, u32 num_bytes, u32 value, bool is_gds
         // GDS is ours and CPU-visible: the GPU's earlier work is finished first.
         e.submit();
         e.backend->waitIdle();
+        e.renderer->gpuIdle();
         if (u32* gds = e.renderer->gds(); gds && address < 0x10000) {
             const u32 n = std::min<u32>(num_bytes, 0x10000 - u32(address)) / 4;
             std::fill_n(gds + address / 4, n, value);
@@ -536,9 +589,16 @@ void Rasterizer::FillBuffer(VAddr address, u32 num_bytes, u32 value, bool is_gds
     // right after this packet (e.g. PM4 or shader code assembled by DMA, then an IndirectBuffer),
     // which a blit queued for the end of the frame would not have written yet. Memory is unified,
     // so the GPU's earlier work is finished first and then the bytes are written in place.
-    // Cost: one GPU wait per DMA packet.
-    e.submit();
-    e.backend->waitIdle();
+    // Only when queued GPU work may touch the range (the renderer keeps the guest ranges bound
+    // since the GPU was last idle): otherwise the bytes are written at once, no submit, no wait.
+    if (e.renderer->gpuMayAccess(address, num_bytes)) {
+        e.submit();
+        e.backend->waitIdle();
+        e.renderer->gpuIdle();
+        ++e.dmaSynced;
+    } else {
+        ++e.dmaUnsynced;
+    }
     // (a range the probe cannot vouch for, e.g. across its window, keeps the GPU blit)
     if (readable(address, num_bytes) < num_bytes) {
         e.renderer->fill(address, num_bytes, value);
@@ -559,6 +619,7 @@ void Rasterizer::CopyBuffer(VAddr dst, VAddr src, u32 num_bytes, bool dst_gds, b
     if (dst_gds || src_gds) {
         e.submit();
         e.backend->waitIdle();
+        e.renderer->gpuIdle();
         u32* gds = e.renderer->gds();
         if (!gds) return;
         auto* gb = reinterpret_cast<u8*>(gds);
@@ -574,9 +635,15 @@ void Rasterizer::CopyBuffer(VAddr dst, VAddr src, u32 num_bytes, bool dst_gds, b
         }
         return;
     }
-    // On the CPU and in order, for the same reason as FillBuffer.
-    e.submit();
-    e.backend->waitIdle();
+    // On the CPU and in order, for the same reason as FillBuffer (synced only when needed).
+    if (e.renderer->gpuMayAccess(src, num_bytes) || e.renderer->gpuMayAccess(dst, num_bytes)) {
+        e.submit();
+        e.backend->waitIdle();
+        e.renderer->gpuIdle();
+        ++e.dmaSynced;
+    } else {
+        ++e.dmaUnsynced;
+    }
     if (readable(src, num_bytes) < num_bytes || readable(dst, num_bytes) < num_bytes) {
         e.renderer->copy(dst, src, num_bytes);
         return;
@@ -628,6 +695,7 @@ void Rasterizer::MapMemory(VAddr addr, u64 size) {
         impl->mapped[start] = end;
     }
     impl->page_manager.OnGpuMap(addr, size);
+    spanCache().clear();
 }
 
 void Rasterizer::UnmapMemory(VAddr addr, u64 size) {
@@ -648,6 +716,7 @@ void Rasterizer::UnmapMemory(VAddr addr, u64 size) {
         it = impl->mapped.erase(it);
     }
     for (auto [s, t] : keep) impl->mapped[s] = t;
+    spanCache().clear();
 }
 
 u64 Rasterizer::Flush() {
@@ -664,6 +733,7 @@ void Rasterizer::Finish() {
     e.applyPending();
     e.submit();
     if (e.backend) e.backend->waitIdle();
+    if (e.renderer) e.renderer->gpuIdle();
 }
 
 // ---- Presenter ----------------------------------------------------------------------------------
@@ -875,6 +945,11 @@ int ComposeEyes(std::span<const AmdGpu::Image, 2> eye_textures, const Core::Vr::
             LOG_INFO(Render_Vulkan, "VPENGINE_PRESENT eye {} T# {:#x} tile {} pitch {} fmt {}/{} {}x{} colour_target={}", k,
                      d.address, u32(d.tilingIndex), d.pitch, u32(d.dataFormat), u32(d.numFormat), d.width, d.height,
                      bool(e.renderer->colorTargetAt(d.address)));
+        // What VPEngine holds on the GPU over the eye's memory (targets inside a bigger or
+        // neighbouring surface, shader-written images of another format): the eye's real producer.
+        if (impl->frames % 600 == 0)
+            LOG_INFO(Render_Vulkan, "VPENGINE_PRESENT eye {} overlaps:{}", k,
+                     e.renderer->describeAt(d.address, u64(std::max(d.pitch, d.width)) * d.height * 4));
     }
     // The eyes' drawing is submitted first: the composition runs after it on the same queue.
     e.submit();

@@ -284,3 +284,6 @@ Datos de los logs del visor (Vision Pro M2), ASTRO BOT, KosmicKrisp salvo donde 
 - Posición del mando sin manos: Object Tracking del DualSense (necesita Mac para el modelo); hoy giróscopo + manos.
 - BC6H/BC7 con uso Storage en MoltenVK (`image.cpp:247`).
 - Aviso de FEX «Failed to mprotect last page of code buffer» (inofensivo).
+
+## 2026-10-12 · Diagnóstico de ojos negros
+- `vpengine_renderer.mm` `Present::ComposeEyes`: cada 600 frames, línea `VPENGINE_PRESENT eye N overlaps: ...` con `Renderer::describeAt` (targets/imágenes GPU que solapan la memoria del ojo). Necesita VPEngine con `describeAt` (commit vpps4 del mismo día).
