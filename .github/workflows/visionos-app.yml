@@ -35,11 +35,23 @@ jobs:
           fetch-depth: 1
           submodules: false
 
+      # VPEngine's shader translator, at the commit in visionos/vpengine-gpu.ref (built into the
+      # emulator; checked against the headset's Metal compiler in diagnostic mode).
+      - name: VPEngine shader translator
+        run: |
+          git init -q vpengine
+          for ATTEMPT in 1 2 3; do
+            git -C vpengine fetch -q --depth 1 https://github.com/escojoncio/VPEngine "$(cat visionos/vpengine-gpu.ref)" && break
+            sleep 10
+          done
+          git -C vpengine checkout -q FETCH_HEAD
+
       # What the emulator is built from: its sources, the submodule commits, the patches and
       # the build scripts. The same as last time: the emulator built then is used again.
       - name: What the emulator is built from
         run: |
           git ls-tree -r HEAD shadps4-arm64-main/externals | awk '$2 == "commit"' > core-inputs.txt
+          (cd vpengine && git ls-tree -r HEAD gpu/shader/ir gpu/shader/msl gpu/shader/gcn/src gpu/shader/gcn/include) >> core-inputs.txt
           echo "FEX $(cat shadps4-arm64-main/runtime/locks/components.lock.json | shasum)" >> core-inputs.txt
       - uses: actions/cache@v4
         id: core
@@ -93,7 +105,7 @@ jobs:
           bash visionos/scripts/build-fexcore.sh 2>&1 | tee fexcore.log
           bash visionos/scripts/build-moltenvk.sh 2>&1 | tee moltenvk.log
           bash visionos/scripts/build-ffmpeg.sh 2>&1 | tee ffmpeg.log
-          bash visionos/scripts/build-core.sh 2>&1 | tee core.log
+          VPENGINE_GPU_DIR=$PWD/vpengine/gpu bash visionos/scripts/build-core.sh 2>&1 | tee core.log
 
       # KosmicKrisp, the Vulkan driver with geometry shaders (visionos/scripts/build-kosmickrisp.sh):
       # built when the Mesa commit, the patch or the script change, kept otherwise. Should it

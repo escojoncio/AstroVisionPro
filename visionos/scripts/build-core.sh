@@ -42,6 +42,12 @@ if [[ ! -x "$HOST_TOOLS/binary_to_compressed_c" ]]; then
     -o "$HOST_TOOLS/binary_to_compressed_c"
 fi
 
+# VPENGINE_GPU_DIR=<VPEngine checkout>/gpu: VPEngine's shader translator checked in diagnostic mode.
+SHADER_CHECK=()
+if [[ -n "${VPENGINE_GPU_DIR:-}" ]]; then
+  SHADER_CHECK=(-DVPENGINE_GPU_DIR="$(cd "$VPENGINE_GPU_DIR" && pwd)")
+fi
+
 LAUNCHER=()
 command -v ccache >/dev/null && LAUNCHER=(-DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_OBJC_COMPILER_LAUNCHER=ccache -DCMAKE_OBJCXX_COMPILER_LAUNCHER=ccache)
 
@@ -62,6 +68,7 @@ cmake -S "$CORE" -B "$BUILD" -G Ninja \
   -DENABLE_UPDATER=OFF \
   -DENABLE_TESTS=OFF \
   "${GUEST_FLAGS[@]}" \
+  ${SHADER_CHECK[@]+"${SHADER_CHECK[@]}"} \
   -DIMGUI_FONT_EMBED_EXECUTABLE="$HOST_TOOLS/binary_to_compressed_c" \
   -DSDL_SHARED=OFF -DSDL_STATIC=ON -DSDL_TEST_LIBRARY=OFF \
   -DLIBUSB_BUILD_SHARED_LIBS=OFF \
