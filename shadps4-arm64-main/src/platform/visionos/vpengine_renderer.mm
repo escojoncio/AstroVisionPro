@@ -873,7 +873,7 @@ int ComposeEyes(std::span<const AmdGpu::Image, 2> eye_textures, const Core::Vr::
         // memory / written by compute (first frames and every 600).
         if (impl->frames % 600 == 0)
             LOG_INFO(Render_Vulkan, "VPENGINE_PRESENT eye {} T# {:#x} tile {} pitch {} fmt {}/{} {}x{} colour_target={}", k,
-                     d.address, d.tilingIndex, d.pitch, d.dataFormat, d.numFormat, d.width, d.height,
+                     d.address, u32(d.tilingIndex), d.pitch, u32(d.dataFormat), u32(d.numFormat), d.width, d.height,
                      bool(e.renderer->colorTargetAt(d.address)));
     }
     // The eyes' drawing is submitted first: the composition runs after it on the same queue.
