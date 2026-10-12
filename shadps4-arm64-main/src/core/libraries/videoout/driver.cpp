@@ -26,6 +26,12 @@
 #include "video_core/renderer_vulkan/vk_scheduler.h"
 #if defined(SHADPS4_VISIONOS)
 #include "core/vr/openxr_host.h"
+#ifdef SHADPS4_VPENGINE_RENDERER
+#include "vpengine_renderer.h"
+#endif
+#ifdef SHADPS4_VPENGINE_SHADER_CHECK
+#include "vpengine_shader_check.h"
+#endif
 #endif
 
 extern std::unique_ptr<Vulkan::Presenter> presenter;
@@ -314,6 +320,15 @@ void VideoOutDriver::Flip(const Request& req) {
             note_flip();
             // (Frames that are put on a window are counted where that is done.)
             FrameStats::EndFrame();
+            // Headset frames never reach Presenter::Present: VPEngine's frame ends here too.
+#ifdef SHADPS4_VPENGINE_SHADER_CHECK
+            VpengineShaderCheck::EndFrame();
+#endif
+#ifdef SHADPS4_VPENGINE_RENDERER
+            if (VpengineRenderer::Enabled()) {
+                VpengineRenderer::EndFrame();
+            }
+#endif
             FinishFlip(req.port, req.index, req.flip_arg, req.eop, req.lock_generation);
             return;
         }
