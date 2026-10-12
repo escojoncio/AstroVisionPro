@@ -46,7 +46,7 @@ Compactada el 2026-10-11: lo resuelto queda en «Histórico» como una línea; e
   `vk_rasterizer.cpp` `NoteVpengineDraw` (Draw y DrawIndirect, tras tener pipeline: hashes de `GetStages()`) y
   `NoteDispatch` (DispatchDirect antes del HLE, DispatchIndirect); `vk_presenter.cpp` `Present` → `EndFrame`. Cada 10 s:
   `VPENGINE_DRAWS: N frames, per frame D draws (X% with every shader running in VPEngine, Y% waiting …)` + hasta 8
-  líneas `VPENGINE_DRAWS   blocked by <st>_<hash>: n per frame (motivo)`. Traductor: VPEngine 414c441 (semántica
+  líneas `VPENGINE_DRAWS   blocked by <st>_<hash>: n per frame (motivo)`. Traductor: VPEngine 55e09c4 (semántica
   exacta validada con test diferencial, también con control de flujo; LDS de píxel como memoria por carril: 174/174 del
   corpus; stores tipados y formatos empaquetados; `image_get_lod`).
 
