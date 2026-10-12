@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include "video_core/rasterizer_interface.h"
 #include <array>
 #include <memory>
 #include <mutex>
@@ -33,7 +34,7 @@ class Scheduler;
 class RenderState;
 class GraphicsPipeline;
 
-class Rasterizer {
+class Rasterizer final : public VideoCore::RasterizerInterface {
 public:
     explicit Rasterizer(const Instance& instance, Scheduler& scheduler,
                         AmdGpu::Liverpool* liverpool);
@@ -63,32 +64,32 @@ public:
         return texture_cache;
     }
 
-    void Draw(bool is_indexed, u32 index_offset = 0);
+    void Draw(bool is_indexed, u32 index_offset = 0) override;
     void DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u32 size, u32 max_count,
-                      VAddr count_address);
+                      VAddr count_address) override;
 
-    void DispatchDirect();
-    void DispatchIndirect(VAddr address, u32 offset, u32 size);
+    void DispatchDirect() override;
+    void DispatchIndirect(VAddr address, u32 offset, u32 size) override;
 
-    void ScopeMarkerBegin(const std::string_view& str, bool from_guest = false);
-    void ScopeMarkerEnd(bool from_guest = false);
-    void ScopedMarkerInsert(const std::string_view& str, bool from_guest = false);
+    void ScopeMarkerBegin(const std::string_view& str, bool from_guest = false) override;
+    void ScopeMarkerEnd(bool from_guest = false) override;
+    void ScopedMarkerInsert(const std::string_view& str, bool from_guest = false) override;
     void ScopedMarkerInsertColor(const std::string_view& str, const u32 color,
-                                 bool from_guest = false);
+                                 bool from_guest = false) override;
 
-    void FillBuffer(VAddr address, u32 num_bytes, u32 value, bool is_gds);
-    void CopyBuffer(VAddr dst, VAddr src, u32 num_bytes, bool dst_gds, bool src_gds);
-    u32 ReadDataFromGds(u32 gsd_offset);
-    bool InvalidateMemory(VAddr addr, u64 size);
-    bool ReadMemory(VAddr addr, u64 size);
-    bool IsMapped(VAddr addr, u64 size);
-    void MapMemory(VAddr addr, u64 size);
-    void UnmapMemory(VAddr addr, u64 size);
+    void FillBuffer(VAddr address, u32 num_bytes, u32 value, bool is_gds) override;
+    void CopyBuffer(VAddr dst, VAddr src, u32 num_bytes, bool dst_gds, bool src_gds) override;
+    u32 ReadDataFromGds(u32 gsd_offset) override;
+    bool InvalidateMemory(VAddr addr, u64 size) override;
+    bool ReadMemory(VAddr addr, u64 size) override;
+    bool IsMapped(VAddr addr, u64 size) override;
+    void MapMemory(VAddr addr, u64 size) override;
+    void UnmapMemory(VAddr addr, u64 size) override;
 
-    void CpSync();
-    u64 Flush();
-    void Finish();
-    void OnSubmit();
+    void CpSync() override;
+    u64 Flush() override;
+    void Finish() override;
+    void OnSubmit() override;
 
     PipelineCache& GetPipelineCache() {
         return pipeline_cache;

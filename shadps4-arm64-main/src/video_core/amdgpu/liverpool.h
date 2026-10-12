@@ -29,6 +29,9 @@
 namespace Vulkan {
 class Rasterizer;
 }
+namespace VideoCore {
+class RasterizerInterface;
+}
 
 namespace Libraries::VideoOut {
 struct VideoOutPort;
@@ -100,7 +103,7 @@ public:
         vo_port = port;
     }
 
-    void BindRasterizer(Vulkan::Rasterizer* rasterizer_) {
+    void BindRasterizer(VideoCore::RasterizerInterface* rasterizer_) {
         rasterizer = rasterizer_;
     }
 
@@ -260,7 +263,7 @@ private:
         static std::array<u8, 48_KB> constants_heap;
     } cblock{};
 
-    Vulkan::Rasterizer* rasterizer{};
+    VideoCore::RasterizerInterface* rasterizer{};
     Libraries::VideoOut::VideoOutPort* vo_port{};
     std::jthread process_thread{};
     std::atomic<u32> num_submits{};
