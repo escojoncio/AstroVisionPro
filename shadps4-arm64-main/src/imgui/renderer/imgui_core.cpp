@@ -159,6 +159,10 @@ void Initialize(const ::Vulkan::Instance& instance, const Frontend::WindowSDL& w
 }
 
 void OnResize() {
+    // No context: the renderer never started ImGui (VPEngine on visionOS draws no overlay).
+    if (GetCurrentContext() == nullptr) {
+        return;
+    }
     Sdl::OnResize();
 }
 
@@ -188,6 +192,10 @@ void Shutdown(const vk::Device& device) {
 }
 
 bool ProcessEvent(SDL_Event* event) {
+    // No context (see OnResize): every event belongs to the game.
+    if (GetCurrentContext() == nullptr) {
+        return false;
+    }
     Sdl::ProcessEvent(event);
     switch (event->type) {
     // Don't block release/up events
