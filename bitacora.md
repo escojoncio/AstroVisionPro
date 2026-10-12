@@ -287,3 +287,10 @@ Datos de los logs del visor (Vision Pro M2), ASTRO BOT, KosmicKrisp salvo donde 
 
 ## 2026-10-12 · Diagnóstico de ojos negros
 - `vpengine_renderer.mm` `Present::ComposeEyes`: cada 600 frames, línea `VPENGINE_PRESENT eye N overlaps: ...` con `Renderer::describeAt` (targets/imágenes GPU que solapan la memoria del ojo). Necesita VPEngine con `describeAt` (commit vpps4 del mismo día).
+
+## 2026-10-12 · VPEngine: rendimiento en el mundo (~6 fps en log 18:39)
+- `vpengine_renderer.mm`: `cachedSpan` (caché de 128 pares ventana→span, se vacía en `MapMemory`/`UnmapMemory`) sustituye a `mappedSpan` (bucle de `vm_region_64`) en `hooks.region` y `readable`, que se llaman por binding y por draw.
+- `FillBuffer`/`CopyBuffer` (no GDS): submit + `waitIdle` solo si `Renderer::gpuMayAccess` dice que el rango solapa trabajo GPU pendiente; tras cada `waitIdle` → `Renderer::gpuIdle()`. Línea `VPENGINE_GPU dma: N packets without a GPU wait, M after one` cada 120 submits.
+- `leftOut`: además del primero, cuenta en 1000/10000/100000/cada millón (`draws left out: ... xN`), para cuantificar GS/ES/LS y fast clear.
+- `visionos/vpengine-gpu.ref` → VPEngine 8de52d2 (gpuMayAccess/gpuIdle, hash de texturas limitado, volcado `vpps4.shader dump`).
+- Próximo log: comprobar fps del mundo, proporción dma sin/con espera, y copiar las líneas `vpps4.shader dump` de los 2 VS rechazados.
