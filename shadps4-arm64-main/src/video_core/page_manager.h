@@ -12,6 +12,9 @@
 namespace Vulkan {
 class Rasterizer;
 }
+namespace VideoCore {
+class RasterizerInterface;
+}
 
 namespace VideoCore {
 
@@ -26,7 +29,7 @@ class PageManager {
     static constexpr size_t PAGES_PER_LOCK = NUM_PAGES_PER_REGION;
 
 public:
-    explicit PageManager(Vulkan::Rasterizer* rasterizer);
+    explicit PageManager(VideoCore::RasterizerInterface* rasterizer);
     ~PageManager();
 
     /// Register a range of mapped gpu memory.
