@@ -135,6 +135,9 @@ bool Rasterizer::FilterDraw() {
             LOG_INFO(Render_Vulkan, "TRACE resolve cb0={:#x} -> cb1={:#x}",
                      regs.color_buffers[0].Address(), regs.color_buffers[1].Address());
         }
+#ifdef SHADPS4_VPENGINE_RENDERER
+        if (VpengineRenderer::Enabled()) VpengineRenderer::Resolve(regs);
+#endif
         Resolve();
         return false;
     }
