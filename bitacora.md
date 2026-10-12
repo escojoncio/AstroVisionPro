@@ -30,6 +30,14 @@ Compactada el 2026-10-11: lo resuelto queda en «Histórico» como una línea; e
   SPIRV-Headers toml11 xbyak zydis vma miniz half json xxhash tracy dear_imgui sdl3), `miniz_export.h` vacío.
   `vk_presenter.cpp` da 2 errores ajenos de ImGui (ImVec2). Los .mm no se pueden comprobar aquí.
 - Comprobar que el visor tiene la build nueva: `VPENGINE_GPU renderer on` al arrancar.
+- Log 17:49 (build 4031edc): menú y precarga del primer mundo con imagen negra; crash en `strncpy` HLE escribiendo en
+  página protegida (`ASTRO_FAULT_LOOP` protection=1). Causa: las vigilancias de página de las texturas subidas
+  (mprotect) → (1) Metal rechaza el buffer no-copy de la ventana `0x706c000000` con páginas de solo lectura
+  (`gpu.err what=buffer`, ~40 `missing_resources` por submit → draws perdidos → negro); (2) bucle de fallos.
+  Arreglo: sin vigilancias (`e.uploaded = nullptr`); VPEngine detecta escrituras de CPU por contenido
+  (vpps4 `Texture::check`: 16 líneas muestreadas por frame de uso + hash completo cada 30 frames). Anillo 32 MB
+  (había `upload ring full`). Stats del log: ~80 draws/frame, 96 % hechos, 0 indirectos; saltos: pipeline compilando,
+  vertex shader no traducido (764), ES/LS, fast clear; detile sin cubrir: depth_2d_thin_64 con split, thick_1d.
 - Build df55ba5 (log 17:30): arranca con VPEngine (`VPENGINE_GPU renderer on`, M2, bindless) y cae en el primer
   evento SDL: `imgui_impl_sdl3.cpp:384` (ImGui sin iniciar: lo iniciaba el swapchain de Vulkan). Arreglo:
   `imgui_core.cpp` `ProcessEvent`/`OnResize` salen si `GetCurrentContext() == nullptr`. Las capas ImGui (IME, diálogos
