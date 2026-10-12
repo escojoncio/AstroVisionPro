@@ -6,6 +6,18 @@ App visionOS en `visionos/` (SwiftUI + Compositor Services + ARKit + GameControl
 JIT: arena RWX preparada por StikDebug (protocolo `brk #0xf00d` + universal.js); la app hace detach al terminar.
 Compactada el 2026-10-11: lo resuelto queda en «Histórico» como una línea; el detalle está en el historial de git de este fichero (`git log -p bitacora.md`).
 
+## Rendimiento del mundo (2026-10-12, noche; sin build)
+- Log 19:05: menú ~49 fps, mundo ~8.5 fps con GPU 0.7–0.8 ms por submit → límite en CPU del hilo GPU y esperas.
+- `vpengine_renderer.mm` (`Engine`): `MetalOptions::framesInFlight = 6` (antes 3: con ~15 submits por imagen la CPU
+  esperaba a la GPU cada pocos submits); `syncForDma()` (DMA: espera solo si hay solape; submit previo solo si el
+  solape está en lo grabado sin enviar, si no `waitGpu` + `submittedIdle`); `waitGpu(WaitDma/Gds/Finish)`;
+  `spanCache().clear()` como mucho cada ~8 ms (antes en cada submit → syscalls vm_region tras cada uno);
+  línea `VPENGINE_GPU cpu:` cada ~2 s (draw_adapter, vpps4.draw, shader lookup, bind, pipeline request, frame
+  compile+submit, dma/gds/finish wait con recuentos, submits vacíos, µs por draw, user data reutilizada).
+- VPEngine a53f173 (`visionos/vpengine-gpu.ref`): rangos busy retiran por frame completado, BarrierPlacer sin
+  O(n²), memo de programKey, dedupe de user data, submits vacíos omitidos, anillos 8×16 MB.
+- Siguiente: con el log nuevo, leer `VPENGINE_GPU cpu:` y `VPENGINE_GPU dma:` (proporción con espera debería bajar).
+
 ## Estado (2026-10-12, tarde) y siguiente sesión
 - **Crash al entrar al primer mundo (ASTRO BOT, VPEngine)**: `liverpool.cpp:365 PM4 packet exceeds remaining`,
   registros PM4 basura, shaders `undecodable word 0x00000000` y `TryWriteBacking 0x7000000000`. Causa:
