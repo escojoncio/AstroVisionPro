@@ -110,9 +110,11 @@ struct SpanCache {
     std::mutex m;
     std::array<Entry, 128> entries{};
     unsigned used = 0, next = 0, last = 0;
+    u64 gen = 0;  // bumped by clear(): a span looked up before it is not inserted after it
     void clear() {
         std::scoped_lock l{m};
         used = next = last = 0;
+        ++gen;
     }
 };
 SpanCache& spanCache() {
@@ -122,8 +124,10 @@ SpanCache& spanCache() {
 
 bool cachedSpan(u64 address, u64 from, u64 to, u64& begin, u64& end) {
     SpanCache& c = spanCache();
+    u64 gen0 = 0;
     {
         std::scoped_lock l{c.m};
+        gen0 = c.gen;
         const auto hit = [&](const SpanCache::Entry& x) {
             return x.from == from && x.to == to && address >= x.begin && address < x.end;
         };
@@ -142,6 +146,7 @@ bool cachedSpan(u64 address, u64 from, u64 to, u64& begin, u64& end) {
     }
     if (!mappedSpan(address, from, to, begin, end)) return false;  // (misses are not cached)
     std::scoped_lock l{c.m};
+    if (c.gen != gen0) return true;  // the map changed meanwhile: use it this once, keep it out
     const unsigned k = c.used < c.entries.size() ? c.used++ : (c.next++ % unsigned(c.entries.size()));
     c.entries[k] = {from, to, begin, end};
     c.last = k;
@@ -249,6 +254,9 @@ struct Engine {
     void submit() {
         if (!renderer) return;
         ++submits;
+        // Guest mappings can change without Map/UnmapMemory (a munmap or protection change of
+        // the title's): spans are looked up again from each submit on (a few syscalls).
+        spanCache().clear();
         if (submits % kEvery == 1)
             LOG_INFO(Render_Vulkan, "VPENGINE_GPU dma: {} packets without a GPU wait, {} after one (so far)", dmaUnsynced,
                      dmaSynced);
