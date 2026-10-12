@@ -15,10 +15,12 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <set>
 #include <span>
 #include <string>
 #include <vector>
 
+#include <fmt/ranges.h>
 #include "common/logging/log.h"
 #include "core/libraries/videoout/buffer.h"
 #include "vpengine_xr.h"
@@ -205,6 +207,70 @@ struct Engine {
     bool failed = false;
     u64 dmaUnsynced = 0, dmaSynced = 0;  // DMA packets done on the CPU without / after a GPU wait
 
+    // CPU time of the GPU thread, in ns, printed every ~2 s (VPENGINE_GPU cpu:). Atomics: the
+    // presenter submits too, and draw timers stop after the engine lock is released.
+    using Clock = std::chrono::steady_clock;
+    enum Wait : unsigned { WaitDma, WaitGds, WaitFinish, WaitKinds };
+    std::atomic<u64> adapterNs{0}, adapterCalls{0}, submitNs{0}, dmaSubmits{0};
+    std::array<std::atomic<u64>, WaitKinds> waitNs{}, waits{};
+    Clock::time_point lastReport = Clock::now();
+    Clock::time_point lastSpanClear = Clock::now();
+    static u64 nsSince(Clock::time_point t) {
+        return u64(std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now() - t).count());
+    }
+    struct Timer {
+        std::atomic<u64>& to;
+        Clock::time_point t0 = Clock::now();
+        ~Timer() { to.fetch_add(nsSince(t0), std::memory_order_relaxed); }
+    };
+    // Waits for every submitted frame (the caller submitted first when it needs recorded work too).
+    void waitGpu(Wait why) {
+        const auto t0 = Clock::now();
+        backend->waitIdle();
+        waitNs[why].fetch_add(nsSince(t0), std::memory_order_relaxed);
+        waits[why].fetch_add(1, std::memory_order_relaxed);
+    }
+    // CPU-side DMA over guest [a, +n) (and [b, +m)): waits only when GPU work may touch it, and
+    // submits first only when the overlap is in work not submitted yet.
+    void syncForDma(u64 a, u64 n, u64 b = 0, u64 m = 0) {
+        const bool any = renderer->gpuMayAccess(a, n) || (m && renderer->gpuMayAccess(b, m));
+        if (!any) {
+            ++dmaUnsynced;
+            return;
+        }
+        ++dmaSynced;
+        if (renderer->recordedMayAccess(a, n) || (m && renderer->recordedMayAccess(b, m))) {
+            ++dmaSubmits;
+            submit();
+            waitGpu(WaitDma);
+            renderer->gpuIdle();
+        } else {
+            waitGpu(WaitDma);
+            renderer->submittedIdle();  // (work recorded since keeps its ranges)
+        }
+    }
+    void report() {
+        const double s = std::chrono::duration<double>(Clock::now() - lastReport).count();
+        if (s < 2.0 || !renderer) return;
+        lastReport = Clock::now();
+        const vpps4::CpuTimes t = renderer->takeCpuTimes();
+        auto msps = [&](u64 ns) { return double(ns) / 1e6 / s; };
+        auto take = [](std::atomic<u64>& a) { return a.exchange(0, std::memory_order_relaxed); };
+        const u64 calls = take(adapterCalls), adapter = take(adapterNs), sub = take(submitNs);
+        const u64 wd = take(waitNs[WaitDma]), wg = take(waitNs[WaitGds]), wf = take(waitNs[WaitFinish]);
+        const u64 nd = take(waits[WaitDma]), ng = take(waits[WaitGds]), nf = take(waits[WaitFinish]);
+        LOG_INFO(Render_Vulkan,
+                 "VPENGINE_GPU cpu: draw_adapter {:.1f} ms/s, vpps4.draw {:.1f}, shader lookup {:.1f}, bind {:.1f}, "
+                 "pipeline request {:.1f}, frame compile+submit {:.1f} (vpps4 {:.1f}; {:.0f} submits/s, {:.0f} empty/s), "
+                 "dma_wait {:.1f} ({:.0f}/s, {:.0f} with submit/s), gds_wait {:.1f} ({:.0f}/s), finish_wait {:.1f} ({:.0f}/s), "
+                 "draws {:.0f}/s, per-draw {:.2f} us adapter / {:.2f} us vpps4, user data reused {:.0f}/s",
+                 msps(adapter), t.drawMs / s, t.shaderMs / s, t.bindMs / s, t.pipelineMs / s, msps(sub),
+                 t.submitMs / s, double(t.submits) / s, double(t.emptySubmits) / s, msps(wd), double(nd) / s,
+                 double(take(dmaSubmits)) / s, msps(wg), double(ng) / s, msps(wf), double(nf) / s, double(calls) / s,
+                 calls ? double(adapter) / 1e3 / double(calls) : 0.0, t.calls ? t.drawMs * 1e3 / double(t.calls) : 0.0,
+                 double(t.userDataReused) / s);
+    }
+
     static constexpr u64 kEvery = 120;  // per-frame lines of the core every kEvery submits
     void log(const std::string& line) {
         const bool error = line.rfind("gpu.err", 0) == 0 || line.rfind("vpps4.shader error", 0) == 0;
@@ -219,7 +285,12 @@ struct Engine {
 
     bool start() {
         if (renderer || failed) return renderer != nullptr;
-        backend = std::make_unique<vpgpu::metal::MetalBackend>(shaders, [this](const std::string& l) { log(l); });
+        // Liverpool submits ~15 command buffers per presented frame: with only 3 in flight the CPU
+        // blocked on the GPU's latency every few submits. vpps4's upload rings (8) cover 6 + 1.
+        vpgpu::metal::MetalOptions options;
+        options.framesInFlight = 6;
+        backend = std::make_unique<vpgpu::metal::MetalBackend>(shaders, [this](const std::string& l) { log(l); },
+                                                               options);
         if (!backend->ok()) {
             failed = true;
             LOG_CRITICAL(Render_Vulkan, "VPENGINE_GPU no Metal device: nothing can be drawn");
@@ -255,12 +326,20 @@ struct Engine {
         if (!renderer) return;
         ++submits;
         // Guest mappings can change without Map/UnmapMemory (a munmap or protection change of
-        // the title's): spans are looked up again from each submit on (a few syscalls).
-        spanCache().clear();
+        // the title's): spans are looked up again (vm_region syscalls, tens per span). Once per
+        // ~8 ms rather than at each of the ~15 Liverpool submits of a frame.
+        if (nsSince(lastSpanClear) > 8'000'000) {
+            spanCache().clear();
+            lastSpanClear = Clock::now();
+        }
         if (submits % kEvery == 1)
             LOG_INFO(Render_Vulkan, "VPENGINE_GPU dma: {} packets without a GPU wait, {} after one (so far)", dmaUnsynced,
                      dmaSynced);
-        renderer->submit();
+        {
+            Timer t{submitNs};
+            renderer->submit();
+        }
+        report();
     }
 };
 
@@ -305,6 +384,58 @@ void leftOut(const char* why) {
     if (n == 1) LOG_INFO(Render_Vulkan, "VPENGINE_GPU first draw left out: {}", why);
     else if (n == 1000 || n == 10000 || n == 100000 || n % 1000000 == 0)
         LOG_INFO(Render_Vulkan, "VPENGINE_GPU draws left out: {} x{}", why, n);
+}
+
+// ES/LS (geometry / tessellation) draws are left out: log what they are, so the path can be
+// built from evidence (which colour target they write, whether a GS amplifies to layers, and
+// the ES/GS/copy-VS code words for .lift tests). Distinct (stages, CB0) pairs, first 8 only;
+// each program's words once.
+void describeGeometryDraw(const AmdGpu::Regs& regs) {
+    static std::mutex m;
+    static std::set<std::pair<u32, u64>> seen;
+    static std::set<u64> dumped;
+    std::scoped_lock l{m};
+    const u32 stages = u32(regs.stage_enable.raw);
+    const u64 cb0 = regs.color_buffers[0] ? u64(regs.color_buffers[0].Address()) : 0ull;
+    if (seen.size() >= 8 || !seen.insert({stages, cb0}).second) return;
+    u32 gsMode = 0, gsInst = 0, outPrim = 0;
+    std::memcpy(&outPrim, &regs.vgt_gs_out_prim_type, sizeof outPrim);
+    std::memcpy(&gsMode, &regs.vgt_gs_mode, sizeof gsMode);
+    std::memcpy(&gsInst, &regs.vgt_gs_instance_cnt, sizeof gsInst);
+    std::string cbs;
+    for (unsigned i = 0; i < 8; ++i) {
+        const auto& cb = regs.color_buffers[i];
+        if (!cb) continue;
+        cbs += fmt::format(" cb{}@{:#x} {}x{} pitch {} slices {}+{} fmt {}/{}", i, u64(cb.Address()), u32(cb.Pitch()),
+                           u32(cb.Height()), u32(cb.Pitch()), u32(cb.BaseSlice()), u32(cb.NumSlices()),
+                           u32(cb.info.format), u32(cb.info.number_type));
+    }
+    LOG_INFO(Render_Vulkan,
+             "VPENGINE_GEOM stages {:#x} (ls {} hs {} es {} gs {} vs {}) gs_mode {:#x} gs_instances {:#x} out_prim {} "
+             "max_vert {} esgs_item {} gsvs_item {} vert_item {}/{}/{}/{} prim {}{}",
+             stages, u32(regs.stage_enable.ls_en), u32(regs.stage_enable.hs_en), u32(regs.stage_enable.es_en),
+             u32(regs.stage_enable.gs_en), u32(regs.stage_enable.vs_en), gsMode, gsInst,
+             outPrim, u32(regs.vgt_gs_max_vert_out), u32(regs.vgt_esgs_ring_itemsize),
+             u32(regs.vgt_gsvs_ring_itemsize), u32(regs.vgt_gs_vert_itemsize[0]), u32(regs.vgt_gs_vert_itemsize[1]),
+             u32(regs.vgt_gs_vert_itemsize[2]), u32(regs.vgt_gs_vert_itemsize[3]), u32(regs.primitive_type), cbs);
+    auto dump = [&](const char* name, const AmdGpu::ShaderProgram& prog) {
+        if (!prog.Address<u32*>()) return;
+        const auto params = AmdGpu::GetParams(prog);
+        const u64 key = reinterpret_cast<u64>(params.code.data());
+        LOG_INFO(Render_Vulkan, "VPENGINE_GEOM {} @{:#x} user_sgprs {} words {} user_data {:08x}", name, key,
+                 u32(prog.settings.num_user_regs), params.code.size(),
+                 fmt::join(std::span(prog.user_data.data(), 16), " "));
+        if (!dumped.insert(key).second) return;
+        for (size_t at = 0; at < params.code.size(); at += 128)
+            LOG_INFO(Render_Vulkan, "VPENGINE_GEOM {} @{:#x} code@{}: {:08x}", name, key, at,
+                     fmt::join(params.code.subspan(at, std::min<size_t>(128, params.code.size() - at)), " "));
+    };
+    if (regs.stage_enable.ls_en) dump("ls", regs.ls_program);
+    if (regs.stage_enable.hs_en) dump("hs", regs.hs_program);
+    if (regs.stage_enable.es_en) dump("es", regs.es_program);
+    if (regs.stage_enable.gs_en) dump("gs", regs.gs_program);
+    dump("vs", regs.vs_program);
+    dump("ps", regs.ps_program);
 }
 
 } // namespace
@@ -402,6 +533,8 @@ Rasterizer::~Rasterizer() {
 }
 
 void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
+    Engine::Timer timer{engine().adapterNs};
+    engine().adapterCalls.fetch_add(1, std::memory_order_relaxed);
     const auto& regs = impl->liverpool->regs;
     using Mode = AmdGpu::ColorControl::OperationMode;
     switch (regs.color_control.mode) {
@@ -420,7 +553,10 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
     }
     if (regs.primitive_type == AmdGpu::PrimitiveType::None) return;
     if (regs.stage_enable.es_en || regs.stage_enable.ls_en || regs.stage_enable.gs_en || regs.stage_enable.hs_en)
+    {
+        describeGeometryDraw(regs);
         return leftOut("geometry / tessellation pipeline (ES/LS stages)");
+    }
 
     Engine& e = engine();
     std::scoped_lock g{e.lock};
@@ -554,6 +690,8 @@ void Rasterizer::DispatchIndirect(VAddr address, u32 offset, u32) {
 }
 
 void Rasterizer::Dispatch(VAddr indirect) {
+    Engine::Timer timer{engine().adapterNs};
+    engine().adapterCalls.fetch_add(1, std::memory_order_relaxed);
     const auto& cs = impl->liverpool->GetCsRegs();
     if (cs.address == 0) return;
     Engine& e = engine();
@@ -588,7 +726,7 @@ void Rasterizer::FillBuffer(VAddr address, u32 num_bytes, u32 value, bool is_gds
     if (is_gds) {
         // GDS is ours and CPU-visible: the GPU's earlier work is finished first.
         e.submit();
-        e.backend->waitIdle();
+        e.waitGpu(Engine::WaitGds);
         e.renderer->gpuIdle();
         if (u32* gds = e.renderer->gds(); gds && address < 0x10000) {
             const u32 n = std::min<u32>(num_bytes, 0x10000 - u32(address)) / 4;
@@ -602,14 +740,7 @@ void Rasterizer::FillBuffer(VAddr address, u32 num_bytes, u32 value, bool is_gds
     // so the GPU's earlier work is finished first and then the bytes are written in place.
     // Only when queued GPU work may touch the range (the renderer keeps the guest ranges bound
     // since the GPU was last idle): otherwise the bytes are written at once, no submit, no wait.
-    if (e.renderer->gpuMayAccess(address, num_bytes)) {
-        e.submit();
-        e.backend->waitIdle();
-        e.renderer->gpuIdle();
-        ++e.dmaSynced;
-    } else {
-        ++e.dmaUnsynced;
-    }
+    e.syncForDma(address, num_bytes);
     // (a range the probe cannot vouch for, e.g. across its window, keeps the GPU blit)
     if (readable(address, num_bytes) < num_bytes) {
         e.renderer->fill(address, num_bytes, value);
@@ -629,7 +760,7 @@ void Rasterizer::CopyBuffer(VAddr dst, VAddr src, u32 num_bytes, bool dst_gds, b
     e.applyPending();
     if (dst_gds || src_gds) {
         e.submit();
-        e.backend->waitIdle();
+        e.waitGpu(Engine::WaitGds);
         e.renderer->gpuIdle();
         u32* gds = e.renderer->gds();
         if (!gds) return;
@@ -647,14 +778,7 @@ void Rasterizer::CopyBuffer(VAddr dst, VAddr src, u32 num_bytes, bool dst_gds, b
         return;
     }
     // On the CPU and in order, for the same reason as FillBuffer (synced only when needed).
-    if (e.renderer->gpuMayAccess(src, num_bytes) || e.renderer->gpuMayAccess(dst, num_bytes)) {
-        e.submit();
-        e.backend->waitIdle();
-        e.renderer->gpuIdle();
-        ++e.dmaSynced;
-    } else {
-        ++e.dmaUnsynced;
-    }
+    e.syncForDma(src, num_bytes, dst, num_bytes);
     if (readable(src, num_bytes) < num_bytes || readable(dst, num_bytes) < num_bytes) {
         e.renderer->copy(dst, src, num_bytes);
         return;
@@ -743,7 +867,7 @@ void Rasterizer::Finish() {
     std::scoped_lock g{e.lock};
     e.applyPending();
     e.submit();
-    if (e.backend) e.backend->waitIdle();
+    if (e.backend) e.waitGpu(Engine::WaitFinish);
     if (e.renderer) e.renderer->gpuIdle();
 }
 
@@ -943,7 +1067,23 @@ int ComposeEyes(std::span<const AmdGpu::Image, 2> eye_textures, const Core::Vr::
         std::array<u32, 8> words{};
         std::memcpy(words.data(), &eye_textures[k], std::min(sizeof words, sizeof(AmdGpu::Image)));
         const vpps4::ImageDesc d = vpps4::decodeImage(words);
-        eyes[k] = PresentState::plain(PresentState::textureOf(e, d));
+        // A T# at slice k > 0 of an array colour target (stereo eyes as the two slices of one
+        // target): that slice as a 2D view. Slice 0 is the target's own address (textureOf).
+        u16 slice = 0;
+        const vpgpu::TextureId arrayTarget = e.renderer->colorTargetAt(d.address)
+                                                 ? vpgpu::TextureId{}
+                                                 : e.renderer->colorTargetSlice(d.address, d.width, d.height, slice);
+        if (arrayTarget) {
+            id<MTLTexture> t = (__bridge id<MTLTexture>)e.backend->nativeTexture(arrayTarget);
+            eyes[k] = t && t.textureType == MTLTextureType2DArray && slice < t.arrayLength
+                          ? [t newTextureViewWithPixelFormat:t.pixelFormat
+                                                 textureType:MTLTextureType2D
+                                                      levels:NSMakeRange(0, 1)
+                                                      slices:NSMakeRange(slice, 1)]
+                          : nil;
+        } else {
+            eyes[k] = PresentState::plain(PresentState::textureOf(e, d));
+        }
         // A picture the console reads as sRGB through a format Metal has no sRGB form of.
         encoded[k] = eyes[k] && d.numFormat == 9 && !PresentState::isSrgb(eyes[k].pixelFormat);
         if (k == 0) {
@@ -953,9 +1093,9 @@ int ComposeEyes(std::span<const AmdGpu::Image, 2> eye_textures, const Core::Vr::
         // Where the eye comes from: a colour target VPEngine drew, or an image filled from guest
         // memory / written by compute (first frames and every 600).
         if (impl->frames % 600 == 0)
-            LOG_INFO(Render_Vulkan, "VPENGINE_PRESENT eye {} T# {:#x} tile {} pitch {} fmt {}/{} {}x{} colour_target={}", k,
+            LOG_INFO(Render_Vulkan, "VPENGINE_PRESENT eye {} T# {:#x} tile {} pitch {} fmt {}/{} {}x{} colour_target={} array_slice={}", k,
                      d.address, u32(d.tilingIndex), d.pitch, u32(d.dataFormat), u32(d.numFormat), d.width, d.height,
-                     bool(e.renderer->colorTargetAt(d.address)));
+                     bool(e.renderer->colorTargetAt(d.address)), arrayTarget ? int(slice) : -1);
         // What VPEngine holds on the GPU over the eye's memory (targets inside a bigger or
         // neighbouring surface, shader-written images of another format): the eye's real producer.
         if (impl->frames % 600 == 0)
