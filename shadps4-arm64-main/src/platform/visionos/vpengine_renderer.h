@@ -1,37 +1,89 @@
-// VPEngine renderer, shadow mode («Motor gráfico: VPEngine (sombra)»): every draw and dispatch the
-// emulator records is also turned into VPEngine work (vpps4::Renderer: lifted GCN shaders, Metal
-// pipelines, guest memory used in place) and run on the GPU through VPEngine's own Metal backend.
-// The picture still comes from the Vulkan path; the log reports what VPEngine ran and what it cost
-// ("VPENGINE_GPU ..." lines: draws run / skipped and why, encoders, GPU ms per frame).
+// VPEngine: the only renderer on visionOS. Liverpool's draws, dispatches, DMA and memory events
+// go to VpengineRasterizer (VideoCore::RasterizerInterface), which turns them into VPEngine work
+// (vpps4::Renderer: lifted GCN shaders, Metal pipelines, guest memory used in place) on VPEngine's
+// own Metal backend. Present:: draws the headset's frames: the eyes' colour targets side by side,
+// in the compositor's Metal textures (core/vr/openxr_host_visionos.mm); vpengine_presenter.h hands
+// them to videoout/driver.cpp.
+// There is no Vulkan device: KosmicKrisp and MoltenVK are not used.
+//
+// Log lines: "VPENGINE_GPU ..." (draws run / skipped and why, encoders, GPU ms per frame),
+// "VPENGINE_PRESENT ..." (headset frames).
 #pragma once
 
+#include <array>
 #include <cstdint>
+#include <memory>
+#include <span>
+#include <string_view>
 
 #include "common/types.h"
+#include "core/vr/vr_runtime.h"
+#include "video_core/rasterizer_interface.h"
 
-namespace Shader {
-struct Info;
-}
 namespace AmdGpu {
-union Regs;
-struct ComputeProgram;
+struct Liverpool;
+struct Image;
+}
+namespace Libraries::VideoOut {
+struct BufferAttributeGroup;
+}
+namespace VideoCore {
+class PageManager;
 }
 
 namespace VpengineRenderer {
 
-// SHADPS4_VPENGINE_RENDERER=1 (set by the app's graphics engine setting).
-bool Enabled();
+class Rasterizer final : public VideoCore::RasterizerInterface {
+public:
+    explicit Rasterizer(AmdGpu::Liverpool* liverpool);
+    ~Rasterizer() override;
 
-// After the Vulkan pipeline is known: its vertex and pixel stage infos (pixel may be null).
-void Draw(const AmdGpu::Regs& regs, const Shader::Info& vs, const Shader::Info* ps, bool indexed,
-          u32 index_offset);
-void Dispatch(const AmdGpu::ComputeProgram& program, const Shader::Info& cs);
-// CB_COLOR_CONTROL.MODE = RESOLVE: CB0 resolved into CB1 (a copy: VPEngine renders at 1 sample).
-void Resolve(const AmdGpu::Regs& regs);
-// (Indirect draws and dispatches are not run yet: their arguments live in GPU memory.)
-// The CPU wrote guest memory.
-void Invalidate(VAddr address, u64 size);
-// A frame was presented: VPEngine submits what it recorded since the last one.
-void EndFrame();
+    void Draw(bool is_indexed, u32 index_offset = 0) override;
+    void DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u32 size, u32 max_count,
+                      VAddr count_address) override;
+    void DispatchDirect() override;
+    void DispatchIndirect(VAddr address, u32 offset, u32 size) override;
+
+    void ScopeMarkerBegin(const std::string_view&, bool = false) override {}
+    void ScopeMarkerEnd(bool = false) override {}
+    void ScopedMarkerInsert(const std::string_view&, bool = false) override {}
+    void ScopedMarkerInsertColor(const std::string_view&, const u32, bool = false) override {}
+
+    void FillBuffer(VAddr address, u32 num_bytes, u32 value, bool is_gds) override;
+    void CopyBuffer(VAddr dst, VAddr src, u32 num_bytes, bool dst_gds, bool src_gds) override;
+    u32 ReadDataFromGds(u32 gds_offset) override;
+    bool InvalidateMemory(VAddr addr, u64 size) override;
+    bool ReadMemory(VAddr addr, u64 size) override;
+    bool IsMapped(VAddr addr, u64 size) override;
+    void MapMemory(VAddr addr, u64 size) override;
+    void UnmapMemory(VAddr addr, u64 size) override;
+
+    void CpSync() override {}
+    u64 Flush() override;
+    void Finish() override;
+    void OnSubmit() override {}
+
+    struct Impl;
+
+private:
+    void Dispatch(VAddr indirect);
+    VAddr pendingIndirect = 0;  // set while DrawIndirect runs Draw for one set of arguments
+    std::unique_ptr<Impl> impl;
+};
+
+// The headset's frames (used by vpengine_presenter.cpp, which hands them to videoout/driver.cpp):
+// what is drawn goes into one of the compositor's Metal textures; a slot index stands for it,
+// -1 when the host has none free (or nothing can be drawn).
+namespace Present {
+bool HasHeadset();
+int ComposeEyes(std::span<const AmdGpu::Image, 2> eye_textures, const Core::Vr::Fov& fov, u32& eye_width,
+                u32& eye_height);
+int ComposeScreen(const Libraries::VideoOut::BufferAttributeGroup& attribute, VAddr cpu_address,
+                  Core::Vr::Fov& fov, u32& eye_width, u32& eye_height);
+int ComposeTexture(const AmdGpu::Image& texture, Core::Vr::Fov& fov, u32& eye_width, u32& eye_height);
+/// Hands the frame of `slot` to the compositor once the GPU has drawn it (blocks until then).
+void Deliver(int slot, const Core::Vr::PresentedFrame& info);
+bool Finished(int slot);
+} // namespace Present
 
 } // namespace VpengineRenderer

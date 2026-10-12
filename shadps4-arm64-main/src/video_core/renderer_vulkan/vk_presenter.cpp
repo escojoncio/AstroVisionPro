@@ -4,9 +4,6 @@
 #ifdef SHADPS4_VPENGINE_SHADER_CHECK
 #include "vpengine_shader_check.h"
 #endif
-#ifdef SHADPS4_VPENGINE_RENDERER
-#include "vpengine_renderer.h"
-#endif
 #include "common/debug.h"
 #include "common/diagnostics.h"
 #include "common/elf_info.h"
@@ -1730,11 +1727,6 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame) {
         FrameStats::EndFrame();
 #ifdef SHADPS4_VPENGINE_SHADER_CHECK
         VpengineShaderCheck::EndFrame();
-#endif
-#ifdef SHADPS4_VPENGINE_RENDERER
-        if (VpengineRenderer::Enabled()) {
-            VpengineRenderer::EndFrame();
-        }
 #endif
     }
 

@@ -1,12 +1,18 @@
-// VPEngine renderer, shadow mode: see vpengine_renderer.h.
+// VPEngine: the only renderer on visionOS (see vpengine_renderer.h).
 #include "vpengine_renderer.h"
 
+#import <Metal/Metal.h>
 #include <mach/mach.h>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
+#include <chrono>
+#include <functional>
+#include <condition_variable>
 #include <cstdlib>
 #include <cstring>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <span>
@@ -14,11 +20,16 @@
 #include <vector>
 
 #include "common/logging/log.h"
-#include "shader_recompiler/frontend/fetch_shader.h"
-#include "shader_recompiler/info.h"
+#include "core/libraries/videoout/buffer.h"
+#include "core/vr/openxr_host.h"
+#include "video_core/amdgpu/liverpool.h"
 #include "video_core/amdgpu/regs.h"
+#include "video_core/amdgpu/resource.h"
+#include "video_core/page_manager.h"
 #include "vpgpu/core/device.h"
 #include "vpgpu/metal/metal_backend.h"
+#include "vpps4/fetch.h"
+#include "vpps4/formats.h"
 #include "vpps4/renderer.h"
 
 namespace VpengineRenderer {
@@ -89,6 +100,14 @@ bool mappedSpan(u64 address, u64 from, u64 to, u64& begin, u64& end) {
     return true;
 }
 
+// Bytes readable from `address` on (up to `want`), 0 if it is not mapped.
+u64 readable(u64 address, u64 want) {
+    const u64 from = address & ~(kWindow - 1);
+    u64 begin, end;
+    if (!mappedSpan(address, from, from + kWindow, begin, end)) return 0;
+    return std::min<u64>(want, end - address);
+}
+
 // MSL from the shader translator, as the Metal backend takes it (msl.h argument contract).
 vpgpu::metal::MslShader toMetal(const vpmsl::MslShader& s) {
     vpgpu::metal::MslShader m;
@@ -102,18 +121,26 @@ vpgpu::metal::MslShader toMetal(const vpmsl::MslShader& s) {
     return m;
 }
 
+// The engine: VPEngine's Metal backend, device and PS4 renderer, shared by the rasterizer (GPU
+// thread) and the presenter. Everything that records goes under `lock`.
 struct Engine {
     std::mutex lock;
     vpgpu::metal::ShaderTable shaders;
     std::unique_ptr<vpgpu::metal::MetalBackend> backend;
     std::unique_ptr<vpgpu::Device> device;
     std::unique_ptr<vpps4::Renderer> renderer;
-    std::atomic<u64> frames{0};
+    std::atomic<u64> submits{0};
     std::atomic<unsigned> errorLines{0};
+    std::function<void(u64, u64)> uploaded;  // set by the rasterizer: watch these guest pages
     // Invalidations come from the page-fault handler: queued without the engine lock (it may be
-    // held for long, or by the faulting thread itself) and applied before the next draw.
+    // held for long, or by the faulting thread itself) and applied before the next command.
     std::atomic_flag pendingLock = ATOMIC_FLAG_INIT;
     std::vector<std::pair<u64, u64>> pending;
+    void queueInvalidate(u64 a, u64 n) {
+        while (pendingLock.test_and_set(std::memory_order_acquire)) {}
+        if (pending.size() < 65536) pending.push_back({a, n});
+        pendingLock.clear(std::memory_order_release);
+    }
     void applyPending() {
         while (pendingLock.test_and_set(std::memory_order_acquire)) {}
         std::vector<std::pair<u64, u64>> work;
@@ -123,23 +150,15 @@ struct Engine {
             for (auto [a, n] : work) renderer->invalidate(a, n);
     }
     bool failed = false;
-    // A command buffer of ours failed on the GPU (hang, page fault): VPEngine stops recording for the
-    // rest of the session, so one bad shader cannot reset the GPU again and again. Set from Metal's
-    // completion thread, read under `lock`.
-    std::atomic<bool> gpuFault{false};
 
-    // Per-frame lines of the core ("gpu.frame/cut/pso/enc", GPU times) only every kEvery frames;
-    // errors always (up to 200 lines).
-    static constexpr u64 kEvery = 120;
+    static constexpr u64 kEvery = 120;  // per-frame lines of the core every kEvery submits
     void log(const std::string& line) {
         const bool error = line.rfind("gpu.err", 0) == 0 || line.rfind("vpps4.shader error", 0) == 0;
-        if (line.rfind("gpu.err what=command_buffer", 0) == 0 && !gpuFault.exchange(true))
-            LOG_WARNING(Render_Vulkan, "VPENGINE_GPU off for this session: a VPEngine command buffer failed on the GPU");
         if (error) {
             if (errorLines++ < 200) LOG_WARNING(Render_Vulkan, "VPENGINE_GPU {}", line);
             return;
         }
-        const u64 f = frames.load();
+        const u64 f = submits.load();
         if (line.rfind("gpu.", 0) == 0 && line.rfind("gpu.metal", 0) != 0 && f != 0 && f % kEvery != 1) return;
         LOG_INFO(Render_Vulkan, "VPENGINE_GPU {}", line);
     }
@@ -149,7 +168,7 @@ struct Engine {
         backend = std::make_unique<vpgpu::metal::MetalBackend>(shaders, [this](const std::string& l) { log(l); });
         if (!backend->ok()) {
             failed = true;
-            LOG_ERROR(Render_Vulkan, "VPENGINE_GPU no Metal device: shadow renderer off");
+            LOG_CRITICAL(Render_Vulkan, "VPENGINE_GPU no Metal device: nothing can be drawn");
             return false;
         }
         device = std::make_unique<vpgpu::Device>(*backend, 2, [this](const std::string& l) { log(l); });
@@ -165,19 +184,28 @@ struct Engine {
         };
         hooks.shader = [this](uint64_t id, vpir::Stage, const vpmsl::MslShader& s) { shaders.add(id, toMetal(s)); };
         hooks.log = [this](const std::string& l) { log(l); };
+        hooks.uploaded = [this](uint64_t a, uint64_t n) {
+            if (uploaded) uploaded(a, n);
+        };
         renderer = std::make_unique<vpps4::Renderer>(*device, std::move(hooks));
         renderer->setSummaryEvery(kEvery);
-        // No MSAA on VPEngine's path: antialiasing will be VPKTAA (temporal, 1 sample per pixel). The
-        // game's MSAA targets become single-sample; its resolves become copies.
+        // No MSAA: antialiasing is temporal (VPKTAA), 1 sample per pixel. The game's MSAA targets
+        // become single-sample; its resolves become copies.
         renderer->setMaxSamples(1);
-        LOG_INFO(Render_Vulkan, "VPENGINE_GPU msaa limit {} samples", renderer->maxSamples());
-        LOG_INFO(Render_Vulkan, "VPENGINE_GPU shadow renderer on (VPEngine runs every draw in Metal; the picture is still Vulkan's)");
+        LOG_INFO(Render_Vulkan, "VPENGINE_GPU renderer on (VPEngine draws everything in Metal; no Vulkan device)");
         return true;
+    }
+
+    // Ends the frame recorded so far (one Liverpool submit).
+    void submit() {
+        if (!renderer) return;
+        ++submits;
+        renderer->submit();
     }
 };
 
 Engine& engine() {
-    static Engine e;
+    static Engine& e = *new Engine;  // never destroyed: the rasterizer may outlive statics
     return e;
 }
 
@@ -208,47 +236,150 @@ vpps4::ColorTarget colorTarget(const AmdGpu::Regs& regs, unsigned i) {
     return c;
 }
 
-} // namespace
-
-bool Enabled() {
-    static const bool on = [] {
-        const char* v = std::getenv("SHADPS4_VPENGINE_RENDERER");
-        return v != nullptr && v[0] == '1';
-    }();
-    return on;
+// Counts of draws left out before the renderer, by reason (logged the first time each).
+void leftOut(const char* why) {
+    static std::mutex m;
+    static std::map<std::string, u64> counts;
+    std::scoped_lock l{m};
+    if (counts[why]++ == 0) LOG_INFO(Render_Vulkan, "VPENGINE_GPU first draw left out: {}", why);
 }
 
-void Draw(const AmdGpu::Regs& regs, const Shader::Info& vs, const Shader::Info* ps, bool indexed, u32 index_offset) {
-    Engine& e = engine();
-    std::lock_guard g(e.lock);
-    if (e.gpuFault.load() || !e.start()) return;
-    e.applyPending();
-    vpps4::DrawState d;
-    if (vs.stage != Shader::Stage::Vertex) {
-        // (tessellation / geometry pipelines: the vertex stage is an ES or LS program)
-        static std::atomic<bool> told{false};
-        if (!told.exchange(true)) LOG_INFO(Render_Vulkan, "VPENGINE_GPU first draw with ES/LS stages: such draws are left out");
-        return;
+} // namespace
+
+// ---- Rasterizer ---------------------------------------------------------------------------------
+
+struct Rasterizer::Impl {
+    AmdGpu::Liverpool* liverpool;
+    VideoCore::PageManager page_manager;
+    // Guest memory the title mapped for the GPU (MapMemory/UnmapMemory).
+    std::mutex mapped_mutex;
+    std::map<VAddr, u64> mapped;  // start -> end
+    // Ranges textures were filled from, watched for CPU writes (start -> size).
+    std::mutex watch_mutex;
+    std::map<VAddr, u64> watched;
+    // Ranges let go of lately: a second thread faulting on the same page finds the watch gone
+    // already, and its access must still count as handled.
+    std::array<std::pair<VAddr, u64>, 64> released{};
+    u32 released_next = 0;
+    bool recentlyReleased(VAddr a, u64 n) {
+        for (const auto& [s, z] : released)
+            if (z && s < a + n && s + z > a) return true;
+        return false;
     }
 
-    // Targets.
-    for (unsigned i = 0; i < 8; ++i) {
-        const auto& cb = regs.color_buffers[i];
-        if (!cb) continue;
-        vpps4::ColorTarget& c = d.color[i];
-        c = colorTarget(regs, i);
-        c.writeMask = uint8_t(regs.color_target_mask.GetMask(i) & regs.color_shader_mask.GetMask(i));
-        const auto& b = regs.blend_control[i];
-        vpps4::Blend& bl = d.blend[i];
-        bl.enable = b.enable;
-        bl.separateAlpha = b.separate_alpha_blend;
-        bl.colorSrc = uint8_t(b.color_src_factor);
-        bl.colorDst = uint8_t(b.color_dst_factor);
-        bl.colorFunc = uint8_t(b.color_func);
-        bl.alphaSrc = uint8_t(b.alpha_src_factor);
-        bl.alphaDst = uint8_t(b.alpha_dst_factor);
-        bl.alphaFunc = uint8_t(b.alpha_func);
+    Impl(Rasterizer* self, AmdGpu::Liverpool* lp) : liverpool{lp}, page_manager{self} {}
+
+    bool isMapped(VAddr addr, u64 size) {
+        if (size == 0 || addr > ~u64(0) - size) return false;
+        std::scoped_lock l{mapped_mutex};
+        auto it = mapped.upper_bound(addr);
+        if (it == mapped.begin()) return false;
+        --it;
+        return addr >= it->first && addr + size <= it->second;
     }
+
+    void watch(VAddr a, u64 n) {
+        if (!isMapped(a, n)) return;
+        {
+            std::scoped_lock l{watch_mutex};
+            auto [it, inserted] = watched.try_emplace(a, n);
+            if (!inserted) {
+                if (it->second == n) return;  // already watched
+                page_manager.UpdatePageWatchers<false>(a, it->second);
+                it->second = n;
+            }
+        }
+        page_manager.UpdatePageWatchers<true>(a, n);
+    }
+
+    // CPU wrote [a, a + n): textures read from there are refilled, their watches dropped (the
+    // pages are written freely until a texture is filled from them again).
+    bool invalidate(VAddr a, u64 n) {
+        std::vector<std::pair<VAddr, u64>> hit;
+        {
+            std::scoped_lock l{watch_mutex};
+            // (a texture starts at most 1 GiB below what it spans)
+            auto it = watched.lower_bound(a > (1ull << 30) ? a - (1ull << 30) : 0);
+            while (it != watched.end() && it->first < a + n) {
+                if (it->first + it->second > a) {
+                    hit.push_back(*it);
+                    released[released_next++ % released.size()] = *it;
+                    it = watched.erase(it);
+                } else {
+                    ++it;
+                }
+            }
+        }
+        for (auto [s, z] : hit) {
+            page_manager.UpdatePageWatchers<false>(s, z);
+            engine().queueInvalidate(s, z);
+        }
+        if (!hit.empty()) return true;
+        std::scoped_lock l{watch_mutex};
+        return recentlyReleased(a, n);
+    }
+};
+
+Rasterizer::Rasterizer(AmdGpu::Liverpool* liverpool) : impl{std::make_unique<Impl>(this, liverpool)} {
+    liverpool->BindRasterizer(this);
+    Engine& e = engine();
+    std::scoped_lock g{e.lock};
+    e.uploaded = [this](u64 a, u64 n) { impl->watch(a, n); };
+    e.start();
+}
+
+Rasterizer::~Rasterizer() {
+    Engine& e = engine();
+    std::scoped_lock g{e.lock};
+    e.uploaded = nullptr;
+}
+
+void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
+    const auto& regs = impl->liverpool->regs;
+    using Mode = AmdGpu::ColorControl::OperationMode;
+    switch (regs.color_control.mode) {
+    case Mode::EliminateFastClear: return leftOut("fast clear elimination (no fast-clear metadata)");
+    case Mode::FmaskDecompress: return leftOut("FMask decompression (no MSAA on the host)");
+    case Mode::Resolve: {
+        if (!regs.color_buffers[0] || !regs.color_buffers[1]) return;
+        Engine& e = engine();
+        std::scoped_lock g{e.lock};
+        if (!e.start()) return;
+        e.applyPending();
+        e.renderer->resolve(colorTarget(regs, 0), colorTarget(regs, 1));
+        return;
+    }
+    default: break;
+    }
+    if (regs.primitive_type == AmdGpu::PrimitiveType::None) return;
+    if (regs.stage_enable.es_en || regs.stage_enable.ls_en || regs.stage_enable.gs_en || regs.stage_enable.hs_en)
+        return leftOut("geometry / tessellation pipeline (ES/LS stages)");
+
+    Engine& e = engine();
+    std::scoped_lock g{e.lock};
+    if (!e.start()) return;
+    e.applyPending();
+    vpps4::DrawState d;
+
+    // Targets.
+    if (regs.color_control.mode != Mode::Disable)
+        for (unsigned i = 0; i < 8; ++i) {
+            const auto& cb = regs.color_buffers[i];
+            if (!cb) continue;
+            vpps4::ColorTarget& c = d.color[i];
+            c = colorTarget(regs, i);
+            c.writeMask = uint8_t(regs.color_target_mask.GetMask(i) & regs.color_shader_mask.GetMask(i));
+            const auto& b = regs.blend_control[i];
+            vpps4::Blend& bl = d.blend[i];
+            bl.enable = b.enable;
+            bl.separateAlpha = b.separate_alpha_blend;
+            bl.colorSrc = uint8_t(b.color_src_factor);
+            bl.colorDst = uint8_t(b.color_dst_factor);
+            bl.colorFunc = uint8_t(b.color_func);
+            bl.alphaSrc = uint8_t(b.alpha_src_factor);
+            bl.alphaDst = uint8_t(b.alpha_dst_factor);
+            bl.alphaFunc = uint8_t(b.alpha_func);
+        }
     d.blendColor = regs.blend_constants;
     const auto& db = regs.depth_buffer;
     if (db.DepthValid() || db.StencilValid()) {
@@ -291,11 +422,11 @@ void Draw(const AmdGpu::Regs& regs, const Shader::Info& vs, const Shader::Info* 
     d.raster.frontFaceClockwise = regs.polygon_control.front_face == AmdGpu::FrontFace::Clockwise;
     d.primitive = vpps4::PrimitiveType(uint8_t(regs.primitive_type));
 
-    // Geometry.
+    // Geometry. (The fetch subroutine adds its own vertex offset SGPR: only VGT_INDX_OFFSET here.)
     d.count = regs.num_indices;
     d.instances = regs.num_instances.NumInstances();
     const bool index32 = regs.index_buffer_type.index_type == AmdGpu::IndexType::Index32;
-    if (indexed) {
+    if (is_indexed) {
         d.indexAddress = regs.index_base_address.Address<VAddr>() + u64(index_offset) * (index32 ? 4 : 2);
         d.index32 = index32;
     }
@@ -305,16 +436,13 @@ void Draw(const AmdGpu::Regs& regs, const Shader::Info& vs, const Shader::Info* 
     fillStage(d.vs, regs.vs_program);
     d.vs.vgprCompCnt = uint8_t(regs.vs_program.settings.vgpr_comp_cnt);
     d.vs.instanceStepRate = {regs.vgt_instance_step_rate_0, regs.vgt_instance_step_rate_1};
-    if (vs.has_fetch_shader) {
-        if (const auto data = Shader::Gcn::ParseFetchShader(vs)) {
-            const u32* p = Shader::Gcn::GetFetchShaderCode(vs, vs.fetch_shader_sgpr_base);
-            d.vs.fetch = std::span<const uint32_t>(p, data->size / 4);
-            // (instance offsets of the fetch shader are not passed yet: DrawState has no first instance)
-            if (regs.index_offset == 0 && data->vertex_offset_sgpr >= 0 && data->vertex_offset_sgpr < 16)
-                d.firstVertex = regs.vs_program.user_data[data->vertex_offset_sgpr];
-        }
+    if (const u64 fa = vpps4::fetchAddress(d.vs.code, d.vs.userData, d.vs.userSgprs)) {
+        const u64 bytes = readable(fa, 2048);
+        const auto* p = reinterpret_cast<const uint32_t*>(fa);
+        const size_t n = bytes >= 4 ? vpps4::fetchLength(std::span<const uint32_t>(p, bytes / 4)) : 0;
+        if (n) d.vs.fetch = std::span<const uint32_t>(p, n);
     }
-    if (ps != nullptr) {
+    if (regs.ps_program.Address<VAddr>() != 0) {
         fillStage(d.ps, regs.ps_program);
         u32 addr = 0;
         std::memcpy(&addr, &regs.ps_input_addr, sizeof(addr));
@@ -323,14 +451,47 @@ void Draw(const AmdGpu::Regs& regs, const Shader::Info& vs, const Shader::Info* 
         d.ps.psNumInterp = uint8_t(regs.num_interp);
         for (unsigned k = 0; k < 32; ++k) std::memcpy(&d.ps.psInputCntl[k], &regs.ps_inputs[k], sizeof(u32));
     }
+    if (pendingIndirect != 0) {
+        d.indirectAddress = pendingIndirect;
+        if (is_indexed) d.count = std::max<u32>(regs.max_index_size, 1);
+        else d.count = 1;
+    }
     e.renderer->draw(d);
 }
 
-void Dispatch(const AmdGpu::ComputeProgram& cs, const Shader::Info&) {
+void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u32 size, u32 max_count,
+                              VAddr count_address) {
+    u32 count = std::max<u32>(max_count, 1);
+    if (count_address != 0) {
+        // The count the GPU would read, as the CPU sees it now (GPU work that writes it in this
+        // frame is not seen).
+        u32 n = 0;
+        if (readable(count_address, 4) >= 4) std::memcpy(&n, reinterpret_cast<const void*>(count_address), 4);
+        count = std::min(count, n);
+        leftOut("indirect draw count read from memory by the CPU (approximation)");
+    }
+    const u32 stride = size != 0 ? size : (is_indexed ? 20 : 16);
+    for (u32 k = 0; k < count; ++k) {
+        pendingIndirect = arg_address + offset + u64(k) * stride;
+        Draw(is_indexed, 0);
+    }
+    pendingIndirect = 0;
+}
+
+void Rasterizer::DispatchDirect() {
+    Dispatch(0);
+}
+
+void Rasterizer::DispatchIndirect(VAddr address, u32 offset, u32) {
+    Dispatch(address + offset);
+}
+
+void Rasterizer::Dispatch(VAddr indirect) {
+    const auto& cs = impl->liverpool->GetCsRegs();
     if (cs.address == 0) return;
     Engine& e = engine();
-    std::lock_guard g(e.lock);
-    if (e.gpuFault.load() || !e.start()) return;
+    std::scoped_lock g{e.lock};
+    if (!e.start()) return;
     e.applyPending();
     vpps4::DispatchState d;
     const auto params = AmdGpu::GetParams(cs);
@@ -348,34 +509,467 @@ void Dispatch(const AmdGpu::ComputeProgram& cs, const Shader::Info&) {
     d.cs.ldsBytes = cs.SharedMemSize();
     d.cs.workgroupSize = {cs.num_thread_x.full, cs.num_thread_y.full, cs.num_thread_z.full};
     d.groups = {cs.dim_x, cs.dim_y, cs.dim_z};
+    d.indirectAddress = indirect;
     e.renderer->dispatch(d);
 }
 
-void Resolve(const AmdGpu::Regs& regs) {
-    if (!regs.color_buffers[0] || !regs.color_buffers[1]) return;
+void Rasterizer::FillBuffer(VAddr address, u32 num_bytes, u32 value, bool is_gds) {
     Engine& e = engine();
-    std::lock_guard g(e.lock);
-    if (e.gpuFault.load() || !e.start()) return;
+    std::scoped_lock g{e.lock};
+    if (!e.start()) return;
     e.applyPending();
-    e.renderer->resolve(colorTarget(regs, 0), colorTarget(regs, 1));
+    if (is_gds) {
+        // GDS is ours and CPU-visible: the GPU's earlier work is finished first.
+        e.submit();
+        e.backend->waitIdle();
+        if (u32* gds = e.renderer->gds(); gds && address < 0x10000) {
+            const u32 n = std::min<u32>(num_bytes, 0x10000 - u32(address)) / 4;
+            std::fill_n(gds + address / 4, n, value);
+        }
+        return;
+    }
+    e.renderer->fill(address, num_bytes, value);
 }
 
-void Invalidate(VAddr address, u64 size) {
-    // Pages: shadPS4 unprotects the whole page, so later writes to it do not fault again.
-    constexpr u64 kPage = 0x4000;
-    const u64 a = address & ~(kPage - 1), b = (address + size + kPage - 1) & ~(kPage - 1);
+void Rasterizer::CopyBuffer(VAddr dst, VAddr src, u32 num_bytes, bool dst_gds, bool src_gds) {
     Engine& e = engine();
-    while (e.pendingLock.test_and_set(std::memory_order_acquire)) {}
-    if (e.pending.size() < 65536) e.pending.push_back({a, b - a});
-    e.pendingLock.clear(std::memory_order_release);
+    std::scoped_lock g{e.lock};
+    if (!e.start()) return;
+    e.applyPending();
+    if (dst_gds || src_gds) {
+        e.submit();
+        e.backend->waitIdle();
+        u32* gds = e.renderer->gds();
+        if (!gds) return;
+        auto* gb = reinterpret_cast<u8*>(gds);
+        if (dst_gds && src_gds) {
+            if (dst < 0x10000 && src < 0x10000)
+                std::memmove(gb + dst, gb + src, std::min<u64>(num_bytes, 0x10000 - std::max(dst, src)));
+        } else if (dst_gds) {
+            if (dst < 0x10000 && readable(src, num_bytes) >= num_bytes)
+                std::memcpy(gb + dst, reinterpret_cast<const void*>(src), std::min<u64>(num_bytes, 0x10000 - dst));
+        } else if (src < 0x10000 && readable(dst, num_bytes) >= num_bytes) {
+            std::memcpy(reinterpret_cast<void*>(dst), gb + src, std::min<u64>(num_bytes, 0x10000 - src));
+            impl->invalidate(dst, num_bytes);
+        }
+        return;
+    }
+    e.renderer->copy(dst, src, num_bytes);
 }
 
-void EndFrame() {
+u32 Rasterizer::ReadDataFromGds(u32 gds_offset) {
     Engine& e = engine();
-    std::lock_guard g(e.lock);
-    if (!e.renderer || e.gpuFault.load()) return;
-    ++e.frames;
-    e.renderer->submit();
+    std::scoped_lock g{e.lock};
+    if (!e.renderer) return 0;
+    u32* gds = e.renderer->gds();
+    return gds && gds_offset < 0x10000 ? gds[gds_offset / 4] : 0;
 }
+
+bool Rasterizer::InvalidateMemory(VAddr addr, u64 size) {
+    if (!impl->isMapped(addr, std::max<u64>(size, 1))) return false;
+    return impl->invalidate(addr, std::max<u64>(size, 1));
+}
+
+bool Rasterizer::ReadMemory(VAddr, u64) {
+    // Nothing sets read watches: GPU writes go to guest memory in place.
+    return false;
+}
+
+bool Rasterizer::IsMapped(VAddr addr, u64 size) {
+    return impl->isMapped(addr, size);
+}
+
+void Rasterizer::MapMemory(VAddr addr, u64 size) {
+    {
+        std::scoped_lock l{impl->mapped_mutex};
+        VAddr start = addr, end = addr + size;
+        // Merge with neighbours.
+        auto it = impl->mapped.upper_bound(start);
+        if (it != impl->mapped.begin()) {
+            auto prev = std::prev(it);
+            if (prev->second >= start) {
+                start = prev->first;
+                end = std::max(end, prev->second);
+                it = impl->mapped.erase(prev);
+            }
+        }
+        while (it != impl->mapped.end() && it->first <= end) {
+            end = std::max(end, it->second);
+            it = impl->mapped.erase(it);
+        }
+        impl->mapped[start] = end;
+    }
+    impl->page_manager.OnGpuMap(addr, size);
+}
+
+void Rasterizer::UnmapMemory(VAddr addr, u64 size) {
+    impl->invalidate(addr, size);
+    impl->page_manager.OnGpuUnmap(addr, size);
+    std::scoped_lock l{impl->mapped_mutex};
+    const VAddr end = addr + size;
+    auto it = impl->mapped.upper_bound(addr);
+    if (it != impl->mapped.begin()) --it;
+    std::vector<std::pair<VAddr, VAddr>> keep;
+    while (it != impl->mapped.end() && it->first < end) {
+        if (it->second <= addr) {
+            ++it;
+            continue;
+        }
+        if (it->first < addr) keep.push_back({it->first, addr});
+        if (it->second > end) keep.push_back({end, it->second});
+        it = impl->mapped.erase(it);
+    }
+    for (auto [s, t] : keep) impl->mapped[s] = t;
+}
+
+u64 Rasterizer::Flush() {
+    Engine& e = engine();
+    std::scoped_lock g{e.lock};
+    e.applyPending();
+    e.submit();
+    return e.submits.load();
+}
+
+void Rasterizer::Finish() {
+    Engine& e = engine();
+    std::scoped_lock g{e.lock};
+    e.applyPending();
+    e.submit();
+    if (e.backend) e.backend->waitIdle();
+}
+
+// ---- Presenter ----------------------------------------------------------------------------------
+
+namespace {
+
+constexpr u32 kSlots = 6;  // the host's (openxr_host_visionos.mm NumSlots)
+
+// Draws an eye's picture (or the flat screen) into its area of the headset frame: sampled with
+// bilinear filtering, decoded to linear light when it holds sRGB-encoded values the format does
+// not say, optionally sharpened (contrast adaptive, in encoded space), red and blue swapped for
+// pictures stored the other way round. The frame texture is sRGB: it encodes on write.
+constexpr const char* kComposeSource = R"(
+#include <metal_stdlib>
+using namespace metal;
+struct V { float4 pos [[position]]; float2 uv; };
+vertex V vp_compose_vs(uint id [[vertex_id]]) {
+    float2 p = float2((id << 1) & 2, id & 2);
+    V o;
+    o.pos = float4(p * 2.0 - 1.0, 0.0, 1.0);
+    o.uv = float2(p.x, 1.0 - p.y);
+    return o;
+}
+struct P { float sharpen; uint encoded; uint swap; uint pad; };
+static float3 dec(float3 c) { return select(pow((c + 0.055) / 1.055, float3(2.4)), c / 12.92, c <= 0.04045); }
+static float3 enc(float3 c) { c = max(c, 0.0); return select(1.055 * pow(c, float3(1.0 / 2.4)) - 0.055, 12.92 * c, c < 0.0031308); }
+static float3 shown(texture2d<float> t, sampler s, float2 uv, constant P& p) {
+    float3 c = t.sample(s, uv).rgb;
+    if (p.swap != 0) c = c.bgr;
+    return p.encoded != 0 ? c : enc(c);
+}
+fragment float4 vp_compose_fs(V in [[stage_in]], texture2d<float> t [[texture(0)]], constant P& p [[buffer(0)]]) {
+    constexpr sampler s(filter::linear, address::clamp_to_edge);
+    float3 here = shown(t, s, in.uv, p);
+    if (p.sharpen > 0.0) {
+        float2 texel = 1.0 / float2(t.get_width(), t.get_height());
+        float3 a = shown(t, s, in.uv - float2(0, texel.y), p), b = shown(t, s, in.uv + float2(0, texel.y), p);
+        float3 l = shown(t, s, in.uv - float2(texel.x, 0), p), r = shown(t, s, in.uv + float2(texel.x, 0), p);
+        float3 lo = min(min(min(a, b), min(l, r)), here), hi = max(max(max(a, b), max(l, r)), here);
+        float3 room = sqrt(clamp(min(lo, 1.0 - hi) / max(hi, float3(1e-5)), 0.0, 1.0));
+        float3 w = room * (-1.0 / mix(8.0, 5.0, clamp(p.sharpen, 0.0, 1.0)));
+        here = clamp(((a + b + l + r) * w + here) / (1.0 + 4.0 * w), 0.0, 1.0);
+    }
+    return float4(dec(here), 1.0);
+}
+)";
+
+struct Region {
+    id<MTLTexture> texture;
+    MTLViewport viewport;
+    bool encoded = false, swap = false;
+    float sharpen = 0;
+};
+
+struct PresentState {
+    id<MTLRenderPipelineState> pipeline{nil};
+    bool pipelineFailed = false;
+    std::mutex done_mutex;
+    std::condition_variable done_cv;
+    std::array<bool, kSlots> done{};
+    Core::Vr::Fov last_fov{};
+    u32 last_eye_width = 0, last_eye_height = 0;
+    float sharpen = 0;
+    u64 frames = 0;
+    bool started = false;
+
+    PresentState() {
+        if (const char* v = std::getenv("SHADPS4_VR_SHARPEN")) sharpen = std::clamp(float(std::atof(v)), 0.0f, 1.0f);
+    }
+    // Under the engine lock.
+    bool ensure(Engine& e) {
+        if (!e.start()) return false;
+        if (!started) {
+            if (!Core::Vr::OpenXrHost::Instance().IsAvailable()) return false;
+            Core::Vr::OpenXrHost::Instance().StartMetal(e.backend->nativeDevice());
+            started = true;
+        }
+        if (pipeline || pipelineFailed) return pipeline != nil;
+        id<MTLDevice> dev = (__bridge id<MTLDevice>)e.backend->nativeDevice();
+        NSError* error = nil;
+        id<MTLLibrary> lib = [dev newLibraryWithSource:@(kComposeSource) options:nil error:&error];
+        MTLRenderPipelineDescriptor* pd = [MTLRenderPipelineDescriptor new];
+        pd.vertexFunction = [lib newFunctionWithName:@"vp_compose_vs"];
+        pd.fragmentFunction = [lib newFunctionWithName:@"vp_compose_fs"];
+        pd.colorAttachments[0].pixelFormat = MTLPixelFormatRGBA8Unorm_sRGB;
+        if (lib) pipeline = [dev newRenderPipelineStateWithDescriptor:pd error:&error];
+        if (!pipeline) {
+            pipelineFailed = true;
+            LOG_CRITICAL(Render_Vulkan, "VPENGINE_PRESENT the compositing shader failed: {}",
+                         error ? error.localizedDescription.UTF8String : "?");
+        }
+        return pipeline != nil;
+    }
+
+    // A 2D view of layer 0 of `t` (eye targets may be arrays), or `t` itself.
+    static id<MTLTexture> plain(id<MTLTexture> t) {
+        if (!t || t.textureType == MTLTextureType2D) return t;
+        if (t.textureType == MTLTextureType2DArray || t.textureType == MTLTextureTypeCube)
+            return [t newTextureViewWithPixelFormat:t.pixelFormat textureType:MTLTextureType2D levels:NSMakeRange(0, 1) slices:NSMakeRange(0, 1)];
+        return nil;
+    }
+
+    static bool isSrgb(MTLPixelFormat f) {
+        switch (f) {
+        case MTLPixelFormatRGBA8Unorm_sRGB:
+        case MTLPixelFormatBGRA8Unorm_sRGB:
+        case MTLPixelFormatBC1_RGBA_sRGB:
+        case MTLPixelFormatBC2_RGBA_sRGB:
+        case MTLPixelFormatBC3_RGBA_sRGB:
+        case MTLPixelFormatBC7_RGBAUnorm_sRGB: return true;
+        default: return false;
+        }
+    }
+
+    // The texture VPEngine has for a T#, after recording whatever fills it.
+    static id<MTLTexture> textureOf(Engine& e, const vpps4::ImageDesc& d) {
+        const vpgpu::TextureId tid = e.renderer->textureFor(d);
+        if (!tid) return nil;
+        return (__bridge id<MTLTexture>)e.backend->nativeTexture(tid);
+    }
+
+    // Draws `regions` into a new headset frame of width x height; -1 if the host has none free.
+    int compose(Engine& e, u32 width, u32 height, std::span<const Region> regions) {
+        const auto target = Core::Vr::OpenXrHost::Instance().BeginMetalFrame(width, height);
+        if (!target) return -1;
+        const u32 slot = target->index % kSlots;
+        {
+            std::scoped_lock l{done_mutex};
+            done[slot] = false;
+        }
+        id<MTLTexture> out = (__bridge id<MTLTexture>)target->texture;
+        id<MTLRenderPipelineState> pso = pipeline;
+        std::vector<Region> list(regions.begin(), regions.end());
+        const bool queued = e.backend->encodeInterop(
+            [&](void* cbp) {
+                id<MTLCommandBuffer> cb = (__bridge id<MTLCommandBuffer>)cbp;
+                MTLRenderPassDescriptor* rp = [MTLRenderPassDescriptor renderPassDescriptor];
+                rp.colorAttachments[0].texture = out;
+                rp.colorAttachments[0].loadAction = MTLLoadActionClear;
+                rp.colorAttachments[0].clearColor = MTLClearColorMake(0, 0, 0, 1);
+                rp.colorAttachments[0].storeAction = MTLStoreActionStore;
+                id<MTLRenderCommandEncoder> enc = [cb renderCommandEncoderWithDescriptor:rp];
+                enc.label = @"headset frame";
+                [enc setRenderPipelineState:pso];
+                for (const Region& r : list) {
+                    if (!r.texture) continue;
+                    struct {
+                        float sharpen;
+                        u32 encoded, swap, pad;
+                    } p{r.sharpen, r.encoded ? 1u : 0u, r.swap ? 1u : 0u, 0};
+                    [enc setViewport:r.viewport];
+                    [enc setFragmentTexture:r.texture atIndex:0];
+                    [enc setFragmentBytes:&p length:sizeof p atIndex:0];
+                    [enc drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
+                }
+                [enc endEncoding];
+            },
+            "vp.headset",
+            [this, slot] {
+                std::scoped_lock l{done_mutex};
+                done[slot] = true;
+                done_cv.notify_all();
+            });
+        if (!queued) {
+            Core::Vr::OpenXrHost::Instance().DropFrame(target->index);
+            return -1;
+        }
+        return int(slot);
+    }
+};
+
+PresentState& present() {
+    static PresentState& p = *new PresentState;
+    return p;
+}
+
+} // namespace
+
+namespace Present {
+
+bool HasHeadset() {
+    return Core::Vr::OpenXrHost::Instance().IsAvailable();
+}
+
+int ComposeEyes(std::span<const AmdGpu::Image, 2> eye_textures, const Core::Vr::Fov& fov, u32& eye_width,
+                u32& eye_height) {
+    PresentState* impl = &present();
+    Engine& e = engine();
+    std::scoped_lock g{e.lock};
+    if (!impl->ensure(e)) return -1;
+    e.applyPending();
+    std::array<id<MTLTexture>, 2> eyes{};
+    std::array<bool, 2> encoded{};
+    for (u32 k = 0; k < 2; ++k) {
+        std::array<u32, 8> words{};
+        std::memcpy(words.data(), &eye_textures[k], std::min(sizeof words, sizeof(AmdGpu::Image)));
+        const vpps4::ImageDesc d = vpps4::decodeImage(words);
+        eyes[k] = PresentState::plain(PresentState::textureOf(e, d));
+        // A picture the console reads as sRGB through a format Metal has no sRGB form of.
+        encoded[k] = eyes[k] && d.numFormat == 9 && !PresentState::isSrgb(eyes[k].pixelFormat);
+        if (k == 0) {
+            eye_width = d.width;
+            eye_height = d.height;
+        }
+    }
+    // The eyes' drawing is submitted first: the composition runs after it on the same queue.
+    e.submit();
+    if (!eyes[0] || !eyes[1]) {
+        static std::atomic<u32> told{0};
+        if (told++ < 4)
+            LOG_WARNING(Render_Vulkan, "VPENGINE_PRESENT eye pictures missing (left {}, right {}): black frame",
+                        eyes[0] != nil, eyes[1] != nil);
+    }
+    impl->last_fov = fov;
+    impl->last_eye_width = eye_width;
+    impl->last_eye_height = eye_height;
+    const u32 width = eye_width * 2, height = eye_height;
+    std::array<Region, 2> regions{};
+    for (u32 k = 0; k < 2; ++k)
+        regions[k] = {eyes[k], MTLViewport{double(k * eye_width), 0, double(eye_width), double(eye_height), 0, 1},
+                      encoded[k], false, impl->sharpen};
+    const int slot = impl->compose(e, width, height, regions);
+    if (slot < 0) return -1;
+    if (impl->frames++ % 600 == 0)
+        LOG_INFO(Render_Vulkan, "VPENGINE_PRESENT headset frame {}: eyes {}x{} ({} / {}), sharpen {:.2f}", impl->frames,
+                 eye_width, eye_height, eyes[0] ? eyes[0].pixelFormat : 0, eyes[1] ? eyes[1].pixelFormat : 0,
+                 impl->sharpen);
+    return slot;
+}
+
+} // namespace Present
+
+namespace {
+
+// A flat picture as a screen 70 degrees wide straight ahead, the same in both eyes: in each eye's
+// picture (from the temple's tangent to the nose's, top's to bottom's), the rectangle of those
+// tangents.
+std::array<MTLViewport, 2> screenViewports(const Core::Vr::Fov& fov, u32 eye_width, u32 eye_height, float aspect) {
+    constexpr float half_width_tan = 0.7002f;  // tan(35 degrees)
+    const float half_height_tan = half_width_tan / std::max(aspect, 0.1f);
+    std::array<MTLViewport, 2> out{};
+    for (u32 eye = 0; eye < 2; ++eye) {
+        const float left_tan = eye == 0 ? fov.tan_out : fov.tan_in;
+        const float right_tan = eye == 0 ? fov.tan_in : fov.tan_out;
+        const float span_x = std::max(left_tan + right_tan, 0.01f);
+        const float span_y = std::max(fov.tan_top + fov.tan_bottom, 0.01f);
+        const float x0 = std::clamp((left_tan - half_width_tan) / span_x * eye_width, 0.0f, float(eye_width) - 1);
+        const float x1 = std::clamp((left_tan + half_width_tan) / span_x * eye_width, x0 + 1, float(eye_width));
+        const float y0 = std::clamp((fov.tan_top - half_height_tan) / span_y * eye_height, 0.0f, float(eye_height) - 1);
+        const float y1 = std::clamp((fov.tan_top + half_height_tan) / span_y * eye_height, y0 + 1, float(eye_height));
+        out[eye] = {double(eye * eye_width + x0), double(y0), double(x1 - x0), double(y1 - y0), 0, 1};
+    }
+    return out;
+}
+
+} // namespace
+
+namespace Present {
+
+int ComposeScreen(const Libraries::VideoOut::BufferAttributeGroup& group, VAddr cpu_address, Core::Vr::Fov& fov,
+                  u32& eye_width, u32& eye_height) {
+    using Libraries::VideoOut::PixelFormat;
+    using Libraries::VideoOut::TilingMode;
+    PresentState* impl = &present();
+    Engine& e = engine();
+    std::scoped_lock g{e.lock};
+    if (!impl->ensure(e)) return -1;
+    e.applyPending();
+    const auto& a = group.attrib;
+    vpps4::ImageDesc d;
+    d.address = cpu_address;
+    const bool ten = a.pixel_format == PixelFormat::A2R10G10B10 || a.pixel_format == PixelFormat::A2R10G10B10Srgb ||
+                     a.pixel_format == PixelFormat::A2R10G10B10Bt2020Pq;
+    d.dataFormat = ten ? 9 : 10;  // 2_10_10_10 / 8_8_8_8
+    d.numFormat = a.pixel_format == PixelFormat::A8R8G8B8Srgb || a.pixel_format == PixelFormat::A8B8G8R8Srgb ? 9 : 0;
+    d.width = a.width;
+    d.height = a.height;
+    const bool tiled = a.tiling_mode == TilingMode::Tile;
+    d.pitch = tiled ? (a.width + 127) & ~127u : std::max<u32>(a.pitch_in_pixel, a.width);
+    d.tilingIndex = tiled ? 10 : 8;
+    d.type = 9;
+    id<MTLTexture> t = PresentState::plain(PresentState::textureOf(e, d));
+    e.submit();
+    fov = impl->last_fov;
+    eye_width = impl->last_eye_width ? impl->last_eye_width : 1440;
+    eye_height = impl->last_eye_height ? impl->last_eye_height : 1536;
+    const auto vps = screenViewports(fov, eye_width, eye_height, a.height ? float(a.width) / float(a.height) : 16.f / 9.f);
+    // Stored blue-first (A8R8G8B8, A2R10G10B10): red and blue swapped back. 10-bit "sRGB" holds
+    // encoded values.
+    const bool swap = a.pixel_format != PixelFormat::A8B8G8R8Srgb;
+    const bool encoded = a.pixel_format == PixelFormat::A2R10G10B10Srgb;
+    std::array<Region, 2> regions{Region{t, vps[0], encoded, swap, 0}, Region{t, vps[1], encoded, swap, 0}};
+    return impl->compose(e, eye_width * 2, eye_height, regions);
+}
+
+int ComposeTexture(const AmdGpu::Image& texture, Core::Vr::Fov& fov, u32& eye_width, u32& eye_height) {
+    PresentState* impl = &present();
+    Engine& e = engine();
+    std::scoped_lock g{e.lock};
+    if (!impl->ensure(e)) return -1;
+    e.applyPending();
+    std::array<u32, 8> words{};
+    std::memcpy(words.data(), &texture, std::min(sizeof words, sizeof(AmdGpu::Image)));
+    const vpps4::ImageDesc d = vpps4::decodeImage(words);
+    id<MTLTexture> t = PresentState::plain(PresentState::textureOf(e, d));
+    e.submit();
+    fov = impl->last_fov;
+    eye_width = impl->last_eye_width ? impl->last_eye_width : 1440;
+    eye_height = impl->last_eye_height ? impl->last_eye_height : 1536;
+    const auto vps = screenViewports(fov, eye_width, eye_height, d.height ? float(d.width) / float(d.height) : 16.f / 9.f);
+    const bool encoded = t && d.numFormat == 9 && !PresentState::isSrgb(t.pixelFormat);
+    std::array<Region, 2> regions{Region{t, vps[0], encoded, false, 0}, Region{t, vps[1], encoded, false, 0}};
+    return impl->compose(e, eye_width * 2, eye_height, regions);
+}
+
+void Deliver(int slot, const Core::Vr::PresentedFrame& info) {
+    if (slot < 0) return;
+    PresentState& p = present();
+    const u32 s = u32(slot) % kSlots;
+    {
+        std::unique_lock l{p.done_mutex};
+        // (a GPU that hangs gets its command buffer failed by Metal: the handler still runs)
+        p.done_cv.wait_for(l, std::chrono::seconds{2}, [&] { return p.done[s]; });
+    }
+    Core::Vr::OpenXrHost::Instance().EndFrame(s, info);
+}
+
+bool Finished(int slot) {
+    if (slot < 0) return true;
+    PresentState& p = present();
+    std::scoped_lock l{p.done_mutex};
+    return p.done[u32(slot) % kSlots];
+}
+
+} // namespace Present
 
 } // namespace VpengineRenderer

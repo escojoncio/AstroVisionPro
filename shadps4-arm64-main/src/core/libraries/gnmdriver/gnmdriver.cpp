@@ -29,9 +29,19 @@
 #include "video_core/amdgpu/liverpool.h"
 #include "video_core/amdgpu/pm4_cmds.h"
 #include "video_core/renderer_vulkan/vk_presenter.h"
+#ifdef SHADPS4_VPENGINE_ONLY
+#include "core/memory.h"
+#include "vpengine_presenter.h"
+#include "vpengine_renderer.h"
+#endif
 
 extern Frontend::WindowSDL* g_window;
 std::unique_ptr<Vulkan::Presenter> presenter;
+#ifdef SHADPS4_VPENGINE_ONLY
+// visionOS: VPEngine is the renderer (Metal); there is no Vulkan presenter.
+std::unique_ptr<VpengineRenderer::Rasterizer> vp_rasterizer;
+std::unique_ptr<VpengineRenderer::Presenter> vp_presenter;
+#endif
 std::unique_ptr<AmdGpu::Liverpool> liverpool;
 
 namespace Libraries::GnmDriver {
@@ -2898,7 +2908,13 @@ int PS4_SYSV_ABI Func_F916890425496553() {
 void RegisterLib(Core::Loader::SymbolsResolver* sym) {
     LOG_INFO(Lib_GnmDriver, "Initializing presenter");
     liverpool = std::make_unique<AmdGpu::Liverpool>();
+#ifdef SHADPS4_VPENGINE_ONLY
+    vp_rasterizer = std::make_unique<VpengineRenderer::Rasterizer>(liverpool.get());
+    Core::Memory::Instance()->SetRasterizer(vp_rasterizer.get());
+    vp_presenter = std::make_unique<VpengineRenderer::Presenter>();
+#else
     presenter = std::make_unique<Vulkan::Presenter>(*g_window, liverpool.get());
+#endif
 
     const s32 result = sceKernelGetCompiledSdkVersion(&sdk_version);
     if (result != ORBIS_OK) {
