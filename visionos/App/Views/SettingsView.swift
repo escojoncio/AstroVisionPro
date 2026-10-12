@@ -73,6 +73,15 @@ struct SettingsView: View {
                 }
 
                 Section {
+                    Toggle(L("VPEngine en sombra (experimental)", "VPEngine shadow (experimental)"),
+                           isOn: flag("vpengine_shadow", \.vpengineShadow))
+                } header: {
+                    Text(L("Motor gráfico", "Graphics engine"))
+                } footer: {
+                    Text(L("La imagen sigue saliendo de KosmicKrisp. Encendido, VPEngine (el motor gráfico propio, Metal puro) repite en paralelo cada dibujo del juego y anota en el registro cuánto consigue dibujar y cuánto tarda la GPU (líneas VPENGINE_GPU). Cuesta rendimiento mientras está encendido. Se aplica al abrir el juego.", "The picture still comes from KosmicKrisp. On, VPEngine (the own graphics engine, pure Metal) repeats every draw of the game alongside and writes to the log how much it manages to draw and how long the GPU takes (VPENGINE_GPU lines). It costs speed while on. It applies when the game opens."))
+                }
+
+                Section {
                     Toggle(L("Modo diagnóstico", "Diagnostics mode"), isOn: Binding(
                         get: { model.settings.diagnostics },
                         set: { save("diagnostics", $0 ? "1" : "0") }))
