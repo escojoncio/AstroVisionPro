@@ -1412,6 +1412,27 @@ if (SHADPS4_VISIONOS)
         src/core/libraries/audio/phase_audio_in.cpp
     )
     target_include_directories(shadps4 PRIVATE src/platform/visionos)
+    # VPEngine's shader translator (GCN -> VPIR -> MSL), checked against the headset's Metal
+    # compiler in diagnostic mode (src/platform/visionos/vpengine_shader_check.mm).
+    if (VPENGINE_GPU_DIR)
+        file(GLOB VPENGINE_SHADER_SOURCES
+            ${VPENGINE_GPU_DIR}/shader/ir/src/*.cpp
+            ${VPENGINE_GPU_DIR}/shader/msl/src/*.cpp)
+        list(APPEND VPENGINE_SHADER_SOURCES
+            ${VPENGINE_GPU_DIR}/shader/gcn/src/gcn.cpp
+            ${VPENGINE_GPU_DIR}/shader/gcn/src/lift.cpp)
+        target_sources(shadps4 PRIVATE ${VPENGINE_SHADER_SOURCES}
+            src/platform/visionos/vpengine_shader_check.h
+            src/platform/visionos/vpengine_shader_check.mm)
+        target_include_directories(shadps4 PRIVATE
+            ${VPENGINE_GPU_DIR}/shader/ir/include
+            ${VPENGINE_GPU_DIR}/shader/msl/include
+            ${VPENGINE_GPU_DIR}/shader/gcn/include)
+        target_compile_definitions(shadps4 PRIVATE SHADPS4_VPENGINE_SHADER_CHECK=1)
+        set_source_files_properties(src/platform/visionos/vpengine_shader_check.mm
+            PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
+        message(STATUS "VPEngine shader check: ${VPENGINE_GPU_DIR}")
+    endif()
     set_source_files_properties(src/platform/visionos/astro_core.mm
         PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
     set_source_files_properties(src/core/libraries/audio/spatial_audio_visionos.mm
