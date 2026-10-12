@@ -26,6 +26,8 @@ bool Enabled();
 void Draw(const AmdGpu::Regs& regs, const Shader::Info& vs, const Shader::Info* ps, bool indexed,
           u32 index_offset);
 void Dispatch(const AmdGpu::ComputeProgram& program, const Shader::Info& cs);
+// CB_COLOR_CONTROL.MODE = RESOLVE: CB0 resolved into CB1 (a copy: VPEngine renders at 1 sample).
+void Resolve(const AmdGpu::Regs& regs);
 // (Indirect draws and dispatches are not run yet: their arguments live in GPU memory.)
 // The CPU wrote guest memory.
 void Invalidate(VAddr address, u64 size);

@@ -9,8 +9,9 @@ Compactada el 2026-10-11: lo resuelto queda en «Histórico» como una línea; e
 ## Estado (2026-10-12) y siguiente sesión
 - Arreglado el crash de la prueba de VPEngine en sombra (a1eab54: target MSAA de 8 muestras, no admitido en M2):
   en la ruta de VPEngine no hay MSAA (el AA será VPKTAA): `vpengine_renderer.mm` llama `setMaxSamples(1)`; log
-  `VPENGINE_GPU msaa limit 1 samples`. Pendiente en vpps4: los resolves del juego (CB_MODE resolve) → copia. VPEngine 9cc6888: una cuenta de muestras por draw y guarda en `MetalBackend`
-  (cuenta no soportada → `gpu.err`, no abort). `visionos/vpengine-gpu.ref` = 9cc6888.
+  `VPENGINE_GPU msaa limit 1 samples`. Resolves del juego (CB_COLOR_CONTROL resolve, `FilterDraw` en
+  `vk_rasterizer.cpp`) → `VpengineRenderer::Resolve(regs)` → `vpps4::Renderer::resolve` (copia; `resolves=` en el log). VPEngine 197f014 (incluye VPVulkan fase 3 de la otra sesión): una cuenta de muestras por draw y guarda en `MetalBackend`
+  (cuenta no soportada → `gpu.err`, no abort). `visionos/vpengine-gpu.ref` = 197f014.
 - Probar: ajuste «VPEngine en sombra» encendido en ASTRO BOT, jugar 1–2 min en el mundo y pasar el log (`VPENGINE_GPU`).
   Con el ajuste apagado la app es como antes.
 
