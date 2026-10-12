@@ -21,7 +21,7 @@
 
 #include "common/logging/log.h"
 #include "core/libraries/videoout/buffer.h"
-#include "core/vr/openxr_host.h"
+#include "vpengine_xr.h"
 #include "video_core/amdgpu/liverpool.h"
 #include "video_core/amdgpu/regs.h"
 #include "video_core/amdgpu/resource.h"
@@ -253,7 +253,7 @@ struct Rasterizer::Impl {
     VideoCore::PageManager page_manager;
     // Guest memory the title mapped for the GPU (MapMemory/UnmapMemory).
     std::mutex mapped_mutex;
-    std::map<VAddr, u64> mapped;  // start -> end
+    std::map<VAddr, VAddr> mapped;  // start -> end
     // Ranges textures were filled from, watched for CPU writes (start -> size).
     std::mutex watch_mutex;
     std::map<VAddr, u64> watched;
@@ -709,8 +709,8 @@ struct PresentState {
     bool ensure(Engine& e) {
         if (!e.start()) return false;
         if (!started) {
-            if (!Core::Vr::OpenXrHost::Instance().IsAvailable()) return false;
-            Core::Vr::OpenXrHost::Instance().StartMetal(e.backend->nativeDevice());
+            if (!VpengineXr::Available()) return false;
+            VpengineXr::Start(e.backend->nativeDevice());
             started = true;
         }
         if (pipeline || pipelineFailed) return pipeline != nil;
@@ -759,14 +759,15 @@ struct PresentState {
 
     // Draws `regions` into a new headset frame of width x height; -1 if the host has none free.
     int compose(Engine& e, u32 width, u32 height, std::span<const Region> regions) {
-        const auto target = Core::Vr::OpenXrHost::Instance().BeginMetalFrame(width, height);
-        if (!target) return -1;
-        const u32 slot = target->index % kSlots;
+        u32 target_index = 0;
+        void* target_texture = nullptr;
+        if (!VpengineXr::Begin(width, height, target_index, target_texture)) return -1;
+        const u32 slot = target_index % kSlots;
         {
             std::scoped_lock l{done_mutex};
             done[slot] = false;
         }
-        id<MTLTexture> out = (__bridge id<MTLTexture>)target->texture;
+        id<MTLTexture> out = (__bridge id<MTLTexture>)target_texture;
         id<MTLRenderPipelineState> pso = pipeline;
         std::vector<Region> list(regions.begin(), regions.end());
         const bool queued = e.backend->encodeInterop(
@@ -800,7 +801,7 @@ struct PresentState {
                 done_cv.notify_all();
             });
         if (!queued) {
-            Core::Vr::OpenXrHost::Instance().DropFrame(target->index);
+            VpengineXr::Drop(target_index);
             return -1;
         }
         return int(slot);
@@ -817,7 +818,7 @@ PresentState& present() {
 namespace Present {
 
 bool HasHeadset() {
-    return Core::Vr::OpenXrHost::Instance().IsAvailable();
+    return VpengineXr::Available();
 }
 
 int ComposeEyes(std::span<const AmdGpu::Image, 2> eye_textures, const Core::Vr::Fov& fov, u32& eye_width,
@@ -960,7 +961,7 @@ void Deliver(int slot, const Core::Vr::PresentedFrame& info) {
         // (a GPU that hangs gets its command buffer failed by Metal: the handler still runs)
         p.done_cv.wait_for(l, std::chrono::seconds{2}, [&] { return p.done[s]; });
     }
-    Core::Vr::OpenXrHost::Instance().EndFrame(s, info);
+    VpengineXr::End(s, info);
 }
 
 bool Finished(int slot) {

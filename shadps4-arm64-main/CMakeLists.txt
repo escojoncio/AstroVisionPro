@@ -1448,7 +1448,9 @@ if (SHADPS4_VISIONOS)
                 src/platform/visionos/vpengine_renderer.h
                 src/platform/visionos/vpengine_renderer.mm
                 src/platform/visionos/vpengine_presenter.h
-                src/platform/visionos/vpengine_presenter.cpp)
+                src/platform/visionos/vpengine_presenter.cpp
+                src/platform/visionos/vpengine_xr.h
+                src/platform/visionos/vpengine_xr.cpp)
             target_include_directories(shadps4 PRIVATE
                 ${VPENGINE_GPU_DIR}/core/include
                 ${VPENGINE_GPU_DIR}/metal/include
