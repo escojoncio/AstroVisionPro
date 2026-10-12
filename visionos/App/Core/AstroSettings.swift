@@ -63,10 +63,6 @@ struct AstroSettings {
     var diagnostics = false
     /// The game's picture antialiased (SMAA 1x, Render/EdgeSmoother.swift) before it is shown.
     var edgeSmoothing = true
-    /// «Motor gráfico»: VPEngine in shadow mode (SHADPS4_VPENGINE_RENDERER=1) runs every draw of
-    /// the game a second time through VPEngine's own Metal renderer and logs what it ran and what
-    /// it cost; the picture still comes from KosmicKrisp.
-    var vpengineShadow = false
     /// The language the game is played in: "system" (the headset's) or a language tag
     /// (GameLanguages.swift).
     var gameLanguage = "system"
@@ -157,7 +153,6 @@ struct AstroSettings {
         case "jit_arena_mb": jitArenaMB = min(max(Int(value) ?? jitArenaMB, 64), 2048)
         case "show_hands": showHands = flag
         case "smaa": edgeSmoothing = flag
-        case "vpengine_shadow": vpengineShadow = flag
         case "spatial_audio": spatialAudio = flag
         case "diagnostics": diagnostics = value == "1"
         case "game_language": gameLanguage = value
@@ -215,54 +210,20 @@ struct AstroSettings {
         // The headset is the app's: it is there from the start.
         env.append("SHADPS4_XR_WAIT=0")
         env.append("SHADPS4_SPATIAL_AUDIO=\(spatialAudio ? 1 : 0)")
-        // Fixed: what was measured best (bitacora.md, «Informe de rendimiento»). KosmicKrisp
-        // (geometry shaders; MoltenVK ran at half the speed); pipelines made in the background
-        // and kept for the next start; geometry shaders' work inside the pass and their memory
-        // freed between passes; passes merged; no restart on lists; constants as uniform
-        // buffers; pixel arithmetic free to be fused; raw compute copies of images coherent; the
-        // title's GPU clock adjusted every frame (only for titles the emulator knows, ASTRO BOT).
-        env.append("SHADPS4_VK_DRIVER=kosmickrisp")
-        env.append("SHADPS4_ASYNC_PIPELINES=1")
-        env.append("SHADPS4_PIPELINE_CACHE=1")
-        env.append("KK_GS_IN_PASS=1")
-        env.append("KK_HEAP_BETWEEN_PASSES=1")
-        env.append("KK_LIGHT_BARRIERS=0")
-        env.append("SHADPS4_MERGE_PASSES=1")
-        env.append("SHADPS4_LIST_RESTART=0")
-        env.append("SHADPS4_CONSTANT_UBO=1")
-        env.append("SHADPS4_EXACT_PIXEL_MATH=0")
-        env.append("SHADPS4_RAW_IMAGE_SYNC=1")
-        env.append("SHADPS4_RESOLVE_AA=0")
+        // The picture is VPEngine's (Metal); there is no Vulkan driver. Fixed: the title's GPU
+        // clock adjusted every frame (only for titles the emulator knows, ASTRO BOT).
         env.append("SHADPS4_GPU_CLOCK_SCALE=auto")
         if diagnostics {
             env.append("SHADPS4_DIAGNOSTICS=1")
             // What a frame is made of every few seconds and one frame's render passes; the GPU
             // test with L3 + R3, shader by shader.
             env.append("SHADPS4_FRAME_STATS=2")
-            env.append("SHADPS4_GPU_BENCH=shaders")
             // The title's GPU clock stamps and its size control object (game_clock.h,
             // known_title.cpp).
             env.append("SHADPS4_GPU_STAMP_LOG=1")
             env.append("SHADPS4_QUALITY_DUMP=1")
-            // VPEngine lifts each shader too and the headset's Metal compiles it (VPENGINE_SHADER lines).
-            env.append("SHADPS4_VPENGINE_SHADER_CHECK=1")
-            // Each shader's GCN code, once, to VPS4/VPEngine/shaders/dumps (VPEngine's corpus).
-            if let root = GameFolder.url() {
-                env.append("SHADPS4_DUMP_SHADERS=\(root.appendingPathComponent("VPEngine/shaders").path)")
-            }
-            // KosmicKrisp: Metal encoders a second and what cut each render encoder short.
-            env.append("KK_CENSUS=1")
-        }
-        if vpengineShadow {
-            env.append("SHADPS4_VPENGINE_RENDERER=1")
         }
         env.append("SHADPS4_CONSOLE_LANGUAGE=\(GameLanguages.tag(for: gameLanguage))")
-        // KosmicKrisp keeps what it translated (Mesa's shader cache) where the app may write:
-        // the VPS4 folder when there is one (it outlives the app), else the app's caches.
-        let caches = (GameFolder.caches ?? FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0])
-            .appendingPathComponent("mesa_shader_cache")
-        try? FileManager.default.createDirectory(at: caches, withIntermediateDirectories: true)
-        env.append("MESA_SHADER_CACHE_DIR=\(caches.path)")
         // The users and their saves, in the VPS4 folder when there is one.
         if let saves = GameFolder.saves {
             env.append("SHADPS4_HOME_DIR=\(saves.path)")

@@ -20,9 +20,6 @@
 #ifdef SHADPS4_VPENGINE_SHADER_CHECK
 #include "vpengine_shader_check.h"
 #endif
-#ifdef SHADPS4_VPENGINE_RENDERER
-#include "vpengine_renderer.h"
-#endif
 
 #include <array>
 #include <atomic>
@@ -135,9 +132,6 @@ bool Rasterizer::FilterDraw() {
             LOG_INFO(Render_Vulkan, "TRACE resolve cb0={:#x} -> cb1={:#x}",
                      regs.color_buffers[0].Address(), regs.color_buffers[1].Address());
         }
-#ifdef SHADPS4_VPENGINE_RENDERER
-        if (VpengineRenderer::Enabled()) VpengineRenderer::Resolve(regs);
-#endif
         Resolve();
         return false;
     }
@@ -1081,14 +1075,6 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
         return;
     }
     NoteVpengineDraw(pipeline);
-#ifdef SHADPS4_VPENGINE_RENDERER
-    if (VpengineRenderer::Enabled()) {  // (a draw split by target passes runs once per pass)
-        const auto& stages = pipeline->GetStages();
-        VpengineRenderer::Draw(regs, pipeline->GetStage(Shader::LogicalStage::Vertex),
-                               stages[static_cast<u32>(Shader::LogicalStage::Fragment)], is_indexed,
-                               index_offset);
-    }
-#endif
 
     RunDepthMirrors(pipeline);
     PrepareRenderState(pipeline);
@@ -1627,11 +1613,6 @@ void Rasterizer::DispatchDirect() {
 #ifdef SHADPS4_VPENGINE_SHADER_CHECK
     // (after the HLE: those dispatches never reach the shader compiler)
     VpengineShaderCheck::NoteDispatch(cs.pgm_hash);
-#endif
-#ifdef SHADPS4_VPENGINE_RENDERER
-    if (VpengineRenderer::Enabled()) {
-        VpengineRenderer::Dispatch(cs_program, cs);
-    }
 #endif
 
     RunDepthMirrors(pipeline);
@@ -2902,11 +2883,6 @@ bool Rasterizer::InvalidateMemory(VAddr addr, u64 size) {
     }
     buffer_cache.InvalidateMemory(addr, size);
     texture_cache.InvalidateMemory(addr, size);
-#ifdef SHADPS4_VPENGINE_RENDERER
-    if (VpengineRenderer::Enabled()) {
-        VpengineRenderer::Invalidate(addr, size);
-    }
-#endif
     return true;
 }
 

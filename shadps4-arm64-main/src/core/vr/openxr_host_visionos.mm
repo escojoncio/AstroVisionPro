@@ -74,6 +74,7 @@ struct OpenXrHost::Impl {
         vk::Image image;
         vk::DeviceMemory memory;
         vk::ImageView view;
+        id<MTLTexture> metal{nil}; // a texture of our own (Metal frames): released when destroyed
         Clock::time_point since;
     };
 
@@ -84,6 +85,7 @@ struct OpenXrHost::Impl {
     bool available{};
     Graphics graphics{};
     bool started{};
+    id<MTLDevice> metal_device{nil}; // set: frames are Metal textures of our own (no Vulkan)
 
     std::mutex slot_mutex;
     std::condition_variable slot_freed;
@@ -113,7 +115,9 @@ struct OpenXrHost::Impl {
 
     void Retire(Slot& slot) {
         if (slot.image) {
-            retired.push_back({slot.image, slot.memory, slot.view, Clock::now()});
+            retired.push_back({slot.image, slot.memory, slot.view, nil, Clock::now()});
+        } else if (slot.texture != nil && metal_device != nil) {
+            retired.push_back({nullptr, nullptr, nullptr, slot.texture, Clock::now()});
         }
         slot.image = nullptr;
         slot.memory = nullptr;
@@ -130,11 +134,37 @@ struct OpenXrHost::Impl {
             if (now - old.since < std::chrono::seconds{3}) {
                 return false;
             }
+            if (old.metal != nil) {
+                [old.metal release];
+                return true;
+            }
             graphics.device.destroyImageView(old.view);
             graphics.device.destroyImage(old.image);
             graphics.device.freeMemory(old.memory);
             return true;
         });
+    }
+
+    bool CreateMetal(Slot& slot, u32 width, u32 height) {
+        Retire(slot);
+        @autoreleasepool {
+        MTLTextureDescriptor* d =
+            [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm_sRGB
+                                                               width:width
+                                                              height:height
+                                                           mipmapped:NO];
+        d.usage = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead;
+        d.storageMode = MTLStorageModePrivate;
+        id<MTLTexture> texture = [metal_device newTextureWithDescriptor:d]; // +1, ours
+        if (texture == nil) {
+            return false;
+        }
+        texture.label = @"headset frame";
+        slot.texture = texture;
+        slot.width = width;
+        slot.height = height;
+        return true;
+        }
     }
 
     bool Create(Slot& slot, u32 width, u32 height) {
@@ -284,6 +314,59 @@ void OpenXrHost::Start(const Graphics& graphics) {
     impl->started = true;
     LOG_INFO(Core_Vr, "Frames are handed to the headset as Metal textures of {}",
              vk::to_string(FrameFormat));
+}
+
+void OpenXrHost::StartMetal(void* mtl_device) {
+    if (!impl->available || impl->started || mtl_device == nullptr) {
+        return;
+    }
+    impl->metal_device = [(id<MTLDevice>)mtl_device retain];
+    impl->started = true;
+    LOG_INFO(Core_Vr, "Frames are handed to the headset as Metal textures of our own (RGBA8 sRGB)");
+}
+
+std::optional<OpenXrHost::MetalTarget> OpenXrHost::BeginMetalFrame(u32 width, u32 height) {
+    if (!impl->started || impl->metal_device == nil ||
+        !impl->accepting.load(std::memory_order_relaxed) || width == 0 || height == 0) {
+        return std::nullopt;
+    }
+    std::unique_lock lock{impl->slot_mutex};
+    impl->DestroyRetired();
+    const auto reusable = [&](u32 index) {
+        const Impl::Slot& slot = impl->slots[index];
+        return slot.state == Impl::Slot::State::Free ||
+               (slot.state == Impl::Slot::State::Ready && static_cast<s32>(index) != impl->latest);
+    };
+    impl->slot_freed.wait_for(lock, std::chrono::milliseconds{100}, [&] {
+        for (u32 index = 0; index < NumSlots; ++index) {
+            if (reusable(index)) {
+                return true;
+            }
+        }
+        return false;
+    });
+    for (u32 attempt = 0; attempt < NumSlots; ++attempt) {
+        const u32 index = (impl->next_slot + attempt) % NumSlots;
+        if (!reusable(index)) {
+            continue;
+        }
+        Impl::Slot& slot = impl->slots[index];
+        if ((slot.texture == nil || slot.width != width || slot.height != height) &&
+            !impl->CreateMetal(slot, width, height)) {
+            LOG_ERROR(Core_Vr, "No Metal texture of {}x{} to hand frames to the headset in", width,
+                      height);
+            return std::nullopt;
+        }
+        impl->next_slot = (index + 1) % NumSlots;
+        slot.state = Impl::Slot::State::Drawing;
+        return MetalTarget{
+            .index = index,
+            .texture = (void*)slot.texture,
+            .width = slot.width,
+            .height = slot.height,
+        };
+    }
+    return std::nullopt;
 }
 
 std::optional<OpenXrHost::Target> OpenXrHost::BeginFrame(u32 width, u32 height) {

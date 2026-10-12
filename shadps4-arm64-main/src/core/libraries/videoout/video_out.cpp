@@ -419,7 +419,7 @@ s32 PS4_SYSV_ABI sceVideoOutGetDeviceCapabilityInfo(
     if (Core::Vr::Runtime::Instance().IsHeadsetConnected()) {
         pDeviceCapabilityInfo->capability |= ORBIS_VIDEO_OUT_DEVICE_CAPABILITY_VR_VIEW;
     }
-    if (presenter->IsHDRSupported()) {
+    if (presenter && presenter->IsHDRSupported()) {
         auto& game_info = Common::ElfInfo::Instance();
         if (game_info.GetPSFAttributes().support_hdr) {
             pDeviceCapabilityInfo->capability |= ORBIS_VIDEO_OUT_DEVICE_CAPABILITY_BT2020_PQ;
@@ -458,7 +458,9 @@ s32 PS4_SYSV_ABI sceVideoOutAdjustColor(s32 handle, const SceVideoOutColorSettin
         return ORBIS_VIDEO_OUT_ERROR_INVALID_HANDLE;
     }
 
-    presenter->GetPPSettingsRef().gamma = settings->gamma;
+    if (presenter) {
+        presenter->GetPPSettingsRef().gamma = settings->gamma;
+    }
     return ORBIS_OK;
 }
 

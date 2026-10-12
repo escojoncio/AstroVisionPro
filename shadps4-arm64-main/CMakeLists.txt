@@ -1256,6 +1256,7 @@ set(VIDEO_CORE src/video_core/amdgpu/cb_db_extent.h
                src/video_core/renderer_vulkan/vk_vr_exporter.cpp
                src/video_core/renderer_vulkan/vk_vr_exporter.h
                src/video_core/renderer_vulkan/vk_presenter.cpp
+               src/video_core/renderer_vulkan/vk_frame.h
                src/video_core/renderer_vulkan/vk_presenter.h
                src/video_core/renderer_vulkan/vk_rasterizer.cpp
                src/video_core/renderer_vulkan/vk_rasterizer.h
@@ -1432,7 +1433,8 @@ if (SHADPS4_VISIONOS)
         set_source_files_properties(src/platform/visionos/vpengine_shader_check.mm
             PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
         # VPEngine renderer (gpu/core + Metal backend + the PS4 renderer of integrations/shadps4/gpu):
-        # runs every draw in Metal next to the Vulkan path («Motor gráfico: VPEngine (sombra)»).
+        # the only renderer on visionOS (src/platform/visionos/vpengine_renderer.h). The Vulkan
+        # path is still compiled but never started.
         set(VPENGINE_PS4_DIR ${VPENGINE_GPU_DIR}/../integrations/shadps4/gpu)
         if (EXISTS ${VPENGINE_PS4_DIR}/src/renderer.cpp)
             file(GLOB VPENGINE_CORE_SOURCES ${VPENGINE_GPU_DIR}/core/src/*.cpp)
@@ -1441,13 +1443,17 @@ if (SHADPS4_VISIONOS)
                 ${VPENGINE_GPU_DIR}/metal/src/metal_backend.mm
                 ${VPENGINE_PS4_DIR}/src/formats.cpp
                 ${VPENGINE_PS4_DIR}/src/renderer.cpp
+                ${VPENGINE_PS4_DIR}/src/tiling.cpp
+                ${VPENGINE_PS4_DIR}/src/fetch.cpp
                 src/platform/visionos/vpengine_renderer.h
-                src/platform/visionos/vpengine_renderer.mm)
+                src/platform/visionos/vpengine_renderer.mm
+                src/platform/visionos/vpengine_presenter.h
+                src/platform/visionos/vpengine_presenter.cpp)
             target_include_directories(shadps4 PRIVATE
                 ${VPENGINE_GPU_DIR}/core/include
                 ${VPENGINE_GPU_DIR}/metal/include
                 ${VPENGINE_PS4_DIR}/include)
-            target_compile_definitions(shadps4 PRIVATE SHADPS4_VPENGINE_RENDERER=1)
+            target_compile_definitions(shadps4 PRIVATE SHADPS4_VPENGINE_ONLY=1)
             set_source_files_properties(${VPENGINE_GPU_DIR}/metal/src/metal_backend.mm
                 src/platform/visionos/vpengine_renderer.mm
                 PROPERTIES COMPILE_OPTIONS "-fobjc-arc")

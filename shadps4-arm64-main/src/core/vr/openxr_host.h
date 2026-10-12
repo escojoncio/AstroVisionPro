@@ -70,6 +70,18 @@ public:
     /// `width` by `height` in FrameFormat. Nothing while no headset is showing frames. For the
     /// thread that draws.
     std::optional<Target> BeginFrame(u32 width, u32 height);
+#ifdef SHADPS4_VISIONOS
+    /// visionOS without Vulkan (VPEngine): frames are Metal textures of the host's own, made on
+    /// `mtl_device` (an id<MTLDevice>), in MTLPixelFormatRGBA8Unorm_sRGB.
+    void StartMetal(void* mtl_device);
+    struct MetalTarget {
+        u32 index{};
+        void* texture{}; ///< id<MTLTexture>, owned by the host
+        u32 width{};
+        u32 height{};
+    };
+    std::optional<MetalTarget> BeginMetalFrame(u32 width, u32 height);
+#endif
     /// The GPU has finished the frame drawn to target `index`, and its image has been left in
     /// the General layout.
     void EndFrame(u32 index, const PresentedFrame& info);
