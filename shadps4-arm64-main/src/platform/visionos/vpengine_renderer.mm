@@ -324,7 +324,11 @@ Rasterizer::Rasterizer(AmdGpu::Liverpool* liverpool) : impl{std::make_unique<Imp
     liverpool->BindRasterizer(this);
     Engine& e = engine();
     std::scoped_lock g{e.lock};
-    e.uploaded = [this](u64 a, u64 n) { impl->watch(a, n); };
+    // No page watches: VPEngine finds CPU writes to texture sources by their content. A watched
+    // (read-only) page cannot be aliased by a no-copy Metal buffer (log 17:49: guest buffer of
+    // 0x706c000000 refused, 40 resources missing a frame, black picture) and a write to it from
+    // host code (an HLE strncpy) faulted in a loop.
+    e.uploaded = nullptr;
     e.start();
 }
 
