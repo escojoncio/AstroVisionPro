@@ -236,6 +236,8 @@ void Check(std::span<const uint32_t> code, const Shader::Info& info, const Shade
     case Shader::Stage::Vertex:
         in.stage = vpgcn::ShaderStage::Vertex;
         in.vgprCompCnt = runtime.num_input_vgprs ? runtime.num_input_vgprs - 1 : 0;
+        in.instanceStepRate[0] = runtime.vs_info.step_rate_0;
+        in.instanceStepRate[1] = runtime.vs_info.step_rate_1;
         if (info.has_fetch_shader) {
             if (const auto data = Shader::Gcn::ParseFetchShader(info)) {
                 const u32* p = Shader::Gcn::GetFetchShaderCode(info, info.fetch_shader_sgpr_base);
