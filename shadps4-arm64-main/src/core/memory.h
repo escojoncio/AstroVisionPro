@@ -18,6 +18,9 @@
 namespace Vulkan {
 class Rasterizer;
 }
+namespace VideoCore {
+class RasterizerInterface;
+}
 
 namespace Libraries::Kernel {
 struct OrbisQueryInfo;
@@ -166,7 +169,7 @@ public:
     explicit MemoryManager();
     ~MemoryManager();
 
-    void SetRasterizer(Vulkan::Rasterizer* rasterizer_) {
+    void SetRasterizer(VideoCore::RasterizerInterface* rasterizer_) {
         rasterizer = rasterizer_;
     }
 
@@ -348,7 +351,7 @@ private:
     u64 flexible_usage{};
     u64 pool_budget{};
     s32 sdk_version{};
-    Vulkan::Rasterizer* rasterizer{};
+    VideoCore::RasterizerInterface* rasterizer{};
 
     struct PrtArea {
         VAddr start;
