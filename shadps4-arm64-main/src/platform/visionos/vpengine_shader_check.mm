@@ -171,11 +171,15 @@ std::optional<std::array<uint32_t, 8>> readDescriptor(const vpgcn::DescriptorSou
             if (!readGuest(at + src.path[k], &next, 8)) return std::nullopt;
             at = next & 0xFFFFFFFFFFFFull;
         }
-        if (!readGuest(at + src.path.back(), d.data(), sizeof(d))) return std::nullopt;
+        // (a 4-dword V#/S# may end a mapping: then its 16 bytes alone)
+        if (!readGuest(at + src.path.back(), d.data(), sizeof(d)) && !readGuest(at + src.path.back(), d.data(), 16))
+            return std::nullopt;
         return d;
     }
     case vpgcn::DescriptorSource::Code:
-        if (src.path.empty() || !readGuest(info.pgm_base + src.path[0], d.data(), sizeof(d))) return std::nullopt;
+        if (src.path.empty() || (!readGuest(info.pgm_base + src.path[0], d.data(), sizeof(d)) &&
+                                 !readGuest(info.pgm_base + src.path[0], d.data(), 16)))
+            return std::nullopt;
         return d;
     }
     return std::nullopt;
