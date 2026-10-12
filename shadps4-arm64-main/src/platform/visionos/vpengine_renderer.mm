@@ -184,6 +184,24 @@ void fillStage(vpps4::Stage& st, const AmdGpu::ShaderProgram& program) {
     st.userSgprs = uint8_t(program.settings.num_user_regs);
 }
 
+// CB_COLORn as VPEngine's colour target (write mask left at its default).
+vpps4::ColorTarget colorTarget(const AmdGpu::Regs& regs, unsigned i) {
+    const auto& cb = regs.color_buffers[i];
+    vpps4::ColorTarget c;
+    c.address = cb.Address();
+    c.width = cb.Pitch();
+    c.height = cb.Height();
+    c.pitch = cb.Pitch();
+    c.format = uint8_t(cb.info.format);
+    c.numberType = uint8_t(cb.info.number_type);
+    c.compSwap = uint8_t(cb.info.comp_swap);
+    c.tileMode = cb.info.linear_general ? 31 : uint8_t(cb.attrib.tile_mode_index);
+    c.sliceStart = uint16_t(cb.BaseSlice());
+    c.sliceCount = uint16_t(cb.NumSlices());
+    c.samples = uint8_t(cb.NumSamples());
+    return c;
+}
+
 } // namespace
 
 bool Enabled() {
@@ -212,17 +230,7 @@ void Draw(const AmdGpu::Regs& regs, const Shader::Info& vs, const Shader::Info* 
         const auto& cb = regs.color_buffers[i];
         if (!cb) continue;
         vpps4::ColorTarget& c = d.color[i];
-        c.address = cb.Address();
-        c.width = cb.Pitch();
-        c.height = cb.Height();
-        c.pitch = cb.Pitch();
-        c.format = uint8_t(cb.info.format);
-        c.numberType = uint8_t(cb.info.number_type);
-        c.compSwap = uint8_t(cb.info.comp_swap);
-        c.tileMode = cb.info.linear_general ? 31 : uint8_t(cb.attrib.tile_mode_index);
-        c.sliceStart = uint16_t(cb.BaseSlice());
-        c.sliceCount = uint16_t(cb.NumSlices());
-        c.samples = uint8_t(cb.NumSamples());
+        c = colorTarget(regs, i);
         c.writeMask = uint8_t(regs.color_target_mask.GetMask(i) & regs.color_shader_mask.GetMask(i));
         const auto& b = regs.blend_control[i];
         vpps4::Blend& bl = d.blend[i];
@@ -335,6 +343,15 @@ void Dispatch(const AmdGpu::ComputeProgram& cs, const Shader::Info&) {
     d.cs.workgroupSize = {cs.num_thread_x.full, cs.num_thread_y.full, cs.num_thread_z.full};
     d.groups = {cs.dim_x, cs.dim_y, cs.dim_z};
     e.renderer->dispatch(d);
+}
+
+void Resolve(const AmdGpu::Regs& regs) {
+    if (!regs.color_buffers[0] || !regs.color_buffers[1]) return;
+    Engine& e = engine();
+    std::lock_guard g(e.lock);
+    if (!e.start()) return;
+    e.applyPending();
+    e.renderer->resolve(colorTarget(regs, 0), colorTarget(regs, 1));
 }
 
 void Invalidate(VAddr address, u64 size) {
