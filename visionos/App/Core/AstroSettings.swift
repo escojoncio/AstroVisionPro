@@ -63,6 +63,10 @@ struct AstroSettings {
     var diagnostics = false
     /// The game's picture antialiased (SMAA 1x, Render/EdgeSmoother.swift) before it is shown.
     var edgeSmoothing = true
+    /// «Motor gráfico»: VPEngine in shadow mode (SHADPS4_VPENGINE_RENDERER=1) runs every draw of
+    /// the game a second time through VPEngine's own Metal renderer and logs what it ran and what
+    /// it cost; the picture still comes from KosmicKrisp.
+    var vpengineShadow = false
     /// The language the game is played in: "system" (the headset's) or a language tag
     /// (GameLanguages.swift).
     var gameLanguage = "system"
@@ -153,6 +157,7 @@ struct AstroSettings {
         case "jit_arena_mb": jitArenaMB = min(max(Int(value) ?? jitArenaMB, 64), 2048)
         case "show_hands": showHands = flag
         case "smaa": edgeSmoothing = flag
+        case "vpengine_shadow": vpengineShadow = flag
         case "spatial_audio": spatialAudio = flag
         case "diagnostics": diagnostics = value == "1"
         case "game_language": gameLanguage = value
@@ -247,6 +252,9 @@ struct AstroSettings {
             }
             // KosmicKrisp: Metal encoders a second and what cut each render encoder short.
             env.append("KK_CENSUS=1")
+        }
+        if vpengineShadow {
+            env.append("SHADPS4_VPENGINE_RENDERER=1")
         }
         env.append("SHADPS4_CONSOLE_LANGUAGE=\(GameLanguages.tag(for: gameLanguage))")
         // KosmicKrisp keeps what it translated (Mesa's shader cache) where the app may write:

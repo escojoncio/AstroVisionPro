@@ -1431,6 +1431,30 @@ if (SHADPS4_VISIONOS)
         target_compile_definitions(shadps4 PRIVATE SHADPS4_VPENGINE_SHADER_CHECK=1)
         set_source_files_properties(src/platform/visionos/vpengine_shader_check.mm
             PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
+        # VPEngine renderer (gpu/core + Metal backend + the PS4 renderer of integrations/shadps4/gpu):
+        # runs every draw in Metal next to the Vulkan path («Motor gráfico: VPEngine (sombra)»).
+        set(VPENGINE_PS4_DIR ${VPENGINE_GPU_DIR}/../integrations/shadps4/gpu)
+        if (EXISTS ${VPENGINE_PS4_DIR}/src/renderer.cpp)
+            file(GLOB VPENGINE_CORE_SOURCES ${VPENGINE_GPU_DIR}/core/src/*.cpp)
+            list(FILTER VPENGINE_CORE_SOURCES EXCLUDE REGEX "null_backend\\.cpp$")
+            target_sources(shadps4 PRIVATE ${VPENGINE_CORE_SOURCES}
+                ${VPENGINE_GPU_DIR}/metal/src/metal_backend.mm
+                ${VPENGINE_PS4_DIR}/src/formats.cpp
+                ${VPENGINE_PS4_DIR}/src/renderer.cpp
+                src/platform/visionos/vpengine_renderer.h
+                src/platform/visionos/vpengine_renderer.mm)
+            target_include_directories(shadps4 PRIVATE
+                ${VPENGINE_GPU_DIR}/core/include
+                ${VPENGINE_GPU_DIR}/metal/include
+                ${VPENGINE_PS4_DIR}/include)
+            target_compile_definitions(shadps4 PRIVATE SHADPS4_VPENGINE_RENDERER=1)
+            set_source_files_properties(${VPENGINE_GPU_DIR}/metal/src/metal_backend.mm
+                src/platform/visionos/vpengine_renderer.mm
+                PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
+            message(STATUS "VPEngine renderer: ${VPENGINE_PS4_DIR}")
+        else()
+            message(WARNING "VPEngine renderer sources missing at ${VPENGINE_PS4_DIR}: update visionos/vpengine-gpu.ref")
+        endif()
         message(STATUS "VPEngine shader check: ${VPENGINE_GPU_DIR}")
     endif()
     set_source_files_properties(src/platform/visionos/astro_core.mm
