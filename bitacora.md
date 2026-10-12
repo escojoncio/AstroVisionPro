@@ -30,6 +30,11 @@ Compactada el 2026-10-11: lo resuelto queda en «Histórico» como una línea; e
   SPIRV-Headers toml11 xbyak zydis vma miniz half json xxhash tracy dear_imgui sdl3), `miniz_export.h` vacío.
   `vk_presenter.cpp` da 2 errores ajenos de ImGui (ImVec2). Los .mm no se pueden comprobar aquí.
 - Comprobar que el visor tiene la build nueva: `VPENGINE_GPU renderer on` al arrancar.
+- Build df55ba5 (log 17:30): arranca con VPEngine (`VPENGINE_GPU renderer on`, M2, bindless) y cae en el primer
+  evento SDL: `imgui_impl_sdl3.cpp:384` (ImGui sin iniciar: lo iniciaba el swapchain de Vulkan). Arreglo:
+  `imgui_core.cpp` `ProcessEvent`/`OnResize` salen si `GetCurrentContext() == nullptr`. Las capas ImGui (IME, diálogos
+  de error, devtools) solo se dibujan desde `NewFrame`, que no se llama: no fallan, pero un diálogo del sistema que
+  espere al usuario (teclado en pantalla, error) no se verá → pendiente si algún juego lo pide.
 
 ## VPEngine en sombra (hito 3 del cliente VPEngine)
 - Ajuste «Motor gráfico → VPEngine en sombra (experimental)» (`AstroSettings.vpengineShadow`, clave `vpengine_shadow`,
