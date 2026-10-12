@@ -7,6 +7,13 @@ JIT: arena RWX preparada por StikDebug (protocolo `brk #0xf00d` + universal.js);
 Compactada el 2026-10-11: lo resuelto queda en «Histórico» como una línea; el detalle está en el historial de git de este fichero (`git log -p bitacora.md`).
 
 ## Estado (2026-10-12, tarde) y siguiente sesión
+- **Crash al entrar al primer mundo (ASTRO BOT, VPEngine)**: `liverpool.cpp:365 PM4 packet exceeds remaining`,
+  registros PM4 basura, shaders `undecodable word 0x00000000` y `TryWriteBacking 0x7000000000`. Causa:
+  `Rasterizer::FillBuffer/CopyBuffer` (`vpengine_renderer.mm`) encolaban el DMA como blit Metal que se ejecuta al
+  enviar el frame; Liverpool (CPU) y el juego leen el destino justo después (PM4 de IBs, código de shaders) y lo
+  encontraban a cero. Arreglo: DMA no-GDS en CPU y en orden (`submit()` + `waitIdle()`, luego memset/memmove en la
+  memoria unificada + `impl->invalidate`); si el rango no es verificable se mantiene el blit. Coste: una espera de
+  GPU por paquete DMA. Pendiente de probar en build.
 - **VPEngine es el único renderer en visionOS** (decisión: fuera KosmicKrisp, la sombra y el ajuste «Motor gráfico»).
   Build pendiente de probar: arranca, ¿hay imagen en el visor?, log `VPENGINE_GPU` / `VPENGINE_PRESENT`.
   - `src/platform/visionos/vpengine_renderer.{h,mm}`: `VpengineRenderer::Rasterizer` (RasterizerInterface; draws,

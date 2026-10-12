@@ -532,7 +532,23 @@ void Rasterizer::FillBuffer(VAddr address, u32 num_bytes, u32 value, bool is_gds
         }
         return;
     }
-    e.renderer->fill(address, num_bytes, value);
+    // DMA runs on the CPU, in order: the command processor and the title may read the result
+    // right after this packet (e.g. PM4 or shader code assembled by DMA, then an IndirectBuffer),
+    // which a blit queued for the end of the frame would not have written yet. Memory is unified,
+    // so the GPU's earlier work is finished first and then the bytes are written in place.
+    // Cost: one GPU wait per DMA packet.
+    e.submit();
+    e.backend->waitIdle();
+    // (a range the probe cannot vouch for, e.g. across its window, keeps the GPU blit)
+    if (readable(address, num_bytes) < num_bytes) {
+        e.renderer->fill(address, num_bytes, value);
+        return;
+    }
+    auto* p = reinterpret_cast<u8*>(address);
+    u64 k = 0;
+    for (; k + 4 <= num_bytes; k += 4) std::memcpy(p + k, &value, 4);
+    for (; k < num_bytes; ++k) p[k] = u8(value >> (8 * (k & 3)));
+    impl->invalidate(address, num_bytes);
 }
 
 void Rasterizer::CopyBuffer(VAddr dst, VAddr src, u32 num_bytes, bool dst_gds, bool src_gds) {
@@ -558,7 +574,15 @@ void Rasterizer::CopyBuffer(VAddr dst, VAddr src, u32 num_bytes, bool dst_gds, b
         }
         return;
     }
-    e.renderer->copy(dst, src, num_bytes);
+    // On the CPU and in order, for the same reason as FillBuffer.
+    e.submit();
+    e.backend->waitIdle();
+    if (readable(src, num_bytes) < num_bytes || readable(dst, num_bytes) < num_bytes) {
+        e.renderer->copy(dst, src, num_bytes);
+        return;
+    }
+    std::memmove(reinterpret_cast<void*>(dst), reinterpret_cast<const void*>(src), num_bytes);
+    impl->invalidate(dst, num_bytes);
 }
 
 u32 Rasterizer::ReadDataFromGds(u32 gds_offset) {
