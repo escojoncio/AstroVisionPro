@@ -42,8 +42,9 @@ Compactada el 2026-10-11: lo resuelto queda en «Histórico» como una línea; e
   `vk_rasterizer.cpp` `NoteVpengineDraw` (Draw y DrawIndirect, tras tener pipeline: hashes de `GetStages()`) y
   `NoteDispatch` (DispatchDirect antes del HLE, DispatchIndirect); `vk_presenter.cpp` `Present` → `EndFrame`. Cada 10 s:
   `VPENGINE_DRAWS: N frames, per frame D draws (X% with every shader running in VPEngine, Y% waiting …)` + hasta 8
-  líneas `VPENGINE_DRAWS   blocked by <st>_<hash>: n per frame (motivo)`. Traductor: VPEngine b5b3b7d (semántica
-  exacta validada con test diferencial; LDS de píxel como memoria por carril: 174/174 del corpus).
+  líneas `VPENGINE_DRAWS   blocked by <st>_<hash>: n per frame (motivo)`. Traductor: VPEngine 7c44565 (semántica
+  exacta validada con test diferencial, también con control de flujo; LDS de píxel como memoria por carril: 174/174 del
+  corpus; stores tipados y formatos empaquetados; `image_get_lod`).
 
 ## Volcado de shaders para VPEngine (va en la misma build que la limpieza)
 - `emulator.cpp` (`#ifdef SHADPS4_VISIONOS`, tras `SHADPS4_PIPELINE_CACHE`): `SHADPS4_DUMP_SHADERS=<carpeta>` → crea la carpeta,
