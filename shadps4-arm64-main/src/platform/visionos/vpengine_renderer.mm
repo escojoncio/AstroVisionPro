@@ -161,9 +161,9 @@ struct Engine {
         hooks.log = [this](const std::string& l) { log(l); };
         renderer = std::make_unique<vpps4::Renderer>(*device, std::move(hooks));
         renderer->setSummaryEvery(kEvery);
-        // Same MSAA limit as the Vulkan path (app setting); without it, 4: the headset's M2 has no 8x.
-        const char* maxMsaa = std::getenv("SHADPS4_MAX_MSAA");
-        renderer->setMaxSamples(uint8_t(std::clamp(maxMsaa ? std::atoi(maxMsaa) : 4, 1, 4)));
+        // No MSAA on VPEngine's path: antialiasing will be VPKTAA (temporal, 1 sample per pixel). The
+        // game's MSAA targets become single-sample; its resolves become copies.
+        renderer->setMaxSamples(1);
         LOG_INFO(Render_Vulkan, "VPENGINE_GPU msaa limit {} samples", renderer->maxSamples());
         LOG_INFO(Render_Vulkan, "VPENGINE_GPU shadow renderer on (VPEngine runs every draw in Metal; the picture is still Vulkan's)");
         return true;
