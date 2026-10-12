@@ -7,6 +7,10 @@ JIT: arena RWX preparada por StikDebug (protocolo `brk #0xf00d` + universal.js);
 Compactada el 2026-10-11: lo resuelto queda en «Histórico» como una línea; el detalle está en el historial de git de este fichero (`git log -p bitacora.md`).
 
 ## Estado (2026-10-12) y siguiente sesión
+- Prueba de VPEngine en sombra (a1eab54): crash al crear un target MSAA de 8 muestras en Metal (no admitido en M2).
+  Arreglo pendiente en VPEngine (ver su bitácora): acotar muestras a `SHADPS4_MAX_MSAA` (pasarlo desde
+  `vpengine_renderer.mm` a `vpps4::Renderer::setMaxSamples`) + guarda en `MetalBackend`; luego actualizar
+  `visionos/vpengine-gpu.ref` y build. Con el ajuste apagado la app es como antes.
 - Build lanzada: VPEngine en sombra (sección siguiente). Probar con el ajuste encendido en ASTRO BOT, jugar 1–2 min en el
   mundo y pasar el log (líneas `VPENGINE_GPU`).
 
