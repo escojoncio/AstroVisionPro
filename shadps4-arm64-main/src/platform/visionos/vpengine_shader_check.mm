@@ -3,8 +3,11 @@
 
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
+#include <mach/mach.h>
 
 #include <algorithm>
+#include <array>
+#include <optional>
 #include <atomic>
 #include <chrono>
 #include <cstdio>
@@ -25,6 +28,7 @@
 #include "shader_recompiler/frontend/fetch_shader.h"
 #include "shader_recompiler/info.h"
 #include "shader_recompiler/runtime_info.h"
+#include "video_core/amdgpu/resource.h"
 #include "vpgcn/lift.h"
 #include "vpmsl/msl.h"
 
@@ -141,6 +145,69 @@ std::string firstLine(NSString* s) {
     return nl == std::string::npos ? text : text.substr(0, nl);
 }
 
+// The dwords of a descriptor where the lifter traced it, read from this draw's user data and guest
+// memory (guest addresses are host addresses). Guest reads go through vm_read_overwrite, which
+// fails instead of faulting on an unmapped address (user data of a pipeline preloaded from disk
+// may hold stale pointers).
+std::optional<std::array<uint32_t, 8>> readDescriptor(const vpgcn::DescriptorSource& src, const Shader::Info& info) {
+    std::array<uint32_t, 8> d{};
+    auto readGuest = [&](VAddr at, void* out, size_t bytes) {
+        if (at < 0x10000) return false;
+        vm_size_t got = 0;
+        return vm_read_overwrite(mach_task_self(), vm_address_t(at), vm_size_t(bytes), vm_address_t(out), &got) ==
+                   KERN_SUCCESS &&
+               got == bytes;
+    };
+    switch (src.kind) {
+    case vpgcn::DescriptorSource::UserData:
+        for (unsigned k = 0; k < 8; ++k)
+            d[k] = src.sgpr + k < info.user_data.size() ? info.user_data[src.sgpr + k] : 0;
+        return d;
+    case vpgcn::DescriptorSource::Pointer: {
+        if (src.path.empty() || src.sgpr + 1u >= info.user_data.size()) return std::nullopt;
+        VAddr at = (VAddr(info.user_data[src.sgpr + 1]) << 32 | info.user_data[src.sgpr]) & 0xFFFFFFFFFFFFull;
+        for (size_t k = 0; k + 1 < src.path.size(); ++k) {
+            uint64_t next = 0;
+            if (!readGuest(at + src.path[k], &next, 8)) return std::nullopt;
+            at = next & 0xFFFFFFFFFFFFull;
+        }
+        if (!readGuest(at + src.path.back(), d.data(), sizeof(d))) return std::nullopt;
+        return d;
+    }
+    case vpgcn::DescriptorSource::Code:
+        if (src.path.empty() || !readGuest(info.pgm_base + src.path[0], d.data(), sizeof(d))) return std::nullopt;
+        return d;
+    }
+    return std::nullopt;
+}
+
+// What the lifter needs from a descriptor: a T#'s dimension and texel type, a V#'s data and number
+// formats (both read from the same dwords: the lifter takes the fields of the kind it asked for).
+std::optional<vpgcn::DescriptorInfo> describeDescriptor(const vpgcn::DescriptorSource& src, const Shader::Info& info) {
+    const auto d = readDescriptor(src, info);
+    if (!d) return std::nullopt;
+    vpgcn::DescriptorInfo out;
+    AmdGpu::Image image{};
+    std::memcpy(&image, d->data(), sizeof(image) < 32 ? sizeof(image) : 32);
+    switch (static_cast<AmdGpu::ImageType>(image.type)) {
+    case AmdGpu::ImageType::Color1D: out.dim = vpir::TexDim::D1; break;
+    case AmdGpu::ImageType::Color3D: out.dim = vpir::TexDim::D3; break;
+    case AmdGpu::ImageType::Cube: out.dim = image.last_array > 5 ? vpir::TexDim::CubeArray : vpir::TexDim::Cube; break;
+    case AmdGpu::ImageType::Color1DArray: // (no 1D arrays in VPIR: as 2D arrays)
+    case AmdGpu::ImageType::Color2DArray:
+    case AmdGpu::ImageType::Color2DMsaaArray: out.dim = vpir::TexDim::D2Array; break;
+    default: out.dim = vpir::TexDim::D2; break;
+    }
+    const auto nfmt = static_cast<AmdGpu::NumberFormat>(image.num_format);
+    out.elem = nfmt == AmdGpu::NumberFormat::Uint   ? vpir::Scalar::U32
+               : nfmt == AmdGpu::NumberFormat::Sint ? vpir::Scalar::I32
+                                                    : vpir::Scalar::F32;
+    // V#: dword 3, num_format [14:12], data_format [18:15]
+    out.nfmt = uint8_t((*d)[3] >> 12 & 7);
+    out.dfmt = uint8_t((*d)[3] >> 15 & 15);
+    return out;
+}
+
 } // namespace
 
 bool Enabled() {
@@ -220,6 +287,8 @@ void Check(std::span<const uint32_t> code, const Shader::Info& info, const Shade
     in.code = code;
     in.fetch = fetch;
     in.userSgprs = runtime.num_user_data;
+    // The real descriptors of this draw: texture dimensions and texel types, typed buffer formats.
+    in.describe = [&info](const vpgcn::DescriptorSource& src) { return describeDescriptor(src, info); };
 
     const auto t0 = std::chrono::steady_clock::now();
     vpgcn::LiftResult r = vpgcn::lift(in);

@@ -38,11 +38,15 @@ Compactada el 2026-10-11: lo resuelto queda en «Histórico» como una línea; e
   <st>_<hash>_<perm> OK: lift X ms, N bytes, Metal Y ms` o `lift:/verifier:/Metal:` + primera línea; resumen
   `VPENGINE_SHADERS: ...` cada 10. Fallos → `<ShaderDir>/vpengine/<nombre>.metal(.txt)` / `.lift.txt`
   (ShaderDir = `VPS4/VPEngine/shaders` en modo diagnóstico). No cambia el render.
+- Descriptores reales (`describe` del `LiftInput`): el check lee los dwords del T#/V# donde el lifter los trazó
+  (user data del draw, punteros vía `vm_read_overwrite`, que falla en vez de fallar la página con direcciones viejas de
+  pipelines precargados; tablas tras el código desde `pgm_base`) → dimensión (1D/2D/3D/cubo/arrays, cubo array si
+  `last_array > 5`), tipo de texel (Uint/Sint/float) y dfmt/nfmt de buffers tipados. Antes todo era 2D float.
 - Censo de draws (mismo modo): estado por `pgm_hash` (pendiente/OK/fallo pegajoso/etapa no soportada, primer error);
   `vk_rasterizer.cpp` `NoteVpengineDraw` (Draw y DrawIndirect, tras tener pipeline: hashes de `GetStages()`) y
   `NoteDispatch` (DispatchDirect antes del HLE, DispatchIndirect); `vk_presenter.cpp` `Present` → `EndFrame`. Cada 10 s:
   `VPENGINE_DRAWS: N frames, per frame D draws (X% with every shader running in VPEngine, Y% waiting …)` + hasta 8
-  líneas `VPENGINE_DRAWS   blocked by <st>_<hash>: n per frame (motivo)`. Traductor: VPEngine 7c44565 (semántica
+  líneas `VPENGINE_DRAWS   blocked by <st>_<hash>: n per frame (motivo)`. Traductor: VPEngine 7c00184 (semántica
   exacta validada con test diferencial, también con control de flujo; LDS de píxel como memoria por carril: 174/174 del
   corpus; stores tipados y formatos empaquetados; `image_get_lod`).
 
