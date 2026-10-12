@@ -294,3 +294,10 @@ Datos de los logs del visor (Vision Pro M2), ASTRO BOT, KosmicKrisp salvo donde 
 - `leftOut`: además del primero, cuenta en 1000/10000/100000/cada millón (`draws left out: ... xN`), para cuantificar GS/ES/LS y fast clear.
 - `visionos/vpengine-gpu.ref` → VPEngine 8de52d2 (gpuMayAccess/gpuIdle, hash de texturas limitado, volcado `vpps4.shader dump`).
 - Próximo log: comprobar fps del mundo, proporción dma sin/con espera, y copiar las líneas `vpps4.shader dump` de los 2 VS rechazados.
+
+## 2026-10-12 · Ojos estéreo como slices; diagnóstico de draws ES/LS/GS
+- Log 19:05: ojos negros. T# ojo 0 0x70723e0000 / ojo 1 0x7072ce0000 (0x900000 = 1536*1536*4: dos slices de un target array); ningún target de color de VPEngine cerca ⇒ los producen los draws ES/LS/GS excluidos en `Rasterizer::Draw` (los de VS sin traducir sí registran target).
+- `vpengine_renderer.mm` `describeGeometryDraw`: para los 8 primeros pares distintos (etapas, CB0) registra `VPENGINE_GEOM stages ... gs_mode gs_instances out_prim max_vert esgs/gsvs/vert itemsize prim cbN@addr WxH pitch slices fmt` y vuelca una vez las palabras de LS/HS/ES/GS/VS/PS (`VPENGINE_GEOM <etapa> @addr code@N: ...`, 128 palabras/línea).
+- `Present::ComposeEyes`: si el T# no es un target pero cae en el slice k>0 de un target array (`Renderer::colorTargetSlice`), vista 2D de ese slice (`newTextureViewWithPixelFormat ... slices:(k,1)`). Línea `VPENGINE_PRESENT eye ... array_slice=k|-1`.
+- `visionos/vpengine-gpu.ref` → VPEngine fb2ce98 (lift por flujo de datos: los 2 VS y el CS rechazados traducen; `colorTargetSlice`; targets con capas >=).
+- Próximo log: copiar todas las líneas `VPENGINE_GEOM` para implementar la ruta GS (amplificación estéreo a 2 capas).
