@@ -6,7 +6,11 @@ App visionOS en `visionos/` (SwiftUI + Compositor Services + ARKit + GameControl
 JIT: arena RWX preparada por StikDebug (protocolo `brk #0xf00d` + universal.js); la app hace detach al terminar.
 Compactada el 2026-10-11: lo resuelto queda en «Histórico» como una línea; el detalle está en el historial de git de este fichero (`git log -p bitacora.md`).
 
-## Estado (2026-10-11, noche) y siguiente sesión
+## Estado (2026-10-12) y siguiente sesión
+- Build lanzada: VPEngine en sombra (sección siguiente). Probar con el ajuste encendido en ASTRO BOT, jugar 1–2 min en el
+  mundo y pasar el log (líneas `VPENGINE_GPU`).
+
+## Estado anterior (2026-10-11, noche)
 - Build en curso: limpieza de ajustes + «Modo diagnóstico» único + diagnósticos de KITCHEN + volcado de shaders para VPEngine (secciones siguientes). Probar: ASTRO BOT con diagnóstico apagado (no debe empeorar; log limpio) y KITCHEN con diagnóstico encendido + volcado L1+R1+L3 ya dentro de la escena → buscar `READ_UNWRITTEN`, `SMALL_BUFFER`, `DIAG: budgets reset`, PNG `d*_…_notgpu` de profundidad/sombras.
 - Build faa8cfa (profundidad en dirección de escritura + alpha-to-coverage): probada, sin cambio visual en KITCHEN (abajo). Build e8e0180 (copias en bruto, 2dVr, barreras): sin cambio visual en KITCHEN. Build 34050d6: KITCHEN ya entra y se ve la escena (log 20:53), pero con aspecto incorrecto (usuario: «como 030_…240x135»), sin los paneles emergentes/subtítulos; 26 fps, ~37,6 ms (antes 32: ahora la escena pasa la prueba de profundidad y se sombrea de verdad; `960x1080 1 colour` 200 → 255 ms/s). `REPROJECTION_LABEL_NEAR` no saltó esta vez. `sceHmdReprojectionStart2dVr` (stub) llamado 119 veces solo en la transición de carga (20:54:15–20), no en juego. `RAW_WRITE` agotó sus 16 logs en el menú (no se ve si tocó la profundidad en VR). Pendiente: volcado de esta sesión (VPS4/Partidas/rt_dump, 67 imágenes). Build e9697ac: KITCHEN colgado al entrar en VR (log 20:38). Build 0b1aaf8 (run 38160653309): probada (log 19:55, volcado OK) — volcado en VPS4/Partidas/rt_dump + `GPU_COMPUTE` (abajo; la de 4293712 se canceló). Build 4148263 (run 38159260534): OK, sin probar — atajo de volcado + color de las imágenes planas de 10 bits + frames de casco leídos tras su dibujo (abajo). Última probada: 50110d0 (logs 19:02 KITCHEN, 19:04 ASTRO BOT).
 - **KITCHEN arranca y corre**: la etiqueta de frame lo desbloqueó (`REPROJECTION_LABEL`: el juego pone la etiqueta a un contador, p. ej. 0x555, y la GPU espera ==0; escrito 0). Esperas de arranque en gfx (`0x786d640e20/28/30` ==0) y asc1 (`0x7019f28e38/ec8`, `0x7019f260f8` ==1) que se resuelven solas. 30 fps, GPU 98 %, ~360 draws/imagen, ~33 ms/imagen; ojos 960x1080 A2B10G10R10UnormPack32, tan 1.732/1.0/1.0/1.192. **Problema: imagen casi negra** (se ven siluetas con luces; no se ven subtítulos). Hipótesis: exposición/HDR del juego (compute asíncrono) o color de los ojos de 10 bits UNORM mal tratado en `hmd_pp_pass`/`linear_out`, o subtítulos en una capa que no emulamos.
@@ -14,6 +18,26 @@ Compactada el 2026-10-11: lo resuelto queda en «Histórico» como una línea; e
 - Siguiente: con la build en curso, en KITCHEN L1+R1+L3 → `VPS4/Partidas/rt_dump/*.png` (+ lista `cache image at …` y traza de 3000 draws en el log) → ver si los ojos ya salen oscuros del juego (exposición) o se oscurecen en nuestra composición (formato 10 bits).
 - Herramientas aquí: comprobación de sintaxis con `clang++ -std=c++23 -fsyntax-only`, submódulos (`git submodule update --init --depth 1`, de uno en uno si falla): fmt spdlog vulkan-headers robin-map magic_enum ext-boost sirit (+ `externals/sirit/externals/SPIRV-Headers`) toml11 xbyak zydis vma miniz half json xxhash tracy dear_imgui sdl3; `-DSPDLOG_FMT_EXTERNAL`, `-DVK_NO_PROTOTYPES -DVULKAN_HPP_NO_CONSTRUCTORS -DVULKAN_HPP_NO_STRUCT_SETTERS -DVULKAN_HPP_HAS_SPACESHIP_OPERATOR -DVULKAN_HPP_DISPATCH_LOADER_DYNAMIC=1 -DVULKAN_HPP_NO_EXCEPTIONS`, `-DSHADPS4_VISIONOS -DENABLE_OPENXR_HOST`, un `miniz_export.h` vacío. `vk_presenter.cpp` da 2 errores ajenos de ImGui (ImVec2) sin el imconfig del proyecto. spirv-cross: compilar KhronosGroup/SPIRV-Cross con cmake. Fuente de KK: `git fetch --depth 1 --filter=blob:none https://github.com/shadexternals/mesa.git b628375fb1fd99476bfbaaa0532deb6fe3a6870e` con sparse `src/kosmickrisp/`.
 - Comprobar que el visor tiene la build nueva antes de leer un log: línea de `vr_tracker.cpp:NNN` / `Multisampling limited to N` / ajustes nuevos en la app (SideStore a veces deja la anterior).
+
+## VPEngine en sombra (hito 3 del cliente VPEngine) — build lanzada, sin probar
+- Ajuste «Motor gráfico → VPEngine en sombra (experimental)» (`AstroSettings.vpengineShadow`, clave `vpengine_shadow`,
+  `SettingsView.swift`) → `SHADPS4_VPENGINE_RENDERER=1`. La imagen sigue siendo de KosmicKrisp.
+- `src/platform/visionos/vpengine_renderer.{h,mm}` (ARC): registros de Liverpool → `vpps4::DrawState`/`DispatchState` →
+  `vpps4::Renderer` (VPEngine `integrations/shadps4/gpu`) → `vpgpu::Device` + `vpgpu::metal::MetalBackend` propios
+  (2 hilos de pipelines). Memoria del juego en sitio: ventanas de 64 MB alineadas, recortadas a lo mapeado legible
+  (`vm_region_64`, `max_protection & READ`). MSL: `vp_main`, tabla en `buffer(0)`. Invalidaciones del manejador de fallos
+  en cola sin el lock (por páginas de 16 KB), aplicadas antes de cada draw.
+- Enganches (`#ifdef SHADPS4_VPENGINE_RENDERER`): `vk_rasterizer.cpp` `Draw` (tras `NoteVpengineDraw`; un draw partido
+  por target passes entra una vez por pasada), `DispatchDirect` (usa `cs_program` de la cola, tras el HLE),
+  `InvalidateMemory`; `vk_presenter.cpp` `Present` → `EndFrame` (submit del frame de VPEngine). Indirectos: no.
+- CMake (bloque `VPENGINE_GPU_DIR`): `gpu/core/src` (sin null_backend), `gpu/metal/src/metal_backend.mm`,
+  `integrations/shadps4/gpu/src`; define `SHADPS4_VPENGINE_RENDERER=1`. `visionos/vpengine-gpu.ref` = 0946f47.
+  `core-inputs.txt` incluye gpu/core, gpu/metal e integrations/shadps4/gpu.
+- Log: `VPENGINE_GPU gpu.metal ...` al arrancar; cada 120 frames `vpps4.frame n=.. draws=hechos/total dispatches=..
+  passes shaders shader_errors textures targets uploads skip[motivo]=n` + `gpu.frame/cut/pso` (encoders, barreras,
+  ms de GPU); `vpps4.first skip=/note=` la primera vez de cada motivo; errores `gpu.err` / `vpps4.shader error` (≤200).
+- Qué mirar: % de draws hechos, motivos de salto más frecuentes, encoders/frame (KK ~50) y ms de GPU por frame (KK ~30).
+  Límites conocidos: texturas teseladas sin destesar (vacías), indirectos, primer instance offset, swizzle de T#.
 
 ## Interfaz de rasterizador (hito 1 del cliente VPEngine, sin cambio de comportamiento)
 - `src/video_core/rasterizer_interface.h`: `VideoCore::RasterizerInterface` (virtual puro) con lo que usan Liverpool,
