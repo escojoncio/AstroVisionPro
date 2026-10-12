@@ -548,7 +548,7 @@ void Rasterizer::FillBuffer(VAddr address, u32 num_bytes, u32 value, bool is_gds
     u64 k = 0;
     for (; k + 4 <= num_bytes; k += 4) std::memcpy(p + k, &value, 4);
     for (; k < num_bytes; ++k) p[k] = u8(value >> (8 * (k & 3)));
-    impl->invalidate(address, num_bytes);
+    e.renderer->invalidate(address, num_bytes);  // (no page watches: tell the texture cache)
 }
 
 void Rasterizer::CopyBuffer(VAddr dst, VAddr src, u32 num_bytes, bool dst_gds, bool src_gds) {
@@ -582,7 +582,7 @@ void Rasterizer::CopyBuffer(VAddr dst, VAddr src, u32 num_bytes, bool dst_gds, b
         return;
     }
     std::memmove(reinterpret_cast<void*>(dst), reinterpret_cast<const void*>(src), num_bytes);
-    impl->invalidate(dst, num_bytes);
+    e.renderer->invalidate(dst, num_bytes);
 }
 
 u32 Rasterizer::ReadDataFromGds(u32 gds_offset) {
@@ -869,6 +869,12 @@ int ComposeEyes(std::span<const AmdGpu::Image, 2> eye_textures, const Core::Vr::
             eye_width = d.width;
             eye_height = d.height;
         }
+        // Where the eye comes from: a colour target VPEngine drew, or an image filled from guest
+        // memory / written by compute (first frames and every 600).
+        if (impl->frames % 600 == 0)
+            LOG_INFO(Render_Vulkan, "VPENGINE_PRESENT eye {} T# {:#x} tile {} pitch {} fmt {}/{} {}x{} colour_target={}", k,
+                     d.address, d.tilingIndex, d.pitch, d.dataFormat, d.numFormat, d.width, d.height,
+                     bool(e.renderer->colorTargetAt(d.address)));
     }
     // The eyes' drawing is submitted first: the composition runs after it on the same queue.
     e.submit();
