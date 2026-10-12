@@ -25,9 +25,6 @@ struct AstroSettings {
     var fovOf = "headset"
     /// Sharpening of the picture on its way to the headset, 0 to 1.
     var sharpen = "0.3"
-    /// The most samples a pixel the game's own antialiasing (MSAA) is drawn with
-    /// (SHADPS4_MAX_MSAA): "1" none, "2", "4". The console draws ASTRO BOT's scene with more.
-
     /// The hands holding the controller place it in the game.
     var hands = true
     /// How far beyond the next picture the head position is predicted, in milliseconds.
