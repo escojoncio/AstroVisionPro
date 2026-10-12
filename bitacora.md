@@ -7,6 +7,10 @@ JIT: arena RWX preparada por StikDebug (protocolo `brk #0xf00d` + universal.js);
 Compactada el 2026-10-11: lo resuelto queda en «Histórico» como una línea; el detalle está en el historial de git de este fichero (`git log -p bitacora.md`).
 
 ## Estado (2026-10-12) y siguiente sesión
+- Log 11:31 (VPEngine en sombra en VR): VPEngine nunca enviaba su frame: en modo casco el frame acaba en
+  `src/core/libraries/videoout/driver.cpp` (rama `req.is_hmd`, `FrameStats::EndFrame`) y no pasa por `Presenter::Present`.
+  Arreglado: ahí también `VpengineShaderCheck::EndFrame()` y `VpengineRenderer::EndFrame()`. Efecto del fallo: frame
+  infinito, GPU thread 100 %, 2,4 fps, memoria +3 GB. Ref de VPEngine con guarda `frame_not_ended`.
 - Arreglado el crash de la prueba de VPEngine en sombra (a1eab54: target MSAA de 8 muestras, no admitido en M2):
   en la ruta de VPEngine no hay MSAA (el AA será VPKTAA): `vpengine_renderer.mm` llama `setMaxSamples(1)`; log
   `VPENGINE_GPU msaa limit 1 samples`. Resolves del juego (CB_COLOR_CONTROL resolve, `FilterDraw` en
