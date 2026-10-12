@@ -31,6 +31,9 @@
 #include "video_core/amdgpu/liverpool.h"
 #include "video_core/cache_storage.h"
 #include "video_core/renderer_vulkan/gpu_bench.h"
+#ifdef SHADPS4_VPENGINE_SHADER_CHECK
+#include "vpengine_shader_check.h"
+#endif
 #include "video_core/renderer_vulkan/legacy_vertex_attributes.h"
 #include "video_core/renderer_vulkan/liverpool_to_vk.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
@@ -1090,6 +1093,12 @@ vk::ShaderModule PipelineCache::CompileModule(Shader::Info& info, Shader::Runtim
     DumpShader(code, info.pgm_hash, info.stage, perm_idx, "bin");
 
     const auto ir_program = Shader::TranslateProgram(code, pools, info, runtime_info, profile);
+#ifdef SHADPS4_VPENGINE_SHADER_CHECK
+    // «Modo diagnóstico»: VPEngine lifts this shader too and the headset's Metal compiles it (log).
+    if (VpengineShaderCheck::Enabled()) {
+        VpengineShaderCheck::Check(code, info, runtime_info, perm_idx);
+    }
+#endif
     auto spv = Shader::Backend::SPIRV::EmitSPIRV(profile, runtime_info, ir_program, binding);
     DumpShader(spv, info.pgm_hash, info.stage, perm_idx, "spv");
     if (Shader::Backend::SPIRV::ShouldSplitFmaNoContraction(info.pgm_hash, info.stage) &&

@@ -239,6 +239,8 @@ struct AstroSettings {
             // known_title.cpp).
             env.append("SHADPS4_GPU_STAMP_LOG=1")
             env.append("SHADPS4_QUALITY_DUMP=1")
+            // VPEngine lifts each shader too and the headset's Metal compiles it (VPENGINE_SHADER lines).
+            env.append("SHADPS4_VPENGINE_SHADER_CHECK=1")
             // Each shader's GCN code, once, to VPS4/VPEngine/shaders/dumps (VPEngine's corpus).
             if let root = GameFolder.url() {
                 env.append("SHADPS4_DUMP_SHADERS=\(root.appendingPathComponent("VPEngine/shaders").path)")

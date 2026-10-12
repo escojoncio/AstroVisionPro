@@ -15,6 +15,22 @@ Compactada el 2026-10-11: lo resuelto queda en «Histórico» como una línea; e
 - Herramientas aquí: comprobación de sintaxis con `clang++ -std=c++23 -fsyntax-only`, submódulos (`git submodule update --init --depth 1`, de uno en uno si falla): fmt spdlog vulkan-headers robin-map magic_enum ext-boost sirit (+ `externals/sirit/externals/SPIRV-Headers`) toml11 xbyak zydis vma miniz half json xxhash tracy dear_imgui sdl3; `-DSPDLOG_FMT_EXTERNAL`, `-DVK_NO_PROTOTYPES -DVULKAN_HPP_NO_CONSTRUCTORS -DVULKAN_HPP_NO_STRUCT_SETTERS -DVULKAN_HPP_HAS_SPACESHIP_OPERATOR -DVULKAN_HPP_DISPATCH_LOADER_DYNAMIC=1 -DVULKAN_HPP_NO_EXCEPTIONS`, `-DSHADPS4_VISIONOS -DENABLE_OPENXR_HOST`, un `miniz_export.h` vacío. `vk_presenter.cpp` da 2 errores ajenos de ImGui (ImVec2) sin el imconfig del proyecto. spirv-cross: compilar KhronosGroup/SPIRV-Cross con cmake. Fuente de KK: `git fetch --depth 1 --filter=blob:none https://github.com/shadexternals/mesa.git b628375fb1fd99476bfbaaa0532deb6fe3a6870e` con sparse `src/kosmickrisp/`.
 - Comprobar que el visor tiene la build nueva antes de leer un log: línea de `vr_tracker.cpp:NNN` / `Multisampling limited to N` / ajustes nuevos en la app (SideStore a veces deja la anterior).
 
+## Comprobación de shaders de VPEngine en el visor (Modo diagnóstico)
+- `visionos-app.yml`: paso «VPEngine shader translator» clona escojoncio/VPEngine en `vpengine/` al commit de
+  `visionos/vpengine-gpu.ref` (actualizarlo para coger traductor nuevo); `core-inputs.txt` incluye `gpu/shader` de VPEngine
+  (clave de caché del núcleo); `VPENGINE_GPU_DIR=$PWD/vpengine/gpu bash build-core.sh` → `-DVPENGINE_GPU_DIR`.
+- `CMakeLists.txt` (bloque `SHADPS4_VISIONOS`): con `VPENGINE_GPU_DIR`, compila `gpu/shader/{ir,msl}/src/*.cpp`,
+  `gcn/src/{gcn,lift}.cpp` + `src/platform/visionos/vpengine_shader_check.{h,mm}` (ARC) dentro de `shadps4`;
+  define `SHADPS4_VPENGINE_SHADER_CHECK=1`.
+- `vk_pipeline_cache.cpp` `CompileModule`, tras `TranslateProgram`: `VpengineShaderCheck::Check(code, info, runtime_info,
+  perm_idx)` si `SHADPS4_VPENGINE_SHADER_CHECK=1` (la app lo pone con «Modo diagnóstico», `AstroSettings.swift`).
+- `vpengine_shader_check.mm`: `LiftInput` con el estado real (user SGPRs = `num_user_data`, PS `addr_flags`, formatos
+  de exportación por MRT, CS tamaño de grupo/tgid/LDS, VS `num_input_vgprs` y el fetch de `ParseFetchShader`) →
+  `vpgcn::lift` → `vpmsl::emitMsl` → `newLibraryWithSource` asíncrono (Metal 3.1, fast math). Log: `VPENGINE_SHADER
+  <st>_<hash>_<perm> OK: lift X ms, N bytes, Metal Y ms` o `lift:/verifier:/Metal:` + primera línea; resumen
+  `VPENGINE_SHADERS: ...` cada 10. Fallos → `<ShaderDir>/vpengine/<nombre>.metal(.txt)` / `.lift.txt`
+  (ShaderDir = `VPS4/VPEngine/shaders` en modo diagnóstico). No cambia el render.
+
 ## Volcado de shaders para VPEngine (va en la misma build que la limpieza)
 - `emulator.cpp` (`#ifdef SHADPS4_VISIONOS`, tras `SHADPS4_PIPELINE_CACHE`): `SHADPS4_DUMP_SHADERS=<carpeta>` → crea la carpeta,
   `SetUserPath(ShaderDir, carpeta)` + `SetDumpShaders(true)`; log `GPU dumpShaders: true`. shadPS4 escribe en `<carpeta>/dumps`
