@@ -6,6 +6,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <cstdio>
 #include <cstring>
 #include <cstdlib>
 #include <filesystem>
@@ -37,6 +38,12 @@ struct Tally {
 Tally& tally() {
     static Tally t;
     return t;
+}
+
+// At most this many Metal compiles in flight: a game compiles hundreds of shaders at once.
+dispatch_semaphore_t inFlight() {
+    static dispatch_semaphore_t s = dispatch_semaphore_create(4);
+    return s;
 }
 
 id<MTLDevice> device() {
@@ -202,10 +209,13 @@ void Check(std::span<const uint32_t> code, const Shader::Info& info, const Shade
     MTLCompileOptions* options = [MTLCompileOptions new];
     options.languageVersion = MTLLanguageVersion3_1;
     options.mathMode = MTLMathModeFast;
+    dispatch_semaphore_t slots = inFlight();
+    dispatch_semaphore_wait(slots, DISPATCH_TIME_FOREVER);
     const auto c0 = std::chrono::steady_clock::now();
     [dev newLibraryWithSource:text
                       options:options
             completionHandler:^(id<MTLLibrary> library, NSError* error) {
+              dispatch_semaphore_signal(slots);
               const double ms =
                   std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - c0).count();
               Tally& tt = tally();
