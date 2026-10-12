@@ -7,12 +7,12 @@ JIT: arena RWX preparada por StikDebug (protocolo `brk #0xf00d` + universal.js);
 Compactada el 2026-10-11: lo resuelto queda en «Histórico» como una línea; el detalle está en el historial de git de este fichero (`git log -p bitacora.md`).
 
 ## Estado (2026-10-12) y siguiente sesión
-- Prueba de VPEngine en sombra (a1eab54): crash al crear un target MSAA de 8 muestras en Metal (no admitido en M2).
-  Arreglo pendiente en VPEngine (ver su bitácora): acotar muestras a `SHADPS4_MAX_MSAA` (pasarlo desde
-  `vpengine_renderer.mm` a `vpps4::Renderer::setMaxSamples`) + guarda en `MetalBackend`; luego actualizar
-  `visionos/vpengine-gpu.ref` y build. Con el ajuste apagado la app es como antes.
-- Build lanzada: VPEngine en sombra (sección siguiente). Probar con el ajuste encendido en ASTRO BOT, jugar 1–2 min en el
-  mundo y pasar el log (líneas `VPENGINE_GPU`).
+- Arreglado el crash de la prueba de VPEngine en sombra (a1eab54: target MSAA de 8 muestras, no admitido en M2):
+  `vpengine_renderer.mm` pasa `SHADPS4_MAX_MSAA` (sin él, 4; tope 4) a `vpps4::Renderer::setMaxSamples`; log
+  `VPENGINE_GPU msaa limit N samples`. VPEngine 9cc6888: una cuenta de muestras por draw y guarda en `MetalBackend`
+  (cuenta no soportada → `gpu.err`, no abort). `visionos/vpengine-gpu.ref` = 9cc6888.
+- Probar: ajuste «VPEngine en sombra» encendido en ASTRO BOT, jugar 1–2 min en el mundo y pasar el log (`VPENGINE_GPU`).
+  Con el ajuste apagado la app es como antes.
 
 ## Estado anterior (2026-10-11, noche)
 - Build en curso: limpieza de ajustes + «Modo diagnóstico» único + diagnósticos de KITCHEN + volcado de shaders para VPEngine (secciones siguientes). Probar: ASTRO BOT con diagnóstico apagado (no debe empeorar; log limpio) y KITCHEN con diagnóstico encendido + volcado L1+R1+L3 ya dentro de la escena → buscar `READ_UNWRITTEN`, `SMALL_BUFFER`, `DIAG: budgets reset`, PNG `d*_…_notgpu` de profundidad/sombras.
@@ -35,7 +35,7 @@ Compactada el 2026-10-11: lo resuelto queda en «Histórico» como una línea; e
   por target passes entra una vez por pasada), `DispatchDirect` (usa `cs_program` de la cola, tras el HLE),
   `InvalidateMemory`; `vk_presenter.cpp` `Present` → `EndFrame` (submit del frame de VPEngine). Indirectos: no.
 - CMake (bloque `VPENGINE_GPU_DIR`): `gpu/core/src` (sin null_backend), `gpu/metal/src/metal_backend.mm`,
-  `integrations/shadps4/gpu/src`; define `SHADPS4_VPENGINE_RENDERER=1`. `visionos/vpengine-gpu.ref` = 0946f47.
+  `integrations/shadps4/gpu/src`; define `SHADPS4_VPENGINE_RENDERER=1`. `visionos/vpengine-gpu.ref`: ver «Estado».
   `core-inputs.txt` incluye gpu/core, gpu/metal e integrations/shadps4/gpu.
 - Log: `VPENGINE_GPU gpu.metal ...` al arrancar; cada 120 frames `vpps4.frame n=.. draws=hechos/total dispatches=..
   passes shaders shader_errors textures targets uploads skip[motivo]=n` + `gpu.frame/cut/pso` (encoders, barreras,
