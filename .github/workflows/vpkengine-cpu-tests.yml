@@ -50,7 +50,7 @@ jobs:
         if: matrix.arch == 'x86'
         env:
           VPKENGINE_DIR: ${{ github.workspace }}/vpkengine
-        run: sh tests/vpkengine-cpu/run.sh
+        run: sh tools/tests/vpkengine-cpu/run.sh
       - name: Guest CPU engine (ARM64, guest built with the x86 cross tools)
         if: matrix.arch == 'arm64'
         env:
@@ -58,4 +58,4 @@ jobs:
           LD: x86_64-linux-gnu-ld
           XCC: x86_64-linux-gnu-gcc
           NM: x86_64-linux-gnu-nm
-        run: sh tests/vpkengine-cpu/run.sh
+        run: sh tools/tests/vpkengine-cpu/run.sh
