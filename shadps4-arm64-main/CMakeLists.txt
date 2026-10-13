@@ -58,13 +58,13 @@ option(ENABLE_SYSTEM_LIBRARIES "Enable building against system libraries" OFF)
 option(ENABLE_FEX_GUEST_CPU "Build the native ARM64 FEXCore guest CPU backend" OFF)
 # VPKEngine: the game's code translated ahead of time (no JIT), behind the same guest CPU interface.
 option(ENABLE_VPKENGINE_GUEST_CPU "Use VPKEngine's ahead-of-time guest CPU instead of FEXCore" OFF)
-set(VPKENGINE_DIR "" CACHE PATH "VPKEngine checkout (its integrations/shadps4/vpkengine.cmake is included)")
+set(VPKENGINE_DIR "" CACHE PATH "VPKEngine checkout (runtime/ and the translated-module tools)")
 if (ENABLE_VPKENGINE_GUEST_CPU)
-    if (NOT EXISTS "${VPKENGINE_DIR}/integrations/shadps4/vpkengine.cmake")
+    if (NOT EXISTS "${VPKENGINE_DIR}/runtime/vp_host.c")
         message(FATAL_ERROR "ENABLE_VPKENGINE_GUEST_CPU needs -DVPKENGINE_DIR=<VPKEngine checkout>")
     endif()
     set(ENABLE_FEX_GUEST_CPU OFF CACHE BOOL "" FORCE)
-    include("${VPKENGINE_DIR}/integrations/shadps4/vpkengine.cmake")
+    include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/vpkengine.cmake")
 endif()
 # The headset of the machine the emulator runs on, through that machine's OpenXR runtime
 # (Virtual Desktop, SteamVR, ...): where the frames of an emulated PlayStation VR are shown.
@@ -1432,10 +1432,14 @@ if (SHADPS4_VISIONOS)
         target_compile_definitions(shadps4 PRIVATE SHADPS4_VPKENGINE_SHADER_CHECK=1)
         set_source_files_properties(src/platform/visionos/vpkengine_shader_check.mm
             PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
-        # VPKEngine renderer (gpu/core + Metal backend + the PS4 renderer of integrations/shadps4/gpu):
+        # VPKEngine renderer (gpu/core + Metal backend + VPKEngine's PS4 renderer, gpu/ps4):
         # the only renderer on visionOS (src/platform/visionos/vpkengine_renderer.h). The Vulkan
         # path is still compiled but never started.
-        set(VPKENGINE_PS4_DIR ${VPKENGINE_GPU_DIR}/../integrations/shadps4/gpu)
+        # gpu/ps4 since VPKEngine dropped integrations/; a pinned older checkout still has the old place.
+        set(VPKENGINE_PS4_DIR ${VPKENGINE_GPU_DIR}/ps4)
+        if (NOT EXISTS ${VPKENGINE_PS4_DIR}/src/renderer.cpp)
+            set(VPKENGINE_PS4_DIR ${VPKENGINE_GPU_DIR}/../integrations/shadps4/gpu)
+        endif()
         if (EXISTS ${VPKENGINE_PS4_DIR}/src/renderer.cpp)
             file(GLOB VPKENGINE_CORE_SOURCES ${VPKENGINE_GPU_DIR}/core/src/*.cpp)
             list(FILTER VPKENGINE_CORE_SOURCES EXCLUDE REGEX "null_backend\\.cpp$")

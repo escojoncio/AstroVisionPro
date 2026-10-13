@@ -1,11 +1,11 @@
 # The Apple Vision Pro app with VPKEngine instead of FEX: the game's code is translated ahead of
 # time (on the headset itself, or as a pack made on a PC) and runs with no JIT and no StikDebug.
-# Same app otherwise (scripts/vpkengine-project.py). Logs: ci-logs branch (visionos-vpkengine.txt);
-# the app: release "visionos-vpkengine" (AstroQuest-VPKEngine.ipa).
+# Same app otherwise (scripts/vpkengine-project.py). Logs: ci-logs branch (visionos-vpengine.txt);
+# the app: release "visionos-vpengine" (AstroQuest-VPEngine.ipa).
 #
-# Only when asked for: by hand (Actions > visionos-vpkengine > Run workflow) or a push whose commit
-# message has [build-vpkengine] in it. The emulator built this way is kept between runs.
-name: visionos-vpkengine
+# Only when asked for: by hand (Actions > visionos-vpengine > Run workflow) or a push whose commit
+# message has [build-vpkengine] (or the older [build-vpengine]) in it. The emulator built this way is kept between runs.
+name: visionos-vpengine
 on:
   push:
     branches: [main]
@@ -14,11 +14,11 @@ permissions:
   contents: write
 jobs:
   app:
-    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[build-vpkengine]')
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[build-vpkengine]') || contains(github.event.head_commit.message, '[build-vpengine]')
     # On the job, not the workflow: a push without [build-vpkengine] makes a run whose job is
     # skipped, and a workflow-level group would let that run cancel a build in progress.
     concurrency:
-      group: visionos-vpkengine
+      group: visionos-vpengine
       cancel-in-progress: true
     runs-on: macos-26
     timeout-minutes: 180
@@ -72,9 +72,9 @@ jobs:
         if: steps.core.outputs.cache-hit != 'true'
         with:
           path: ~/Library/Caches/ccache
-          key: ccache-visionos-vpkengine-${{ github.sha }}
+          key: ccache-visionos-vpengine-${{ github.sha }}
           restore-keys: |
-            ccache-visionos-vpkengine-
+            ccache-visionos-vpengine-
             ccache-visionos-app-
       - uses: actions/cache@v4
         if: steps.core.outputs.cache-hit != 'true'
@@ -102,7 +102,7 @@ jobs:
         if: always() && steps.core.outputs.cache-hit != 'true'
         with:
           path: ~/Library/Caches/ccache
-          key: ccache-visionos-vpkengine-${{ github.sha }}
+          key: ccache-visionos-vpengine-${{ github.sha }}
 
       - uses: actions/cache@v4
         id: kosmickrisp
@@ -190,20 +190,20 @@ jobs:
             | grep -E ' T __Z(nw|na|dl|da)' | sed 's/^.*\(lib[a-z_]*\.a\)/\1/' | sort | uniq -c | head -40 | tee -a ../app.log || true
           otool -L build/ipa/Payload/AstroQuest.app/AstroQuest | tee -a ../app.log
           du -sh build/ipa/Payload/AstroQuest.app | tee -a ../app.log
-          (cd build/ipa && zip -qry ../AstroQuest-VPKEngine.ipa Payload)
-          ls -la build/AstroQuest-VPKEngine.ipa
+          (cd build/ipa && zip -qry ../AstroQuest-VPEngine.ipa Payload)
+          ls -la build/AstroQuest-VPEngine.ipa
 
       - name: Publish the logs
         if: always()
-        run: bash visionos/scripts/ci-publish-log.sh visionos-vpkengine core.log kosmickrisp.log app.log
+        run: bash visionos/scripts/ci-publish-log.sh visionos-vpengine core.log kosmickrisp.log app.log
 
       - name: Publish the app as a release
         if: success() && github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release delete visionos-vpkengine --yes --cleanup-tag || true
-          gh release create visionos-vpkengine visionos/build/AstroQuest-VPKEngine.ipa \
+          gh release delete visionos-vpengine --yes --cleanup-tag || true
+          gh release create visionos-vpengine visionos/build/AstroQuest-VPEngine.ipa \
             --target "$GITHUB_SHA" --prerelease \
             --title "AstroQuest para Apple Vision Pro con VPKEngine (sin JIT)" \
             --notes "App sin firmar, compilada de ${GITHUB_SHA::7}, con VPKEngine en lugar de FEX: el juego se convierte en el visor y se ejecuta sin JIT ni StikDebug."

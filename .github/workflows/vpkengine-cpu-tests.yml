@@ -1,0 +1,61 @@
+name: VPKEngine guest CPU tests
+
+# The shadPS4 guest-CPU adapter (shadps4-arm64-main/src/core/vpkengine/aot_guest_engine.cpp) driven
+# the way shadPS4 drives it, against VPKEngine's translator and runtime: natively on x86-64 and with
+# the translated code on ARM64. Only on demand: a manual run, or a push whose message says [build].
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+concurrency:
+  group: vpkengine-cpu-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[build]')
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: x86
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: VPKEngine (translator and runtime)
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/VPKEngine
+          path: vpkengine
+          submodules: recursive
+      - name: Tools
+        run: |
+          sudo apt-get install -y --no-install-recommends ninja-build
+          if [ "${{ matrix.arch }}" = arm64 ]; then
+            sudo apt-get install -y --no-install-recommends binutils-x86-64-linux-gnu gcc-x86-64-linux-gnu
+          fi
+      - name: Build cache (vpaot)
+        uses: actions/cache@v4
+        with:
+          path: vpkengine/build/vpaot
+          key: vpaot-${{ matrix.arch }}-${{ hashFiles('vpkengine/third_party/zydis/**', 'vpkengine/tools/vpaot/**') }}
+      - name: Build vpaot
+        run: cmake -S vpkengine/tools/vpaot -B vpkengine/build/vpaot -G Ninja && ninja -C vpkengine/build/vpaot
+      - name: Guest CPU engine (x86-64, native guest tools)
+        if: matrix.arch == 'x86'
+        env:
+          VPKENGINE_DIR: ${{ github.workspace }}/vpkengine
+        run: sh tests/vpkengine-cpu/run.sh
+      - name: Guest CPU engine (ARM64, guest built with the x86 cross tools)
+        if: matrix.arch == 'arm64'
+        env:
+          VPKENGINE_DIR: ${{ github.workspace }}/vpkengine
+          LD: x86_64-linux-gnu-ld
+          XCC: x86_64-linux-gnu-gcc
+          NM: x86_64-linux-gnu-nm
+        run: sh tests/vpkengine-cpu/run.sh
