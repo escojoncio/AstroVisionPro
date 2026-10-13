@@ -56,15 +56,15 @@ option(ENABLE_TESTS "Build unit tests (requires GTest)" OFF)
 option(ENABLE_BACHATA_RUNTIME "Build x86-64 Android-container runtime mode" OFF)
 option(ENABLE_SYSTEM_LIBRARIES "Enable building against system libraries" OFF)
 option(ENABLE_FEX_GUEST_CPU "Build the native ARM64 FEXCore guest CPU backend" OFF)
-# VPEngine: the game's code translated ahead of time (no JIT), behind the same guest CPU interface.
-option(ENABLE_VPENGINE_GUEST_CPU "Use VPEngine's ahead-of-time guest CPU instead of FEXCore" OFF)
-set(VPENGINE_DIR "" CACHE PATH "VPEngine checkout (its integrations/shadps4/vpengine.cmake is included)")
-if (ENABLE_VPENGINE_GUEST_CPU)
-    if (NOT EXISTS "${VPENGINE_DIR}/integrations/shadps4/vpengine.cmake")
-        message(FATAL_ERROR "ENABLE_VPENGINE_GUEST_CPU needs -DVPENGINE_DIR=<VPEngine checkout>")
+# VPKEngine: the game's code translated ahead of time (no JIT), behind the same guest CPU interface.
+option(ENABLE_VPKENGINE_GUEST_CPU "Use VPKEngine's ahead-of-time guest CPU instead of FEXCore" OFF)
+set(VPKENGINE_DIR "" CACHE PATH "VPKEngine checkout (its integrations/shadps4/vpkengine.cmake is included)")
+if (ENABLE_VPKENGINE_GUEST_CPU)
+    if (NOT EXISTS "${VPKENGINE_DIR}/integrations/shadps4/vpkengine.cmake")
+        message(FATAL_ERROR "ENABLE_VPKENGINE_GUEST_CPU needs -DVPKENGINE_DIR=<VPKEngine checkout>")
     endif()
     set(ENABLE_FEX_GUEST_CPU OFF CACHE BOOL "" FORCE)
-    include("${VPENGINE_DIR}/integrations/shadps4/vpengine.cmake")
+    include("${VPKENGINE_DIR}/integrations/shadps4/vpkengine.cmake")
 endif()
 # The headset of the machine the emulator runs on, through that machine's OpenXR runtime
 # (Virtual Desktop, SteamVR, ...): where the frames of an emulated PlayStation VR are shown.
@@ -1080,10 +1080,10 @@ if (ARCHITECTURE STREQUAL "x86_64")
              ${FIBER_LIB})
 endif()
 
-if (ENABLE_FEX_GUEST_CPU OR ENABLE_VPENGINE_GUEST_CPU)
+if (ENABLE_FEX_GUEST_CPU OR ENABLE_VPKENGINE_GUEST_CPU)
     list(APPEND CORE ${FIBER_LIB})
-    if (ENABLE_VPENGINE_GUEST_CPU)
-        vpengine_sources(CORE)
+    if (ENABLE_VPKENGINE_GUEST_CPU)
+        vpkengine_sources(CORE)
     else()
         list(APPEND CORE src/core/fex/fex_guest_engine.cpp)
     endif()
@@ -1413,57 +1413,57 @@ if (SHADPS4_VISIONOS)
         src/core/libraries/audio/phase_audio_in.cpp
     )
     target_include_directories(shadps4 PRIVATE src/platform/visionos)
-    # VPEngine's shader translator (GCN -> VPIR -> MSL), checked against the headset's Metal
-    # compiler in diagnostic mode (src/platform/visionos/vpengine_shader_check.mm).
-    if (VPENGINE_GPU_DIR)
-        file(GLOB VPENGINE_SHADER_SOURCES
-            ${VPENGINE_GPU_DIR}/shader/ir/src/*.cpp
-            ${VPENGINE_GPU_DIR}/shader/msl/src/*.cpp)
-        list(APPEND VPENGINE_SHADER_SOURCES
-            ${VPENGINE_GPU_DIR}/shader/gcn/src/gcn.cpp
-            ${VPENGINE_GPU_DIR}/shader/gcn/src/lift.cpp)
-        target_sources(shadps4 PRIVATE ${VPENGINE_SHADER_SOURCES}
-            src/platform/visionos/vpengine_shader_check.h
-            src/platform/visionos/vpengine_shader_check.mm)
+    # VPKEngine's shader translator (GCN -> VPIR -> MSL), checked against the headset's Metal
+    # compiler in diagnostic mode (src/platform/visionos/vpkengine_shader_check.mm).
+    if (VPKENGINE_GPU_DIR)
+        file(GLOB VPKENGINE_SHADER_SOURCES
+            ${VPKENGINE_GPU_DIR}/shader/ir/src/*.cpp
+            ${VPKENGINE_GPU_DIR}/shader/msl/src/*.cpp)
+        list(APPEND VPKENGINE_SHADER_SOURCES
+            ${VPKENGINE_GPU_DIR}/shader/gcn/src/gcn.cpp
+            ${VPKENGINE_GPU_DIR}/shader/gcn/src/lift.cpp)
+        target_sources(shadps4 PRIVATE ${VPKENGINE_SHADER_SOURCES}
+            src/platform/visionos/vpkengine_shader_check.h
+            src/platform/visionos/vpkengine_shader_check.mm)
         target_include_directories(shadps4 PRIVATE
-            ${VPENGINE_GPU_DIR}/shader/ir/include
-            ${VPENGINE_GPU_DIR}/shader/msl/include
-            ${VPENGINE_GPU_DIR}/shader/gcn/include)
-        target_compile_definitions(shadps4 PRIVATE SHADPS4_VPENGINE_SHADER_CHECK=1)
-        set_source_files_properties(src/platform/visionos/vpengine_shader_check.mm
+            ${VPKENGINE_GPU_DIR}/shader/ir/include
+            ${VPKENGINE_GPU_DIR}/shader/msl/include
+            ${VPKENGINE_GPU_DIR}/shader/gcn/include)
+        target_compile_definitions(shadps4 PRIVATE SHADPS4_VPKENGINE_SHADER_CHECK=1)
+        set_source_files_properties(src/platform/visionos/vpkengine_shader_check.mm
             PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
-        # VPEngine renderer (gpu/core + Metal backend + the PS4 renderer of integrations/shadps4/gpu):
-        # the only renderer on visionOS (src/platform/visionos/vpengine_renderer.h). The Vulkan
+        # VPKEngine renderer (gpu/core + Metal backend + the PS4 renderer of integrations/shadps4/gpu):
+        # the only renderer on visionOS (src/platform/visionos/vpkengine_renderer.h). The Vulkan
         # path is still compiled but never started.
-        set(VPENGINE_PS4_DIR ${VPENGINE_GPU_DIR}/../integrations/shadps4/gpu)
-        if (EXISTS ${VPENGINE_PS4_DIR}/src/renderer.cpp)
-            file(GLOB VPENGINE_CORE_SOURCES ${VPENGINE_GPU_DIR}/core/src/*.cpp)
-            list(FILTER VPENGINE_CORE_SOURCES EXCLUDE REGEX "null_backend\\.cpp$")
-            target_sources(shadps4 PRIVATE ${VPENGINE_CORE_SOURCES}
-                ${VPENGINE_GPU_DIR}/metal/src/metal_backend.mm
-                ${VPENGINE_PS4_DIR}/src/formats.cpp
-                ${VPENGINE_PS4_DIR}/src/renderer.cpp
-                ${VPENGINE_PS4_DIR}/src/tiling.cpp
-                ${VPENGINE_PS4_DIR}/src/fetch.cpp
-                src/platform/visionos/vpengine_renderer.h
-                src/platform/visionos/vpengine_renderer.mm
-                src/platform/visionos/vpengine_presenter.h
-                src/platform/visionos/vpengine_presenter.cpp
-                src/platform/visionos/vpengine_xr.h
-                src/platform/visionos/vpengine_xr.cpp)
+        set(VPKENGINE_PS4_DIR ${VPKENGINE_GPU_DIR}/../integrations/shadps4/gpu)
+        if (EXISTS ${VPKENGINE_PS4_DIR}/src/renderer.cpp)
+            file(GLOB VPKENGINE_CORE_SOURCES ${VPKENGINE_GPU_DIR}/core/src/*.cpp)
+            list(FILTER VPKENGINE_CORE_SOURCES EXCLUDE REGEX "null_backend\\.cpp$")
+            target_sources(shadps4 PRIVATE ${VPKENGINE_CORE_SOURCES}
+                ${VPKENGINE_GPU_DIR}/metal/src/metal_backend.mm
+                ${VPKENGINE_PS4_DIR}/src/formats.cpp
+                ${VPKENGINE_PS4_DIR}/src/renderer.cpp
+                ${VPKENGINE_PS4_DIR}/src/tiling.cpp
+                ${VPKENGINE_PS4_DIR}/src/fetch.cpp
+                src/platform/visionos/vpkengine_renderer.h
+                src/platform/visionos/vpkengine_renderer.mm
+                src/platform/visionos/vpkengine_presenter.h
+                src/platform/visionos/vpkengine_presenter.cpp
+                src/platform/visionos/vpkengine_xr.h
+                src/platform/visionos/vpkengine_xr.cpp)
             target_include_directories(shadps4 PRIVATE
-                ${VPENGINE_GPU_DIR}/core/include
-                ${VPENGINE_GPU_DIR}/metal/include
-                ${VPENGINE_PS4_DIR}/include)
-            target_compile_definitions(shadps4 PRIVATE SHADPS4_VPENGINE_ONLY=1)
-            set_source_files_properties(${VPENGINE_GPU_DIR}/metal/src/metal_backend.mm
-                src/platform/visionos/vpengine_renderer.mm
+                ${VPKENGINE_GPU_DIR}/core/include
+                ${VPKENGINE_GPU_DIR}/metal/include
+                ${VPKENGINE_PS4_DIR}/include)
+            target_compile_definitions(shadps4 PRIVATE SHADPS4_VPKENGINE_ONLY=1)
+            set_source_files_properties(${VPKENGINE_GPU_DIR}/metal/src/metal_backend.mm
+                src/platform/visionos/vpkengine_renderer.mm
                 PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
-            message(STATUS "VPEngine renderer: ${VPENGINE_PS4_DIR}")
+            message(STATUS "VPKEngine renderer: ${VPKENGINE_PS4_DIR}")
         else()
-            message(WARNING "VPEngine renderer sources missing at ${VPENGINE_PS4_DIR}: update visionos/vpengine-gpu.ref")
+            message(WARNING "VPKEngine renderer sources missing at ${VPKENGINE_PS4_DIR}: update visionos/vpkengine-gpu.ref")
         endif()
-        message(STATUS "VPEngine shader check: ${VPENGINE_GPU_DIR}")
+        message(STATUS "VPKEngine shader check: ${VPKENGINE_GPU_DIR}")
     endif()
     set_source_files_properties(src/platform/visionos/astro_core.mm
         PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
@@ -1492,8 +1492,8 @@ endif()
 target_link_libraries(shadps4 PRIVATE stb::headers nlohmann_json::nlohmann_json miniz::miniz fdk-aac CLI11::CLI11 OpenAL::OpenAL Cpp_Httplib miniupnpc::miniupnpc)
 target_link_libraries(shadps4 PRIVATE Freetype::Freetype)
 
-if (ENABLE_VPENGINE_GUEST_CPU)
-    vpengine_configure(shadps4)
+if (ENABLE_VPKENGINE_GUEST_CPU)
+    vpkengine_configure(shadps4)
 endif()
 
 if (ENABLE_FEX_GUEST_CPU)

@@ -91,7 +91,7 @@ typedef enum AstroCoreState {
 /// To be called on the main thread. Returns 0, or an errno value.
 int astro_core_start(const char* game_path, const char* const* environment, int count);
 
-/// VPEngine: what the emulator changes in a title's code when it loads it with these settings
+/// VPKEngine: what the emulator changes in a title's code when it loads it with these settings
 /// (the same environment as astro_core_start), made on `image` (the module at its link base,
 /// offset 0 = its lowest address), so that the code is translated ahead of time as it will run.
 /// 1 when the title is one the emulator changes, 0 otherwise. Any thread; no other effect.

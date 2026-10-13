@@ -7,8 +7,8 @@
 # SDK, cmake and ninja. Runs build-fexcore.sh and build-moltenvk.sh first when their output is
 # missing.
 #
-# GUEST_CPU=vpengine VPENGINE_DIR=<VPEngine checkout>: the game's code runs translated ahead of
-# time (VPEngine, no JIT) instead of through FEXCore, which is then not built at all. The runtime
+# GUEST_CPU=vpkengine VPKENGINE_DIR=<VPKEngine checkout>: the game's code runs translated ahead of
+# time (VPKEngine, no JIT) instead of through FEXCore, which is then not built at all. The runtime
 # goes into its own visionos/build/core/libVPRuntime.dylib (the app's Frameworks), which the game
 # packs loaded at run time bind to.
 set -euo pipefail
@@ -22,10 +22,10 @@ FEX_SRC="$ROOT/build/visionos/fex-src"
 FEX_BUILD="$ROOT/build/visionos/fexcore"
 
 GUEST_CPU="${GUEST_CPU:-fex}"
-if [[ "$GUEST_CPU" == vpengine ]]; then
-  VPENGINE_DIR=$(cd "${VPENGINE_DIR:?GUEST_CPU=vpengine needs VPENGINE_DIR}" && pwd)
-  BUILD="${CORE_BUILD_DIR:-$ROOT/build/visionos/core-vpengine}"
-  GUEST_FLAGS=(-DENABLE_VPENGINE_GUEST_CPU=ON -DVPENGINE_DIR="$VPENGINE_DIR" -DVPENGINE_RUNTIME_SHARED=ON)
+if [[ "$GUEST_CPU" == vpkengine ]]; then
+  VPKENGINE_DIR=$(cd "${VPKENGINE_DIR:?GUEST_CPU=vpkengine needs VPKENGINE_DIR}" && pwd)
+  BUILD="${CORE_BUILD_DIR:-$ROOT/build/visionos/core-vpkengine}"
+  GUEST_FLAGS=(-DENABLE_VPKENGINE_GUEST_CPU=ON -DVPKENGINE_DIR="$VPKENGINE_DIR" -DVPKENGINE_RUNTIME_SHARED=ON)
 else
   [[ -f "$FEX_BUILD/FEXCore/Source/libFEXCore.a" ]] || bash "$ROOT/visionos/scripts/build-fexcore.sh"
   GUEST_FLAGS=(-DENABLE_FEX_GUEST_CPU=ON -DFEXCORE_GUEST_CPU_SOURCE_DIR="$FEX_SRC" -DFEXCORE_GUEST_CPU_BUILD_DIR="$FEX_BUILD")
@@ -42,10 +42,10 @@ if [[ ! -x "$HOST_TOOLS/binary_to_compressed_c" ]]; then
     -o "$HOST_TOOLS/binary_to_compressed_c"
 fi
 
-# VPENGINE_GPU_DIR=<VPEngine checkout>/gpu: VPEngine's shader translator checked in diagnostic mode.
+# VPKENGINE_GPU_DIR=<VPKEngine checkout>/gpu: VPKEngine's shader translator checked in diagnostic mode.
 SHADER_CHECK=()
-if [[ -n "${VPENGINE_GPU_DIR:-}" ]]; then
-  SHADER_CHECK=(-DVPENGINE_GPU_DIR="$(cd "$VPENGINE_GPU_DIR" && pwd)")
+if [[ -n "${VPKENGINE_GPU_DIR:-}" ]]; then
+  SHADER_CHECK=(-DVPKENGINE_GPU_DIR="$(cd "$VPKENGINE_GPU_DIR" && pwd)")
 fi
 
 LAUNCHER=()
@@ -88,16 +88,16 @@ while IFS= read -r LIB; do
   case "$LIB" in
     */ffmpeg-*/lib/*) continue ;;
   esac
-  # VPEngine: the app links vpconvert's Zydis; the emulator's (another commit, same symbols,
+  # VPKEngine: the app links vpconvert's Zydis; the emulator's (another commit, same symbols,
   # possibly another layout) stays out so only one exists. On ARM64 the emulator never calls it.
-  if [[ "$GUEST_CPU" == vpengine ]]; then
+  if [[ "$GUEST_CPU" == vpkengine ]]; then
     case "$(basename "$LIB")" in
       libZydis.a|libZycore.a) continue ;;
     esac
   fi
   LIBS+=("$LIB")
 done < <(find "$BUILD" -name '*.a' -not -path '*/CMakeFiles/*' | sort)
-if [[ "$GUEST_CPU" != vpengine ]]; then
+if [[ "$GUEST_CPU" != vpkengine ]]; then
   while IFS= read -r LIB; do
     LIBS+=("$LIB")
   done < <(find "$FEX_BUILD" -name '*.a' -not -path '*/CMakeFiles/*' -not -name 'librpmalloc.a' | sort)
@@ -111,12 +111,12 @@ rm -f "$OUT/libastroquest_core.a"
 xcrun libtool -static -no_warning_for_no_symbols -o "$OUT/libastroquest_core.a" "${LIBS[@]}"
 cp "$ROOT/build/visionos/moltenvk/libMoltenVK.a" "$OUT/libMoltenVK.a"
 rm -f "$OUT/libVPRuntime.dylib"
-if [[ "$GUEST_CPU" == vpengine ]]; then
-  # VPEngine's runtime: what the translated code calls (dispatch, x87, atomics), shared by the
+if [[ "$GUEST_CPU" == vpkengine ]]; then
+  # VPKEngine's runtime: what the translated code calls (dispatch, x87, atomics), shared by the
   # emulator and every game pack. -frounding-math: it follows the guest's MXCSR rounding.
   xcrun --sdk xros clang -target "arm64-apple-xros$DEPLOYMENT_TARGET" -O2 -frounding-math -fvisibility=default \
-    -dynamiclib -install_name @rpath/libVPRuntime.dylib -I "$VPENGINE_DIR/runtime" \
-    -o "$OUT/libVPRuntime.dylib" "$VPENGINE_DIR/runtime/vp_host.c"
+    -dynamiclib -install_name @rpath/libVPRuntime.dylib -I "$VPKENGINE_DIR/runtime" \
+    -o "$OUT/libVPRuntime.dylib" "$VPKENGINE_DIR/runtime/vp_host.c"
   echo "Symbols the runtime exports for game packs:"
   nm -gU "$OUT/libVPRuntime.dylib" | grep -c ' _vp_'
 fi

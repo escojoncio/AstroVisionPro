@@ -159,7 +159,7 @@ void Initialize(const ::Vulkan::Instance& instance, const Frontend::WindowSDL& w
 }
 
 void OnResize() {
-    // No context: the renderer never started ImGui (VPEngine on visionOS draws no overlay).
+    // No context: the renderer never started ImGui (VPKEngine on visionOS draws no overlay).
     if (GetCurrentContext() == nullptr) {
         return;
     }

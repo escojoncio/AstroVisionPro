@@ -1023,7 +1023,7 @@ void Prepare() {
 }
 
 /// What the emulator changes in the title's code for these settings, made on `image` (as loaded,
-/// offset 0 = the image's start): at load (OnGameLoaded) and, the same, on the copy VPEngine
+/// offset 0 = the image's start): at load (OnGameLoaded) and, the same, on the copy VPKEngine
 /// translates ahead of time (astro_core_title_code_patches).
 static void ApplyCodeChanges(std::span<u8> image, const Build* build_pointer, const Larger& larger,
                       const Settings& settings, bool log) {
@@ -1136,7 +1136,7 @@ void NoteView(const Vr::Vec3& tracker_head) {
 
 } // namespace Core::KnownTitle
 
-// VPEngine: the title's code as the emulator will run it, for translating it ahead of time
+// VPKEngine: the title's code as the emulator will run it, for translating it ahead of time
 // (platform/visionos/astro_core.h).
 extern "C" int astro_core_title_code_patches(unsigned char* image, unsigned long size,
                                              const char* const* environment, int count) {

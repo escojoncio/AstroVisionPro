@@ -28,7 +28,7 @@ struct HomeView: View {
                         .foregroundStyle(.secondary)
                 }
                 HStack(alignment: .top, spacing: 16) {
-#if VPENGINE
+#if VPKENGINE
                     EngineCard()
 #else
                     jitCard
@@ -218,7 +218,7 @@ struct HomeView: View {
     }
 
     private var hint: String {
-#if VPENGINE
+#if VPKENGINE
         if !model.engineReady {
             return L("Convierte el juego (una vez) para poder jugar.", "Convert the game (once) to play.")
         }

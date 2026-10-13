@@ -1,13 +1,13 @@
-// VPEngine: the only renderer on visionOS. Liverpool's draws, dispatches, DMA and memory events
-// go to VpengineRasterizer (VideoCore::RasterizerInterface), which turns them into VPEngine work
-// (vpps4::Renderer: lifted GCN shaders, Metal pipelines, guest memory used in place) on VPEngine's
+// VPKEngine: the only renderer on visionOS. Liverpool's draws, dispatches, DMA and memory events
+// go to VpkengineRasterizer (VideoCore::RasterizerInterface), which turns them into VPKEngine work
+// (vpps4::Renderer: lifted GCN shaders, Metal pipelines, guest memory used in place) on VPKEngine's
 // own Metal backend. Present:: draws the headset's frames: the eyes' colour targets side by side,
-// in the compositor's Metal textures (core/vr/openxr_host_visionos.mm); vpengine_presenter.h hands
+// in the compositor's Metal textures (core/vr/openxr_host_visionos.mm); vpkengine_presenter.h hands
 // them to videoout/driver.cpp.
 // There is no Vulkan device: KosmicKrisp and MoltenVK are not used.
 //
-// Log lines: "VPENGINE_GPU ..." (draws run / skipped and why, encoders, GPU ms per frame),
-// "VPENGINE_PRESENT ..." (headset frames).
+// Log lines: "VPKENGINE_GPU ..." (draws run / skipped and why, encoders, GPU ms per frame),
+// "VPKENGINE_PRESENT ..." (headset frames).
 #pragma once
 
 #include <array>
@@ -31,7 +31,7 @@ namespace VideoCore {
 class PageManager;
 }
 
-namespace VpengineRenderer {
+namespace VpkengineRenderer {
 
 class Rasterizer final : public VideoCore::RasterizerInterface {
 public:
@@ -71,7 +71,7 @@ private:
     std::unique_ptr<Impl> impl;
 };
 
-// The headset's frames (used by vpengine_presenter.cpp, which hands them to videoout/driver.cpp):
+// The headset's frames (used by vpkengine_presenter.cpp, which hands them to videoout/driver.cpp):
 // what is drawn goes into one of the compositor's Metal textures; a slot index stands for it,
 // -1 when the host has none free (or nothing can be drawn).
 namespace Present {
@@ -86,4 +86,4 @@ void Deliver(int slot, const Core::Vr::PresentedFrame& info);
 bool Finished(int slot);
 } // namespace Present
 
-} // namespace VpengineRenderer
+} // namespace VpkengineRenderer

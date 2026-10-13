@@ -1,11 +1,11 @@
-# The Apple Vision Pro app with VPEngine instead of FEX: the game's code is translated ahead of
+# The Apple Vision Pro app with VPKEngine instead of FEX: the game's code is translated ahead of
 # time (on the headset itself, or as a pack made on a PC) and runs with no JIT and no StikDebug.
-# Same app otherwise (scripts/vpengine-project.py). Logs: ci-logs branch (visionos-vpengine.txt);
-# the app: release "visionos-vpengine" (AstroQuest-VPEngine.ipa).
+# Same app otherwise (scripts/vpkengine-project.py). Logs: ci-logs branch (visionos-vpkengine.txt);
+# the app: release "visionos-vpkengine" (AstroQuest-VPKEngine.ipa).
 #
-# Only when asked for: by hand (Actions > visionos-vpengine > Run workflow) or a push whose commit
-# message has [build-vpengine] in it. The emulator built this way is kept between runs.
-name: visionos-vpengine
+# Only when asked for: by hand (Actions > visionos-vpkengine > Run workflow) or a push whose commit
+# message has [build-vpkengine] in it. The emulator built this way is kept between runs.
+name: visionos-vpkengine
 on:
   push:
     branches: [main]
@@ -14,11 +14,11 @@ permissions:
   contents: write
 jobs:
   app:
-    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[build-vpengine]')
-    # On the job, not the workflow: a push without [build-vpengine] makes a run whose job is
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[build-vpkengine]')
+    # On the job, not the workflow: a push without [build-vpkengine] makes a run whose job is
     # skipped, and a workflow-level group would let that run cancel a build in progress.
     concurrency:
-      group: visionos-vpengine
+      group: visionos-vpkengine
       cancel-in-progress: true
     runs-on: macos-26
     timeout-minutes: 180
@@ -27,23 +27,23 @@ jobs:
         with:
           fetch-depth: 1
           submodules: false
-      - name: VPEngine (runtime, engine, the app's shared code)
+      - name: VPKEngine (runtime, engine, the app's shared code)
         uses: actions/checkout@v4
         with:
-          repository: escojoncio/VPEngine
-          path: vpengine
+          repository: escojoncio/VPKEngine
+          path: vpkengine
           fetch-depth: 1
           submodules: false
 
       - name: What the emulator is built from
         run: |
           git ls-tree -r HEAD shadps4-arm64-main/externals | awk '$2 == "commit"' > core-inputs.txt
-          (cd vpengine && git ls-tree -r HEAD runtime integrations) >> core-inputs.txt
+          (cd vpkengine && git ls-tree -r HEAD runtime integrations) >> core-inputs.txt
       - uses: actions/cache/restore@v4
         id: core
         with:
           path: visionos/build/core
-          key: visionos-core-vpengine-${{ hashFiles('core-inputs.txt', 'shadps4-arm64-main/src/**', 'shadps4-arm64-main/CMakeLists.txt', 'shadps4-arm64-main/externals/CMakeLists.txt', 'shadps4-arm64-main/cmake/**', 'visionos/scripts/build-core.sh', 'visionos/scripts/build-moltenvk.sh', 'visionos/scripts/build-ffmpeg.sh') }}
+          key: visionos-core-vpkengine-${{ hashFiles('core-inputs.txt', 'shadps4-arm64-main/src/**', 'shadps4-arm64-main/CMakeLists.txt', 'shadps4-arm64-main/externals/CMakeLists.txt', 'shadps4-arm64-main/cmake/**', 'visionos/scripts/build-core.sh', 'visionos/scripts/build-moltenvk.sh', 'visionos/scripts/build-ffmpeg.sh') }}
 
       - name: Submodules the visionOS build uses
         if: steps.core.outputs.cache-hit != 'true'
@@ -72,9 +72,9 @@ jobs:
         if: steps.core.outputs.cache-hit != 'true'
         with:
           path: ~/Library/Caches/ccache
-          key: ccache-visionos-vpengine-${{ github.sha }}
+          key: ccache-visionos-vpkengine-${{ github.sha }}
           restore-keys: |
-            ccache-visionos-vpengine-
+            ccache-visionos-vpkengine-
             ccache-visionos-app-
       - uses: actions/cache@v4
         if: steps.core.outputs.cache-hit != 'true'
@@ -87,22 +87,22 @@ jobs:
           path: build/visionos/ffmpeg
           key: ffmpeg-visionos-n7.1.1-${{ hashFiles('visionos/scripts/build-ffmpeg.sh') }}
 
-      - name: The emulator for visionOS with VPEngine (MoltenVK, FFmpeg, shadPS4, libVPRuntime)
+      - name: The emulator for visionOS with VPKEngine (MoltenVK, FFmpeg, shadPS4, libVPRuntime)
         if: steps.core.outputs.cache-hit != 'true'
         run: |
           set -o pipefail
-          GUEST_CPU=vpengine VPENGINE_DIR=$PWD/vpengine bash visionos/scripts/build-core.sh 2>&1 | tee core.log
+          GUEST_CPU=vpkengine VPKENGINE_DIR=$PWD/vpkengine bash visionos/scripts/build-core.sh 2>&1 | tee core.log
       - name: Keep the emulator for the next runs
         if: steps.core.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: visionos/build/core
-          key: visionos-core-vpengine-${{ hashFiles('core-inputs.txt', 'shadps4-arm64-main/src/**', 'shadps4-arm64-main/CMakeLists.txt', 'shadps4-arm64-main/externals/CMakeLists.txt', 'shadps4-arm64-main/cmake/**', 'visionos/scripts/build-core.sh', 'visionos/scripts/build-moltenvk.sh', 'visionos/scripts/build-ffmpeg.sh') }}
+          key: visionos-core-vpkengine-${{ hashFiles('core-inputs.txt', 'shadps4-arm64-main/src/**', 'shadps4-arm64-main/CMakeLists.txt', 'shadps4-arm64-main/externals/CMakeLists.txt', 'shadps4-arm64-main/cmake/**', 'visionos/scripts/build-core.sh', 'visionos/scripts/build-moltenvk.sh', 'visionos/scripts/build-ffmpeg.sh') }}
       - uses: actions/cache/save@v4
         if: always() && steps.core.outputs.cache-hit != 'true'
         with:
           path: ~/Library/Caches/ccache
-          key: ccache-visionos-vpengine-${{ github.sha }}
+          key: ccache-visionos-vpkengine-${{ github.sha }}
 
       - uses: actions/cache@v4
         id: kosmickrisp
@@ -118,7 +118,7 @@ jobs:
           pip3 install --break-system-packages mako packaging pyyaml
           bash visionos/scripts/build-kosmickrisp.sh 2>&1 | tee kosmickrisp.log
 
-      # vpconvert (vpaot + clang + lld for visionOS, built by VPEngine's vpconvert-visionos
+      # vpconvert (vpaot + clang + lld for visionOS, built by VPKEngine's vpconvert-visionos
       # workflow) and what the compiler needs on the headset; Apple's intermediate and root
       # certificates, which the signature of a converted game carries.
       - name: vpconvert and certificates
@@ -127,48 +127,48 @@ jobs:
         run: |
           set -eo pipefail
           cd visionos/build
-          curl -sSfL --retry 4 --retry-delay 5 -o vpconvert.tar.zst https://github.com/escojoncio/VPEngine/releases/download/vpconvert-visionos/vpconvert-visionos.tar.zst
+          curl -sSfL --retry 4 --retry-delay 5 -o vpconvert.tar.zst https://github.com/escojoncio/VPKEngine/releases/download/vpconvert-visionos/vpconvert-visionos.tar.zst
           zstd -dc vpconvert.tar.zst | tar -x
-          rm -rf vpconvert VPEngineSDK && mv vpconvert-visionos vpconvert && cp -R vpconvert/sdk VPEngineSDK
+          rm -rf vpconvert VPKEngineSDK && mv vpconvert-visionos vpconvert && cp -R vpconvert/sdk VPKEngineSDK
           cat vpconvert/COMMIT vpconvert/LLVM_VERSION
           ls -la vpconvert/lib
-          # The release must be built from what the app compiles against: if VPEngine changed
+          # The release must be built from what the app compiles against: if VPKEngine changed
           # vpaot, vpconvert, the runtime, its SDK or Zydis since, the app would carry an old
           # converter with a new runtime. Fail instead (run "vpconvert for visionOS" first).
           BUILT=$(cat vpconvert/COMMIT)
-          HEAD=$(git -C ../../vpengine rev-parse HEAD)
+          HEAD=$(git -C ../../vpkengine rev-parse HEAD)
           if [[ "$BUILT" != "$HEAD" ]]; then
             # A failing API call (or a release commit that no longer exists) must fail the step.
-            FILES=$(gh api "repos/escojoncio/VPEngine/compare/$BUILT...$HEAD" --paginate --jq '.files[].filename')
+            FILES=$(gh api "repos/escojoncio/VPKEngine/compare/$BUILT...$HEAD" --paginate --jq '.files[].filename')
             # The compare API lists at most 300 files: past that, the list cannot be trusted.
             if (( $(wc -l <<<"$FILES") >= 300 )); then
-              echo "::error::VPEngine changed 300+ files since vpconvert-visionos (${BUILT::7}): rebuild it"
+              echo "::error::VPKEngine changed 300+ files since vpconvert-visionos (${BUILT::7}): rebuild it"
               exit 1
             fi
             # What the release is made of: vpaot, vpconvert, the stubs, Zydis, the runtime headers it ships.
             CHANGED=$(grep -E '^(tools/vpaot|tools/vpconvert|tools/sdk|third_party|runtime/(vp_cpu\.h|vp_emit\.h|vp_pack\.h|vp_regs\.h|freestanding/))' <<<"$FILES" || true)
             if [[ -n "$CHANGED" ]]; then
-              echo "::error::vpconvert-visionos was built from ${BUILT::7}; VPEngine ${HEAD::7} changed:"
+              echo "::error::vpconvert-visionos was built from ${BUILT::7}; VPKEngine ${HEAD::7} changed:"
               echo "$CHANGED"
               exit 1
             fi
           fi
-          echo "vpconvert ${BUILT::7} matches VPEngine ${HEAD::7}"
-          mkdir -p VPEngineCertificates
+          echo "vpconvert ${BUILT::7} matches VPKEngine ${HEAD::7}"
+          mkdir -p VPKEngineCertificates
           for C in AppleWWDRCAG3 AppleWWDRCAG4 AppleWWDRCAG5 AppleWWDRCAG6; do
-            curl -sSfL --retry 4 --retry-delay 5 -o VPEngineCertificates/$C.cer https://www.apple.com/certificateauthority/$C.cer || echo "no $C"
+            curl -sSfL --retry 4 --retry-delay 5 -o VPKEngineCertificates/$C.cer https://www.apple.com/certificateauthority/$C.cer || echo "no $C"
           done
-          curl -sSfL --retry 4 --retry-delay 5 -o VPEngineCertificates/AppleRootCA-G3.cer https://www.apple.com/certificateauthority/AppleRootCA-G3.cer || true
-          curl -sSfL --retry 4 --retry-delay 5 -o VPEngineCertificates/AppleIncRootCertificate.cer https://www.apple.com/appleca/AppleIncRootCertificate.cer
-          ls -la VPEngineCertificates
+          curl -sSfL --retry 4 --retry-delay 5 -o VPKEngineCertificates/AppleRootCA-G3.cer https://www.apple.com/certificateauthority/AppleRootCA-G3.cer || true
+          curl -sSfL --retry 4 --retry-delay 5 -o VPKEngineCertificates/AppleIncRootCertificate.cer https://www.apple.com/appleca/AppleIncRootCertificate.cer
+          ls -la VPKEngineCertificates
 
       - name: The app
         run: |
           set -o pipefail
           cd visionos
           ls -la build/core
-          python3 scripts/vpengine-project.py ../vpengine build/vpconvert
-          xcodegen generate --spec project-vpengine.yml
+          python3 scripts/vpkengine-project.py ../vpkengine build/vpconvert
+          xcodegen generate --spec project-vpkengine.yml
           xcodebuild -project AstroQuest.xcodeproj -scheme AstroQuest \
             -sdk xros -configuration Release -destination 'generic/platform=visionOS' \
             -derivedDataPath build/dd \
@@ -190,20 +190,20 @@ jobs:
             | grep -E ' T __Z(nw|na|dl|da)' | sed 's/^.*\(lib[a-z_]*\.a\)/\1/' | sort | uniq -c | head -40 | tee -a ../app.log || true
           otool -L build/ipa/Payload/AstroQuest.app/AstroQuest | tee -a ../app.log
           du -sh build/ipa/Payload/AstroQuest.app | tee -a ../app.log
-          (cd build/ipa && zip -qry ../AstroQuest-VPEngine.ipa Payload)
-          ls -la build/AstroQuest-VPEngine.ipa
+          (cd build/ipa && zip -qry ../AstroQuest-VPKEngine.ipa Payload)
+          ls -la build/AstroQuest-VPKEngine.ipa
 
       - name: Publish the logs
         if: always()
-        run: bash visionos/scripts/ci-publish-log.sh visionos-vpengine core.log kosmickrisp.log app.log
+        run: bash visionos/scripts/ci-publish-log.sh visionos-vpkengine core.log kosmickrisp.log app.log
 
       - name: Publish the app as a release
         if: success() && github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release delete visionos-vpengine --yes --cleanup-tag || true
-          gh release create visionos-vpengine visionos/build/AstroQuest-VPEngine.ipa \
+          gh release delete visionos-vpkengine --yes --cleanup-tag || true
+          gh release create visionos-vpkengine visionos/build/AstroQuest-VPKEngine.ipa \
             --target "$GITHUB_SHA" --prerelease \
-            --title "AstroQuest para Apple Vision Pro con VPEngine (sin JIT)" \
-            --notes "App sin firmar, compilada de ${GITHUB_SHA::7}, con VPEngine en lugar de FEX: el juego se convierte en el visor y se ejecuta sin JIT ni StikDebug."
+            --title "AstroQuest para Apple Vision Pro con VPKEngine (sin JIT)" \
+            --notes "App sin firmar, compilada de ${GITHUB_SHA::7}, con VPKEngine en lugar de FEX: el juego se convierte en el visor y se ejecuta sin JIT ni StikDebug."

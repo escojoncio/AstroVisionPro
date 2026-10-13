@@ -1,5 +1,5 @@
-// VPEngine: the only renderer on visionOS (see vpengine_renderer.h).
-#include "vpengine_renderer.h"
+// VPKEngine: the only renderer on visionOS (see vpkengine_renderer.h).
+#include "vpkengine_renderer.h"
 
 #import <Metal/Metal.h>
 #include <mach/mach.h>
@@ -23,7 +23,7 @@
 #include <fmt/ranges.h>
 #include "common/logging/log.h"
 #include "core/libraries/videoout/buffer.h"
-#include "vpengine_xr.h"
+#include "vpkengine_xr.h"
 #include "video_core/amdgpu/liverpool.h"
 #include "video_core/amdgpu/regs.h"
 #include "video_core/amdgpu/resource.h"
@@ -34,7 +34,7 @@
 #include "vpps4/formats.h"
 #include "vpps4/renderer.h"
 
-namespace VpengineRenderer {
+namespace VpkengineRenderer {
 namespace {
 
 // Guest addresses are host addresses. Buffers alias guest memory through windows of this size
@@ -176,7 +176,7 @@ vpgpu::metal::MslShader toMetal(const vpmsl::MslShader& s) {
     return m;
 }
 
-// The engine: VPEngine's Metal backend, device and PS4 renderer, shared by the rasterizer (GPU
+// The engine: VPKEngine's Metal backend, device and PS4 renderer, shared by the rasterizer (GPU
 // thread) and the presenter. Everything that records goes under `lock`.
 struct Engine {
     std::mutex lock;
@@ -207,7 +207,7 @@ struct Engine {
     bool failed = false;
     u64 dmaUnsynced = 0, dmaSynced = 0;  // DMA packets done on the CPU without / after a GPU wait
 
-    // CPU time of the GPU thread, in ns, printed every ~2 s (VPENGINE_GPU cpu:). Atomics: the
+    // CPU time of the GPU thread, in ns, printed every ~2 s (VPKENGINE_GPU cpu:). Atomics: the
     // presenter submits too, and draw timers stop after the engine lock is released.
     using Clock = std::chrono::steady_clock;
     enum Wait : unsigned { WaitDma, WaitGds, WaitFinish, WaitKinds };
@@ -260,7 +260,7 @@ struct Engine {
         const u64 wd = take(waitNs[WaitDma]), wg = take(waitNs[WaitGds]), wf = take(waitNs[WaitFinish]);
         const u64 nd = take(waits[WaitDma]), ng = take(waits[WaitGds]), nf = take(waits[WaitFinish]);
         LOG_INFO(Render_Vulkan,
-                 "VPENGINE_GPU cpu: draw_adapter {:.1f} ms/s, vpps4.draw {:.1f}, shader lookup {:.1f}, bind {:.1f}, "
+                 "VPKENGINE_GPU cpu: draw_adapter {:.1f} ms/s, vpps4.draw {:.1f}, shader lookup {:.1f}, bind {:.1f}, "
                  "pipeline request {:.1f}, frame compile+submit {:.1f} (vpps4 {:.1f}; {:.0f} submits/s, {:.0f} empty/s), "
                  "dma_wait {:.1f} ({:.0f}/s, {:.0f} with submit/s), gds_wait {:.1f} ({:.0f}/s), finish_wait {:.1f} ({:.0f}/s), "
                  "draws {:.0f}/s, per-draw {:.2f} us adapter / {:.2f} us vpps4, user data reused {:.0f}/s",
@@ -275,12 +275,12 @@ struct Engine {
     void log(const std::string& line) {
         const bool error = line.rfind("gpu.err", 0) == 0 || line.rfind("vpps4.shader error", 0) == 0;
         if (error) {
-            if (errorLines++ < 200) LOG_WARNING(Render_Vulkan, "VPENGINE_GPU {}", line);
+            if (errorLines++ < 200) LOG_WARNING(Render_Vulkan, "VPKENGINE_GPU {}", line);
             return;
         }
         const u64 f = submits.load();
         if (line.rfind("gpu.", 0) == 0 && line.rfind("gpu.metal", 0) != 0 && f != 0 && f % kEvery != 1) return;
-        LOG_INFO(Render_Vulkan, "VPENGINE_GPU {}", line);
+        LOG_INFO(Render_Vulkan, "VPKENGINE_GPU {}", line);
     }
 
     bool start() {
@@ -293,7 +293,7 @@ struct Engine {
                                                                options);
         if (!backend->ok()) {
             failed = true;
-            LOG_CRITICAL(Render_Vulkan, "VPENGINE_GPU no Metal device: nothing can be drawn");
+            LOG_CRITICAL(Render_Vulkan, "VPKENGINE_GPU no Metal device: nothing can be drawn");
             return false;
         }
         device = std::make_unique<vpgpu::Device>(*backend, 2, [this](const std::string& l) { log(l); });
@@ -317,7 +317,7 @@ struct Engine {
         // No MSAA: antialiasing is temporal (VPKTAA), 1 sample per pixel. The game's MSAA targets
         // become single-sample; its resolves become copies.
         renderer->setMaxSamples(1);
-        LOG_INFO(Render_Vulkan, "VPENGINE_GPU renderer on (VPEngine draws everything in Metal; no Vulkan device)");
+        LOG_INFO(Render_Vulkan, "VPKENGINE_GPU renderer on (VPKEngine draws everything in Metal; no Vulkan device)");
         return true;
     }
 
@@ -333,7 +333,7 @@ struct Engine {
             lastSpanClear = Clock::now();
         }
         if (submits % kEvery == 1)
-            LOG_INFO(Render_Vulkan, "VPENGINE_GPU dma: {} packets without a GPU wait, {} after one (so far)", dmaUnsynced,
+            LOG_INFO(Render_Vulkan, "VPKENGINE_GPU dma: {} packets without a GPU wait, {} after one (so far)", dmaUnsynced,
                      dmaSynced);
         {
             Timer t{submitNs};
@@ -357,7 +357,7 @@ void fillStage(vpps4::Stage& st, const AmdGpu::ShaderProgram& program) {
     st.userSgprs = uint8_t(program.settings.num_user_regs);
 }
 
-// CB_COLORn as VPEngine's colour target (write mask left at its default).
+// CB_COLORn as VPKEngine's colour target (write mask left at its default).
 vpps4::ColorTarget colorTarget(const AmdGpu::Regs& regs, unsigned i) {
     const auto& cb = regs.color_buffers[i];
     vpps4::ColorTarget c;
@@ -381,9 +381,9 @@ void leftOut(const char* why) {
     static std::map<std::string, u64> counts;
     std::scoped_lock l{m};
     const u64 n = ++counts[why];
-    if (n == 1) LOG_INFO(Render_Vulkan, "VPENGINE_GPU first draw left out: {}", why);
+    if (n == 1) LOG_INFO(Render_Vulkan, "VPKENGINE_GPU first draw left out: {}", why);
     else if (n == 1000 || n == 10000 || n == 100000 || n % 1000000 == 0)
-        LOG_INFO(Render_Vulkan, "VPENGINE_GPU draws left out: {} x{}", why, n);
+        LOG_INFO(Render_Vulkan, "VPKENGINE_GPU draws left out: {} x{}", why, n);
 }
 
 // ES/LS (geometry / tessellation) draws are left out: log what they are, so the path can be
@@ -411,7 +411,7 @@ void describeGeometryDraw(const AmdGpu::Regs& regs) {
                            u32(cb.info.format), u32(cb.info.number_type));
     }
     LOG_INFO(Render_Vulkan,
-             "VPENGINE_GEOM stages {:#x} (ls {} hs {} es {} gs {} vs {}) gs_mode {:#x} gs_instances {:#x} out_prim {} "
+             "VPKENGINE_GEOM stages {:#x} (ls {} hs {} es {} gs {} vs {}) gs_mode {:#x} gs_instances {:#x} out_prim {} "
              "max_vert {} esgs_item {} gsvs_item {} vert_item {}/{}/{}/{} prim {}{}",
              stages, u32(regs.stage_enable.ls_en), u32(regs.stage_enable.hs_en), u32(regs.stage_enable.es_en),
              u32(regs.stage_enable.gs_en), u32(regs.stage_enable.vs_en), gsMode, gsInst,
@@ -422,12 +422,12 @@ void describeGeometryDraw(const AmdGpu::Regs& regs) {
         if (!prog.Address<u32*>()) return;
         const auto params = AmdGpu::GetParams(prog);
         const u64 key = reinterpret_cast<u64>(params.code.data());
-        LOG_INFO(Render_Vulkan, "VPENGINE_GEOM {} @{:#x} user_sgprs {} words {} user_data {:08x}", name, key,
+        LOG_INFO(Render_Vulkan, "VPKENGINE_GEOM {} @{:#x} user_sgprs {} words {} user_data {:08x}", name, key,
                  u32(prog.settings.num_user_regs), params.code.size(),
                  fmt::join(std::span(prog.user_data.data(), 16), " "));
         if (!dumped.insert(key).second) return;
         for (size_t at = 0; at < params.code.size(); at += 128)
-            LOG_INFO(Render_Vulkan, "VPENGINE_GEOM {} @{:#x} code@{}: {:08x}", name, key, at,
+            LOG_INFO(Render_Vulkan, "VPKENGINE_GEOM {} @{:#x} code@{}: {:08x}", name, key, at,
                      fmt::join(params.code.subspan(at, std::min<size_t>(128, params.code.size() - at)), " "));
     };
     if (regs.stage_enable.ls_en) dump("ls", regs.ls_program);
@@ -518,7 +518,7 @@ Rasterizer::Rasterizer(AmdGpu::Liverpool* liverpool) : impl{std::make_unique<Imp
     liverpool->BindRasterizer(this);
     Engine& e = engine();
     std::scoped_lock g{e.lock};
-    // No page watches: VPEngine finds CPU writes to texture sources by their content. A watched
+    // No page watches: VPKEngine finds CPU writes to texture sources by their content. A watched
     // (read-only) page cannot be aliased by a no-copy Metal buffer (log 17:49: guest buffer of
     // 0x706c000000 refused, 40 resources missing a frame, black picture) and a write to it from
     // host code (an HLE strncpy) faulted in a loop.
@@ -942,8 +942,8 @@ struct PresentState {
     bool ensure(Engine& e) {
         if (!e.start()) return false;
         if (!started) {
-            if (!VpengineXr::Available()) return false;
-            VpengineXr::Start(e.backend->nativeDevice());
+            if (!VpkengineXr::Available()) return false;
+            VpkengineXr::Start(e.backend->nativeDevice());
             started = true;
         }
         if (pipeline || pipelineFailed) return pipeline != nil;
@@ -957,7 +957,7 @@ struct PresentState {
         if (lib) pipeline = [dev newRenderPipelineStateWithDescriptor:pd error:&error];
         if (!pipeline) {
             pipelineFailed = true;
-            LOG_CRITICAL(Render_Vulkan, "VPENGINE_PRESENT the compositing shader failed: {}",
+            LOG_CRITICAL(Render_Vulkan, "VPKENGINE_PRESENT the compositing shader failed: {}",
                          error ? error.localizedDescription.UTF8String : "?");
         }
         return pipeline != nil;
@@ -983,7 +983,7 @@ struct PresentState {
         }
     }
 
-    // The texture VPEngine has for a T#, after recording whatever fills it.
+    // The texture VPKEngine has for a T#, after recording whatever fills it.
     static id<MTLTexture> textureOf(Engine& e, const vpps4::ImageDesc& d) {
         const vpgpu::TextureId tid = e.renderer->textureFor(d);
         if (!tid) return nil;
@@ -994,7 +994,7 @@ struct PresentState {
     int compose(Engine& e, u32 width, u32 height, std::span<const Region> regions) {
         u32 target_index = 0;
         void* target_texture = nullptr;
-        if (!VpengineXr::Begin(width, height, target_index, target_texture)) return -1;
+        if (!VpkengineXr::Begin(width, height, target_index, target_texture)) return -1;
         const u32 slot = target_index % kSlots;
         {
             std::scoped_lock l{done_mutex};
@@ -1034,7 +1034,7 @@ struct PresentState {
                 done_cv.notify_all();
             });
         if (!queued) {
-            VpengineXr::Drop(target_index);
+            VpkengineXr::Drop(target_index);
             return -1;
         }
         return int(slot);
@@ -1051,7 +1051,7 @@ PresentState& present() {
 namespace Present {
 
 bool HasHeadset() {
-    return VpengineXr::Available();
+    return VpkengineXr::Available();
 }
 
 int ComposeEyes(std::span<const AmdGpu::Image, 2> eye_textures, const Core::Vr::Fov& fov, u32& eye_width,
@@ -1090,16 +1090,16 @@ int ComposeEyes(std::span<const AmdGpu::Image, 2> eye_textures, const Core::Vr::
             eye_width = d.width;
             eye_height = d.height;
         }
-        // Where the eye comes from: a colour target VPEngine drew, or an image filled from guest
+        // Where the eye comes from: a colour target VPKEngine drew, or an image filled from guest
         // memory / written by compute (first frames and every 600).
         if (impl->frames % 600 == 0)
-            LOG_INFO(Render_Vulkan, "VPENGINE_PRESENT eye {} T# {:#x} tile {} pitch {} fmt {}/{} {}x{} colour_target={} array_slice={}", k,
+            LOG_INFO(Render_Vulkan, "VPKENGINE_PRESENT eye {} T# {:#x} tile {} pitch {} fmt {}/{} {}x{} colour_target={} array_slice={}", k,
                      d.address, u32(d.tilingIndex), d.pitch, u32(d.dataFormat), u32(d.numFormat), d.width, d.height,
                      bool(e.renderer->colorTargetAt(d.address)), arrayTarget ? int(slice) : -1);
-        // What VPEngine holds on the GPU over the eye's memory (targets inside a bigger or
+        // What VPKEngine holds on the GPU over the eye's memory (targets inside a bigger or
         // neighbouring surface, shader-written images of another format): the eye's real producer.
         if (impl->frames % 600 == 0)
-            LOG_INFO(Render_Vulkan, "VPENGINE_PRESENT eye {} overlaps:{}", k,
+            LOG_INFO(Render_Vulkan, "VPKENGINE_PRESENT eye {} overlaps:{}", k,
                      e.renderer->describeAt(d.address, u64(std::max(d.pitch, d.width)) * d.height * 4));
     }
     // The eyes' drawing is submitted first: the composition runs after it on the same queue.
@@ -1107,7 +1107,7 @@ int ComposeEyes(std::span<const AmdGpu::Image, 2> eye_textures, const Core::Vr::
     if (!eyes[0] || !eyes[1]) {
         static std::atomic<u32> told{0};
         if (told++ < 4)
-            LOG_WARNING(Render_Vulkan, "VPENGINE_PRESENT eye pictures missing (left {}, right {}): black frame",
+            LOG_WARNING(Render_Vulkan, "VPKENGINE_PRESENT eye pictures missing (left {}, right {}): black frame",
                         eyes[0] != nil, eyes[1] != nil);
     }
     impl->last_fov = fov;
@@ -1121,7 +1121,7 @@ int ComposeEyes(std::span<const AmdGpu::Image, 2> eye_textures, const Core::Vr::
     const int slot = impl->compose(e, width, height, regions);
     if (slot < 0) return -1;
     if (impl->frames++ % 600 == 0)
-        LOG_INFO(Render_Vulkan, "VPENGINE_PRESENT headset frame {}: eyes {}x{} ({} / {}), sharpen {:.2f}", impl->frames,
+        LOG_INFO(Render_Vulkan, "VPKENGINE_PRESENT headset frame {}: eyes {}x{} ({} / {}), sharpen {:.2f}", impl->frames,
                  eye_width, eye_height, eyes[0] ? eyes[0].pixelFormat : 0, eyes[1] ? eyes[1].pixelFormat : 0,
                  impl->sharpen);
     return slot;
@@ -1221,7 +1221,7 @@ void Deliver(int slot, const Core::Vr::PresentedFrame& info) {
         // (a GPU that hangs gets its command buffer failed by Metal: the handler still runs)
         p.done_cv.wait_for(l, std::chrono::seconds{2}, [&] { return p.done[s]; });
     }
-    VpengineXr::End(s, info);
+    VpkengineXr::End(s, info);
 }
 
 bool Finished(int slot) {
@@ -1233,4 +1233,4 @@ bool Finished(int slot) {
 
 } // namespace Present
 
-} // namespace VpengineRenderer
+} // namespace VpkengineRenderer
