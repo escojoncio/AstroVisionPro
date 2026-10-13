@@ -21,6 +21,10 @@
 /visionos/*.xcodeproj/
 !/README-VISIONOS.md
 
+# Design notes (VPKEngine adapter) and the Bloodborne port plan.
+!/docs/
+!/Bitacora BB.md
+
 # The PC play folder: only the launcher and its settings, not the emulator built into it, nor
 # its user folder (saves, logs, shader cache).
 !/pc-vr/
