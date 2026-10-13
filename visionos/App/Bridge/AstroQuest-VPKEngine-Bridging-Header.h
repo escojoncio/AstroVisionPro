@@ -6,3 +6,4 @@
 #import "vp_pack.h"
 #import "vp_pkcs12.h"
 #import "vpconvert.h"
+#import "vp_ondemand.h"   // vpk_engine_set_on_demand (VPConversion.swift: translation on demand)
