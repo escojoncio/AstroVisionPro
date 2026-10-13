@@ -58,7 +58,7 @@ settings["LD_RUNPATH_SEARCH_PATHS"] = ["$(inherited)", "@executable_path/Framewo
 
 with open(here / "App/Info.plist", "rb") as f:
     info = plistlib.load(f)
-info["CFBundleDisplayName"] = "AstroQuest VPKEngine"
+info["CFBundleDisplayName"] = "AstroQuest VPEngine"
 info["BGTaskSchedulerPermittedIdentifiers"] = ["vpkengine.conversion"]
 info["UIBackgroundModes"] = ["processing"]
 schemes = info.setdefault("LSApplicationQueriesSchemes", [])
