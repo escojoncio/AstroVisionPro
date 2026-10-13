@@ -71,7 +71,7 @@ public:
     /// thread that draws.
     std::optional<Target> BeginFrame(u32 width, u32 height);
 #ifdef SHADPS4_VISIONOS
-    /// visionOS without Vulkan (VPEngine): frames are Metal textures of the host's own, made on
+    /// visionOS without Vulkan (VPKEngine): frames are Metal textures of the host's own, made on
     /// `mtl_device` (an id<MTLDevice>), in MTLPixelFormatRGBA8Unorm_sRGB.
     void StartMetal(void* mtl_device);
     struct MetalTarget {

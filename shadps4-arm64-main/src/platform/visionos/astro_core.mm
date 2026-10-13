@@ -225,7 +225,7 @@ void astro_core_pad_state(const AstroPadState* state) {
     static std::atomic<bool> bench_combo{};
     const bool combo = (state->buttons & AstroPadL3) != 0 && (state->buttons & AstroPadR3) != 0;
     if (bench_combo.exchange(combo) != combo && combo && Common::Diagnostics()) {
-#ifndef SHADPS4_VPENGINE_ONLY
+#ifndef SHADPS4_VPKENGINE_ONLY
         Vulkan::GpuBench::Start();
 #endif
     }

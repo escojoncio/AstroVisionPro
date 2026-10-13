@@ -1,12 +1,12 @@
-// See vpengine_presenter.h.
-#include "vpengine_presenter.h"
+// See vpkengine_presenter.h.
+#include "vpkengine_presenter.h"
 
 #include <chrono>
 #include <thread>
 
-#include "vpengine_renderer.h"
+#include "vpkengine_renderer.h"
 
-namespace VpengineRenderer {
+namespace VpkengineRenderer {
 
 Presenter::Presenter() {
     for (u32 k = 0; k < NumSlots; ++k) {
@@ -63,4 +63,4 @@ bool Presenter::IsFrameFinished(const Vulkan::Frame* frame) const {
     return frame == nullptr || frame->host_buffer < 0 || Present::Finished(frame->host_buffer);
 }
 
-} // namespace VpengineRenderer
+} // namespace VpkengineRenderer

@@ -374,7 +374,7 @@ void Emulator::Run(std::filesystem::path file, std::vector<std::string> args,
         EmulatorSettings.SetPipelineCacheArchived(false, true);
     }
     // SHADPS4_DUMP_SHADERS=<folder> (the app's «Modo diagnóstico»): every guest shader's GCN code
-    // is written to <folder>/dumps as it is first compiled (VPEngine's shader corpus).
+    // is written to <folder>/dumps as it is first compiled (VPKEngine's shader corpus).
     if (const char* folder = std::getenv("SHADPS4_DUMP_SHADERS"); folder != nullptr && *folder) {
         std::error_code error;
         std::filesystem::create_directories(folder, error);
