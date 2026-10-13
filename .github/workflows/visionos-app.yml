@@ -136,7 +136,12 @@ jobs:
         if: success() && github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ github.token }}
+        shell: bash
         run: |
+          # Everything this step prints also goes to release.log, kept in ci-logs if it fails.
+          exec > >(tee release.log) 2>&1
+          set -x
+          ls -la visionos/build/AstroQuest.ipa
           gh release delete visionos-latest --yes --cleanup-tag || true
           # Drafts left by an earlier run have no tag: deleted by id.
           gh api "repos/${GITHUB_REPOSITORY}/releases" \
@@ -158,3 +163,6 @@ jobs:
             sleep 10
           done
           echo "The download link does not answer"; exit 1
+      - name: Keep the release step's output (when it failed)
+        if: failure()
+        run: bash visionos/scripts/ci-publish-log.sh visionos-app-release release.log
