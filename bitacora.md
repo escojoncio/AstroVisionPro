@@ -10,7 +10,8 @@ Compactada el 2026-10-11: lo resuelto queda en «Histórico» como una línea; e
 - Todas las menciones, rutas e identificadores pasan a VPKEngine (repo `escojoncio/VPKEngine`, checkout `vpkengine/`).
   Datos antiguos del visor (carpetas VPEngine, ajustes, certificado, packs `vpengine.vpgame`) se traspasan solos
   (`VPKLegacy` en VPKEngine `platform/visionos/Sources/VPGamePack.swift`).
-- Workflow `visionos-vpkengine.yml`, release `visionos-vpkengine` (`AstroQuest-VPKEngine.ipa`); `AppModel.swift`
+- Sin cambios de identidad de la app: workflow `visionos-vpengine.yml`, release `visionos-vpengine`
+  (`AstroQuest-VPEngine.ipa`), nombre visible «AstroQuest VPEngine»; disparador `[build-vpkengine]` o `[build-vpengine]`. `AppModel.swift`
   storageRoot = `VPKLegacy.folder(in: VPS4)`.
 
 ## Rendimiento del mundo (2026-10-12, noche; sin build)
@@ -222,7 +223,7 @@ Compactada el 2026-10-11: lo resuelto queda en «Histórico» como una línea; e
 Datos de los logs del visor (Vision Pro M2), ASTRO BOT, KosmicKrisp salvo donde se dice.
 
 ### Cadena
-- CPU del juego: FEX (JIT). VPKEngine (AOT sin JIT, build aparte `visionos-vpkengine`, repo escojoncio/VPKEngine): convierte en el visor (318/335 piezas), firma del pack aceptada, el eboot no llega a engancharse; nunca ejecutó el juego.
+- CPU del juego: FEX (JIT). VPKEngine (AOT sin JIT, build aparte `visionos-vpengine`, repo escojoncio/VPKEngine): convierte en el visor (318/335 piezas), firma del pack aceptada, el eboot no llega a engancharse; nunca ejecutó el juego.
 - GPU: GCN → SPIR-V (shadPS4) → KK: SPIR-V → NIR → MSL → compilador de Metal. MoltenVK: SPIR-V → SPIRV-Cross → MSL.
 - Imagen: 1440x1536 por ojo, ambos ojos por frame, reproyección por pose en `GameRenderer.swift`, SMAA propio. Límite: GPU (94–100 % en el mundo); la CPU no limita.
 
@@ -288,7 +289,7 @@ Datos de los logs del visor (Vision Pro M2), ASTRO BOT, KosmicKrisp salvo donde 
 - Logs: `Core/LogFiles.swift` (`consola-*.txt`), `Views/LogsView.swift`.
 ### CI
 - `.github/workflows/visionos-app.yml`: solo `[build]` o dispatch (el filtro `paths` mira el push: un `[build]` que solo toca la bitácora no compila → dispatch); borra borradores de `visionos-latest`, publica y comprueba el enlace; `concurrency` en el job; caché del core y de KK.
-- `kosmickrisp-visionos.yml` (dispatch), `stikdebug-visionos.yml` (StikDebug con autoquit), `visionos-vpkengine.yml` (`[build-vpkengine]`).
+- `kosmickrisp-visionos.yml` (dispatch), `stikdebug-visionos.yml` (StikDebug con autoquit), `visionos-vpengine.yml` (`[build-vpkengine]`).
 - Commits: identidad `Claude` con email vacío.
 
 ## Histórico (resuelto; detalle en git)
