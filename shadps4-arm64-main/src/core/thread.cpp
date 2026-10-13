@@ -29,7 +29,7 @@ NativeThread::~NativeThread() {}
 int NativeThread::Create(ThreadFunc func, void* arg) {
 #ifndef _WIN64
     pthread_t* pthr = reinterpret_cast<pthread_t*>(&native_handle);
-#ifdef SHADPS4_GUEST_CPU_VPENGINE
+#ifdef SHADPS4_GUEST_CPU_VPKENGINE
     // Translated guest code calls nest on the host stack (one C call per guest call): give guest
     // threads a host stack well beyond the guest's own (the default is 512 KiB on Apple systems).
     pthread_attr_t attr;

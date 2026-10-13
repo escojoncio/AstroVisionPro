@@ -501,7 +501,7 @@ struct PassInfo {
 };
 
 #ifdef __APPLE__
-// No executable memory (visionOS without JIT, e.g. with VPEngine's ahead-of-time guest CPU): the
+// No executable memory (visionOS without JIT, e.g. with VPKEngine's ahead-of-time guest CPU): the
 // walker's few instructions are interpreted instead of run. Its loads from guest memory go through
 // these two functions, made of the same load instructions as a generated walker, so that
 // SrtWalkerSignalHandler turns a fault in them into a zero just as it does for generated code.

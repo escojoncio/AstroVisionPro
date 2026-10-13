@@ -1,5 +1,5 @@
-// The presenter videoout/driver.cpp talks to on visionOS: the headset's frames drawn by VPEngine
-// (vpengine_renderer.h, Present::). Frames are tokens of Vulkan::Frame (vk_frame.h) with the
+// The presenter videoout/driver.cpp talks to on visionOS: the headset's frames drawn by VPKEngine
+// (vpkengine_renderer.h, Present::). Frames are tokens of Vulkan::Frame (vk_frame.h) with the
 // compositor's slot in host_buffer; there is no window and no Vulkan device behind them.
 #pragma once
 
@@ -15,7 +15,7 @@ namespace Libraries::VideoOut {
 struct BufferAttributeGroup;
 }
 
-namespace VpengineRenderer {
+namespace VpkengineRenderer {
 
 class Presenter {
 public:
@@ -63,4 +63,4 @@ private:
     Vulkan::Frame no_window{};
 };
 
-} // namespace VpengineRenderer
+} // namespace VpkengineRenderer

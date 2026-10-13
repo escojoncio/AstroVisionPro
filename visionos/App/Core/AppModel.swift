@@ -48,8 +48,8 @@ final class AppModel {
     /// The launcher's check (Diagnostics.swift), redone when the app comes back to the front.
     var diagnostics = Diagnostics.run()
 
-#if VPENGINE
-    /// The game's code translated ahead of time (VPEngine): converted on the headset or made on
+#if VPKENGINE
+    /// The game's code translated ahead of time (VPKEngine): converted on the headset or made on
     /// a PC, signed with the player's SideStore certificate and loaded. No JIT.
     let conversion = VPConversion.shared
     var certificate: VPCertificate.Summary? = VPCertificate.current
@@ -65,7 +65,7 @@ final class AppModel {
 
     func importCertificateFromSideStore() {
         guard let url = VPCertificate.sideStoreImportURL else { return }
-        LogFiles.log("VPEngine: asking SideStore for the certificate")
+        LogFiles.log("VPKEngine: asking SideStore for the certificate")
         UIApplication.shared.open(url, options: [:]) { [weak self] opened in
             if !opened {
                 Task { @MainActor in
@@ -81,20 +81,20 @@ final class AppModel {
         // whether SideStore answers at all, and in what shape.
         let parts = URLComponents(url: url, resolvingAgainstBaseURL: false)
         let items = (parts?.queryItems ?? []).map { "\($0.name)(\($0.value?.count ?? -1) chars)" }
-        LogFiles.log("VPEngine: opened with a URL: scheme \(url.scheme ?? "-"), host \(url.host ?? "-"), path of \(url.path.count) chars, parameters [\(items.joined(separator: ", "))], \(url.absoluteString.count) chars")
+        LogFiles.log("VPKEngine: opened with a URL: scheme \(url.scheme ?? "-"), host \(url.host ?? "-"), path of \(url.path.count) chars, parameters [\(items.joined(separator: ", "))], \(url.absoluteString.count) chars")
         guard let result = VPCertificate.handle(url: url) else {
-            LogFiles.log("VPEngine: that URL is not a certificate from SideStore")
+            LogFiles.log("VPKEngine: that URL is not a certificate from SideStore")
             return
         }
         switch result {
         case .success(let summary):
             certificate = summary
             message = L("Certificado importado: \(summary.commonName) (\(summary.team)).", "Certificate imported: \(summary.commonName) (\(summary.team)).")
-            LogFiles.log("VPEngine: certificate imported from SideStore, team \(summary.team)")
+            LogFiles.log("VPKEngine: certificate imported from SideStore, team \(summary.team)")
             loadEngineIfReady()
         case .failure(let error):
             message = error.localizedDescription
-            LogFiles.log("VPEngine: certificate import failed: \(error.localizedDescription)")
+            LogFiles.log("VPKEngine: certificate import failed: \(error.localizedDescription)")
         }
     }
 
@@ -103,15 +103,15 @@ final class AppModel {
         defer { if accessing { file.stopAccessingSecurityScopedResource() } }
         do {
             let data = try Data(contentsOf: file)
-            LogFiles.log("VPEngine: certificate file \(file.lastPathComponent), \(data.count) bytes, password \(password.isEmpty ? "empty" : "given")")
+            LogFiles.log("VPKEngine: certificate file \(file.lastPathComponent), \(data.count) bytes, password \(password.isEmpty ? "empty" : "given")")
             let summary = try VPCertificate.store(p12: data, password: password)
             certificate = summary
             message = L("Certificado importado: \(summary.commonName) (\(summary.team)).", "Certificate imported: \(summary.commonName) (\(summary.team)).")
-            LogFiles.log("VPEngine: certificate imported from a file, team \(summary.team); the app's team \(appTeam.isEmpty ? "unknown" : appTeam)")
+            LogFiles.log("VPKEngine: certificate imported from a file, team \(summary.team); the app's team \(appTeam.isEmpty ? "unknown" : appTeam)")
             loadEngineIfReady()
         } catch {
             message = error.localizedDescription
-            LogFiles.log("VPEngine: certificate file import failed: \(error.localizedDescription)")
+            LogFiles.log("VPKEngine: certificate file import failed: \(error.localizedDescription)")
         }
     }
 
@@ -170,11 +170,11 @@ final class AppModel {
 #endif
 
     init() {
-#if VPENGINE
+#if VPKENGINE
         VPGamePack.log = { LogFiles.log($0) }
         VPCertificate.log = { LogFiles.log($0) }
-        // Conversions live in VPS4/VPEngine: they outlive the app.
-        VPConversion.storageRoot = { GameFolder.url()?.appendingPathComponent("VPEngine", isDirectory: true) }
+        // Conversions live in VPS4/VPKEngine: they outlive the app.
+        VPConversion.storageRoot = { GameFolder.url().map { VPKLegacy.folder(in: $0) } }
         VPConversion.patchImage = Self.titlePatcher(settings.environment)
         conversion.resolveGame = { [weak self] in self?.gamePath }
         conversion.onFinished = { [weak self] loaded in self?.packLoaded = loaded }
@@ -197,8 +197,8 @@ final class AppModel {
         }
         controllers.start()
         controller = controllers.status
-#if VPENGINE
-        LogFiles.log("VPEngine build: app signed by team \(appTeam.isEmpty ? "?" : appTeam), certificate \(certificate?.team ?? "none")")
+#if VPKENGINE
+        LogFiles.log("VPKEngine build: app signed by team \(appTeam.isEmpty ? "?" : appTeam), certificate \(certificate?.team ?? "none")")
         loadEngineIfReady()
 #endif
     }
@@ -312,7 +312,7 @@ final class AppModel {
     }
 
     var canStart: Bool {
-#if VPENGINE
+#if VPKENGINE
         engineReady && gamePath != nil && coreState == AstroCoreStateIdle
 #else
         jit.isReady && gamePath != nil && coreState == AstroCoreStateIdle
@@ -321,7 +321,7 @@ final class AppModel {
 
     /// Starts the emulator with the game. The immersive space is opened by the view.
     func startGame() -> Bool {
-#if VPENGINE
+#if VPKENGINE
         guard let gamePath, engineReady else {
             return false
         }

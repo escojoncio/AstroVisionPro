@@ -182,7 +182,7 @@ struct AstroSettings {
             }
         }
         env.append("SHADPS4_VR_SHARPEN=\(sharpen)")
-        // (No MSAA: VPEngine draws every target at 1 sample; antialiasing is temporal, VPKTAA.)
+        // (No MSAA: VPKEngine draws every target at 1 sample; antialiasing is temporal, VPKTAA.)
         if !hands {
             env.append("SHADPS4_XR_HANDS=0")
         }
@@ -206,7 +206,7 @@ struct AstroSettings {
         // The headset is the app's: it is there from the start.
         env.append("SHADPS4_XR_WAIT=0")
         env.append("SHADPS4_SPATIAL_AUDIO=\(spatialAudio ? 1 : 0)")
-        // The picture is VPEngine's (Metal); there is no Vulkan driver. Fixed: the title's GPU
+        // The picture is VPKEngine's (Metal); there is no Vulkan driver. Fixed: the title's GPU
         // clock adjusted every frame (only for titles the emulator knows, ASTRO BOT).
         env.append("SHADPS4_GPU_CLOCK_SCALE=auto")
         if diagnostics {

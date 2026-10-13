@@ -1,8 +1,8 @@
-#include "vpengine_xr.h"
+#include "vpkengine_xr.h"
 
 #include "core/vr/openxr_host.h"
 
-namespace VpengineXr {
+namespace VpkengineXr {
 bool Available() {
     return Core::Vr::OpenXrHost::Instance().IsAvailable();
 }
@@ -24,4 +24,4 @@ void End(u32 index, const Core::Vr::PresentedFrame& info) {
 void Drop(u32 index) {
     Core::Vr::OpenXrHost::Instance().DropFrame(index);
 }
-} // namespace VpengineXr
+} // namespace VpkengineXr

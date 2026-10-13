@@ -17,7 +17,7 @@ struct AstroQuestApp: App {
     /// Read once when the app opens: changing it while the launcher is up would rebuild it.
     @State private var controllerToApp = AstroSettings.load().controllerToApp
 
-#if VPENGINE
+#if VPKENGINE
     init() {
         // Before the app finishes launching: what runs when visionOS grants background time to
         // go on with a conversion.
@@ -30,7 +30,7 @@ struct AstroQuestApp: App {
             LauncherView()
                 .environment(model)
                 .modifier(ControllerEvents(toApp: controllerToApp))
-#if VPENGINE
+#if VPKENGINE
                 .onOpenURL { url in
                     model.handleOpenURL(url)
                 }

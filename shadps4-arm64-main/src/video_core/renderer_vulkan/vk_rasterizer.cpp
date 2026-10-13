@@ -17,8 +17,8 @@
 #include "video_core/renderer_vulkan/vk_rasterizer.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
 #include "video_core/renderer_vulkan/vk_shader_hle.h"
-#ifdef SHADPS4_VPENGINE_SHADER_CHECK
-#include "vpengine_shader_check.h"
+#ifdef SHADPS4_VPKENGINE_SHADER_CHECK
+#include "vpkengine_shader_check.h"
 #endif
 
 #include <array>
@@ -946,11 +946,11 @@ Mode Current() {
 } // namespace GpuBench
 
 namespace {
-#ifdef SHADPS4_VPENGINE_SHADER_CHECK
-// «Modo diagnóstico»: the draw census of the VPEngine shader check (which of the shaders behind
-// what is drawn VPEngine runs already).
-void NoteVpengineDraw(const Vulkan::GraphicsPipeline* pipeline) {
-    if (!VpengineShaderCheck::Enabled()) {
+#ifdef SHADPS4_VPKENGINE_SHADER_CHECK
+// «Modo diagnóstico»: the draw census of the VPKEngine shader check (which of the shaders behind
+// what is drawn VPKEngine runs already).
+void NoteVpkengineDraw(const Vulkan::GraphicsPipeline* pipeline) {
+    if (!VpkengineShaderCheck::Enabled()) {
         return;
     }
     std::array<u64, Shader::MaxStageTypes> hashes{};
@@ -960,10 +960,10 @@ void NoteVpengineDraw(const Vulkan::GraphicsPipeline* pipeline) {
             hashes[n++] = info->pgm_hash;
         }
     }
-    VpengineShaderCheck::NoteDraw(hashes.data(), n);
+    VpkengineShaderCheck::NoteDraw(hashes.data(), n);
 }
 #else
-void NoteVpengineDraw(const Vulkan::GraphicsPipeline*) {}
+void NoteVpkengineDraw(const Vulkan::GraphicsPipeline*) {}
 #endif
 } // namespace
 
@@ -1074,7 +1074,7 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
     if (!pipeline) {
         return;
     }
-    NoteVpengineDraw(pipeline);
+    NoteVpkengineDraw(pipeline);
 
     RunDepthMirrors(pipeline);
     PrepareRenderState(pipeline);
@@ -1507,7 +1507,7 @@ void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u3
     if (!pipeline) {
         return;
     }
-    NoteVpengineDraw(pipeline);
+    NoteVpkengineDraw(pipeline);
 
     RunDepthMirrors(pipeline);
     PrepareRenderState(pipeline);
@@ -1610,9 +1610,9 @@ void Rasterizer::DispatchDirect() {
         }
         return;
     }
-#ifdef SHADPS4_VPENGINE_SHADER_CHECK
+#ifdef SHADPS4_VPKENGINE_SHADER_CHECK
     // (after the HLE: those dispatches never reach the shader compiler)
-    VpengineShaderCheck::NoteDispatch(cs.pgm_hash);
+    VpkengineShaderCheck::NoteDispatch(cs.pgm_hash);
 #endif
 
     RunDepthMirrors(pipeline);
@@ -1647,8 +1647,8 @@ void Rasterizer::DispatchIndirect(VAddr address, u32 offset, u32 size) {
     if (!pipeline) {
         return;
     }
-#ifdef SHADPS4_VPENGINE_SHADER_CHECK
-    VpengineShaderCheck::NoteDispatch(pipeline->GetStage(Shader::LogicalStage::Compute).pgm_hash);
+#ifdef SHADPS4_VPKENGINE_SHADER_CHECK
+    VpkengineShaderCheck::NoteDispatch(pipeline->GetStage(Shader::LogicalStage::Compute).pgm_hash);
 #endif
 
     RunDepthMirrors(pipeline);

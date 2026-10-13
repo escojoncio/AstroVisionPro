@@ -10,7 +10,7 @@
 namespace VideoCore {
 
 /// What the command processor (Liverpool), the memory manager and the page manager ask of a
-/// renderer. The Vulkan renderer implements it; a VPEngine (Metal) renderer will too, chosen at start.
+/// renderer. The Vulkan renderer implements it; a VPKEngine (Metal) renderer will too, chosen at start.
 class RasterizerInterface {
 public:
     virtual ~RasterizerInterface() = default;

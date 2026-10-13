@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //
-// The VPEngine build (scripts/vpengine-project.py): the game's code runs translated ahead of time
+// The VPKEngine build (scripts/vpkengine-project.py): the game's code runs translated ahead of time
 // instead of through FEX, so there is no JIT and no StikDebug. What the launcher shows for it: the
 // engine card on the home tab (certificate, conversion, the game pack) and its section in the
 // settings.
 
-#if VPENGINE
+#if VPKENGINE
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -19,7 +19,7 @@ struct EngineCard: View {
 
     var body: some View {
         let conversion = model.conversion
-        StatusCard(title: "VPEngine", symbol: "cpu", verdict: verdict, detail: detail) {
+        StatusCard(title: "VPKEngine", symbol: "cpu", verdict: verdict, detail: detail) {
             VStack(alignment: .leading, spacing: 8) {
                 if model.certificate == nil {
                     Button(L("Importar de SideStore", "Import from SideStore")) {
@@ -58,7 +58,7 @@ struct EngineCard: View {
                 // After the picker has finished closing: an alert asked for while it closes may
                 // never show (and the flag, left on, would keep it from showing again).
                 askingPassword = false
-                LogFiles.log("VPEngine: certificate file chosen, asking for its password")
+                LogFiles.log("VPKEngine: certificate file chosen, asking for its password")
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { askingPassword = true }
             case .failure(let error):
                 model.message = error.localizedDescription
@@ -114,7 +114,7 @@ struct EngineCard: View {
 }
 
 /// The settings for it.
-struct VPEngineSection: View {
+struct VPKEngineSection: View {
     @Environment(AppModel.self) private var model
     @State private var choosingCertificate = false
     @State private var certificateFile: URL?
@@ -161,7 +161,7 @@ struct VPEngineSection: View {
             }
             .disabled(!FileManager.default.fileExists(atPath: ConversionLog.shared.url.path))
         } header: {
-            Text("VPEngine")
+            Text("VPKEngine")
         } footer: {
             Text(L("El juego se convierte una vez en el visor (traducido y compilado para su procesador) y se firma con tu certificado de SideStore: luego arranca sin JIT ni StikDebug. Con el visor quitado y cargando, visionOS puede ir avanzando la conversión a ratos; conversion.log, en Archivos, dice cuánto. Más piezas a la vez va más rápido mientras no falte memoria.",
                    "The game is converted once on the headset (translated and compiled for its processor) and signed with your SideStore certificate: then it starts with no JIT or StikDebug. With the headset off and charging, visionOS may move the conversion on now and then; conversion.log, in Files, says how much. More pieces at once is faster while memory lasts."))
@@ -173,7 +173,7 @@ struct VPEngineSection: View {
                 // After the picker has finished closing: an alert asked for while it closes may
                 // never show (and the flag, left on, would keep it from showing again).
                 askingPassword = false
-                LogFiles.log("VPEngine: certificate file chosen, asking for its password")
+                LogFiles.log("VPKEngine: certificate file chosen, asking for its password")
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { askingPassword = true }
             case .failure(let error):
                 model.message = error.localizedDescription

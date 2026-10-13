@@ -6,35 +6,42 @@ App visionOS en `visionos/` (SwiftUI + Compositor Services + ARKit + GameControl
 JIT: arena RWX preparada por StikDebug (protocolo `brk #0xf00d` + universal.js); la app hace detach al terminar.
 Compactada el 2026-10-11: lo resuelto queda en «Histórico» como una línea; el detalle está en el historial de git de este fichero (`git log -p bitacora.md`).
 
+## Renombrado VPEngine → VPKEngine (2026-10-13)
+- Todas las menciones, rutas e identificadores pasan a VPKEngine (repo `escojoncio/VPKEngine`, checkout `vpkengine/`).
+  Datos antiguos del visor (carpetas VPEngine, ajustes, certificado, packs `vpengine.vpgame`) se traspasan solos
+  (`VPKLegacy` en VPKEngine `platform/visionos/Sources/VPGamePack.swift`).
+- Workflow `visionos-vpkengine.yml`, release `visionos-vpkengine` (`AstroQuest-VPKEngine.ipa`); `AppModel.swift`
+  storageRoot = `VPKLegacy.folder(in: VPS4)`.
+
 ## Rendimiento del mundo (2026-10-12, noche; sin build)
 - Log 19:05: menú ~49 fps, mundo ~8.5 fps con GPU 0.7–0.8 ms por submit → límite en CPU del hilo GPU y esperas.
-- `vpengine_renderer.mm` (`Engine`): `MetalOptions::framesInFlight = 6` (antes 3: con ~15 submits por imagen la CPU
+- `vpkengine_renderer.mm` (`Engine`): `MetalOptions::framesInFlight = 6` (antes 3: con ~15 submits por imagen la CPU
   esperaba a la GPU cada pocos submits); `syncForDma()` (DMA: espera solo si hay solape; submit previo solo si el
   solape está en lo grabado sin enviar, si no `waitGpu` + `submittedIdle`); `waitGpu(WaitDma/Gds/Finish)`;
   `spanCache().clear()` como mucho cada ~8 ms (antes en cada submit → syscalls vm_region tras cada uno);
-  línea `VPENGINE_GPU cpu:` cada ~2 s (draw_adapter, vpps4.draw, shader lookup, bind, pipeline request, frame
+  línea `VPKENGINE_GPU cpu:` cada ~2 s (draw_adapter, vpps4.draw, shader lookup, bind, pipeline request, frame
   compile+submit, dma/gds/finish wait con recuentos, submits vacíos, µs por draw, user data reutilizada).
-- VPEngine a53f173 (`visionos/vpengine-gpu.ref`): rangos busy retiran por frame completado, BarrierPlacer sin
+- VPKEngine a53f173 (`visionos/vpkengine-gpu.ref`): rangos busy retiran por frame completado, BarrierPlacer sin
   O(n²), memo de programKey, dedupe de user data, submits vacíos omitidos, anillos 8×16 MB.
-- Siguiente: con el log nuevo, leer `VPENGINE_GPU cpu:` y `VPENGINE_GPU dma:` (proporción con espera debería bajar).
+- Siguiente: con el log nuevo, leer `VPKENGINE_GPU cpu:` y `VPKENGINE_GPU dma:` (proporción con espera debería bajar).
 
 ## Estado (2026-10-12, tarde) y siguiente sesión
-- **Crash al entrar al primer mundo (ASTRO BOT, VPEngine)**: `liverpool.cpp:365 PM4 packet exceeds remaining`,
+- **Crash al entrar al primer mundo (ASTRO BOT, VPKEngine)**: `liverpool.cpp:365 PM4 packet exceeds remaining`,
   registros PM4 basura, shaders `undecodable word 0x00000000` y `TryWriteBacking 0x7000000000`. Causa:
-  `Rasterizer::FillBuffer/CopyBuffer` (`vpengine_renderer.mm`) encolaban el DMA como blit Metal que se ejecuta al
+  `Rasterizer::FillBuffer/CopyBuffer` (`vpkengine_renderer.mm`) encolaban el DMA como blit Metal que se ejecuta al
   enviar el frame; Liverpool (CPU) y el juego leen el destino justo después (PM4 de IBs, código de shaders) y lo
   encontraban a cero. Arreglo: DMA no-GDS en CPU y en orden (`submit()` + `waitIdle()`, luego memset/memmove en la
   memoria unificada + `impl->invalidate`); si el rango no es verificable se mantiene el blit. Coste: una espera de
   GPU por paquete DMA. Pendiente de probar en build.
-- **VPEngine es el único renderer en visionOS** (decisión: fuera KosmicKrisp, la sombra y el ajuste «Motor gráfico»).
-  Build pendiente de probar: arranca, ¿hay imagen en el visor?, log `VPENGINE_GPU` / `VPENGINE_PRESENT`.
-  - `src/platform/visionos/vpengine_renderer.{h,mm}`: `VpengineRenderer::Rasterizer` (RasterizerInterface; draws,
+- **VPKEngine es el único renderer en visionOS** (decisión: fuera KosmicKrisp, la sombra y el ajuste «Motor gráfico»).
+  Build pendiente de probar: arranca, ¿hay imagen en el visor?, log `VPKENGINE_GPU` / `VPKENGINE_PRESENT`.
+  - `src/platform/visionos/vpkengine_renderer.{h,mm}`: `VpkengineRenderer::Rasterizer` (RasterizerInterface; draws,
     indirectos con argumentos en memoria del juego, dispatch, DMA en la GPU, GDS propio, PageManager propio que
     vigila las páginas de las texturas subidas → invalidate), `Present::` (compone los ojos lado a lado en texturas
     Metal propias del compositor con `MetalBackend::encodeInterop`, sRGB, nitidez CAS; pantallas 2D como pantalla
-    de 70°). `vpengine_presenter.{h,cpp}`: fachada para `videoout/driver.cpp` (tokens `Vulkan::Frame`,
+    de 70°). `vpkengine_presenter.{h,cpp}`: fachada para `videoout/driver.cpp` (tokens `Vulkan::Frame`,
     `vk_frame.h` separado de `vk_presenter.h`).
-  - `gnmdriver.cpp` (`SHADPS4_VPENGINE_ONLY`): crea Rasterizer + Presenter de VPEngine en vez de `Vulkan::Presenter`
+  - `gnmdriver.cpp` (`SHADPS4_VPKENGINE_ONLY`): crea Rasterizer + Presenter de VPKEngine en vez de `Vulkan::Presenter`
     (`presenter` Vulkan queda nulo; `video_out.cpp` comprueba nulo; `astro_core.mm` sin GpuBench).
   - `openxr_host_visionos.mm`: `StartMetal`/`BeginMetalFrame` (ranuras RGBA8 sRGB propias, liberadas con retardo).
   - App: sin ajuste de motor ni variables KK/Vulkan; workflow sin KosmicKrisp. El código Vulkan sigue compilado
@@ -44,86 +51,86 @@ Compactada el 2026-10-11: lo resuelto queda en «Histórico» como una línea; e
   escritas por la GPU (compute) no se invalidan; profundidad al compositor y VPKTAA pendientes; etiquetas EOP se
   escriben en CPU al procesar (posibles lecturas adelantadas).
 - Herramientas aquí: comprobación de sintaxis con `clang++ -std=c++23 -fsyntax-only` (flags en sesión: defines
-  `SHADPS4_VISIONOS ENABLE_OPENXR_HOST SHADPS4_VPENGINE_ONLY`, includes de externals y de VPEngine), submódulos
+  `SHADPS4_VISIONOS ENABLE_OPENXR_HOST SHADPS4_VPKENGINE_ONLY`, includes de externals y de VPKEngine), submódulos
   `git submodule update --init --depth 1` (fmt spdlog vulkan-headers robin-map magic_enum ext-boost sirit +
   SPIRV-Headers toml11 xbyak zydis vma miniz half json xxhash tracy dear_imgui sdl3), `miniz_export.h` vacío.
   `vk_presenter.cpp` da 2 errores ajenos de ImGui (ImVec2). Los .mm no se pueden comprobar aquí.
-- Comprobar que el visor tiene la build nueva: `VPENGINE_GPU renderer on` al arrancar.
+- Comprobar que el visor tiene la build nueva: `VPKENGINE_GPU renderer on` al arrancar.
 - Log 17:49 (build 4031edc): menú y precarga del primer mundo con imagen negra; crash en `strncpy` HLE escribiendo en
   página protegida (`ASTRO_FAULT_LOOP` protection=1). Causa: las vigilancias de página de las texturas subidas
   (mprotect) → (1) Metal rechaza el buffer no-copy de la ventana `0x706c000000` con páginas de solo lectura
   (`gpu.err what=buffer`, ~40 `missing_resources` por submit → draws perdidos → negro); (2) bucle de fallos.
-  Arreglo: sin vigilancias (`e.uploaded = nullptr`); VPEngine detecta escrituras de CPU por contenido
+  Arreglo: sin vigilancias (`e.uploaded = nullptr`); VPKEngine detecta escrituras de CPU por contenido
   (vpps4 `Texture::check`: 16 líneas muestreadas por frame de uso + hash completo cada 30 frames). Anillo 32 MB
   (había `upload ring full`). Stats del log: ~80 draws/frame, 96 % hechos, 0 indirectos; saltos: pipeline compilando,
   vertex shader no traducido (764), ES/LS, fast clear; detile sin cubrir: depth_2d_thin_64 con split, thick_1d.
-- Build df55ba5 (log 17:30): arranca con VPEngine (`VPENGINE_GPU renderer on`, M2, bindless) y cae en el primer
+- Build df55ba5 (log 17:30): arranca con VPKEngine (`VPKENGINE_GPU renderer on`, M2, bindless) y cae en el primer
   evento SDL: `imgui_impl_sdl3.cpp:384` (ImGui sin iniciar: lo iniciaba el swapchain de Vulkan). Arreglo:
   `imgui_core.cpp` `ProcessEvent`/`OnResize` salen si `GetCurrentContext() == nullptr`. Las capas ImGui (IME, diálogos
   de error, devtools) solo se dibujan desde `NewFrame`, que no se llama: no fallan, pero un diálogo del sistema que
   espere al usuario (teclado en pantalla, error) no se verá → pendiente si algún juego lo pide.
 
-## VPEngine en sombra (hito 3 del cliente VPEngine)
-- Ajuste «Motor gráfico → VPEngine en sombra (experimental)» (`AstroSettings.vpengineShadow`, clave `vpengine_shadow`,
-  `SettingsView.swift`) → `SHADPS4_VPENGINE_RENDERER=1`. La imagen sigue siendo de KosmicKrisp.
-- `src/platform/visionos/vpengine_renderer.{h,mm}` (ARC): registros de Liverpool → `vpps4::DrawState`/`DispatchState` →
-  `vpps4::Renderer` (VPEngine `integrations/shadps4/gpu`) → `vpgpu::Device` + `vpgpu::metal::MetalBackend` propios
+## VPKEngine en sombra (hito 3 del cliente VPKEngine)
+- Ajuste «Motor gráfico → VPKEngine en sombra (experimental)» (`AstroSettings.vpkengineShadow`, clave `vpkengine_shadow`,
+  `SettingsView.swift`) → `SHADPS4_VPKENGINE_RENDERER=1`. La imagen sigue siendo de KosmicKrisp.
+- `src/platform/visionos/vpkengine_renderer.{h,mm}` (ARC): registros de Liverpool → `vpps4::DrawState`/`DispatchState` →
+  `vpps4::Renderer` (VPKEngine `integrations/shadps4/gpu`) → `vpgpu::Device` + `vpgpu::metal::MetalBackend` propios
   (2 hilos de pipelines). Memoria del juego en sitio: ventanas de 64 MB alineadas, recortadas a lo mapeado legible
   (`vm_region_64`, `max_protection & READ`). MSL: `vp_main`, tabla en `buffer(0)`. Invalidaciones del manejador de fallos
   en cola sin el lock (por páginas de 16 KB), aplicadas antes de cada draw.
-- Enganches (`#ifdef SHADPS4_VPENGINE_RENDERER`): `vk_rasterizer.cpp` `Draw` (tras `NoteVpengineDraw`; un draw partido
+- Enganches (`#ifdef SHADPS4_VPKENGINE_RENDERER`): `vk_rasterizer.cpp` `Draw` (tras `NoteVpkengineDraw`; un draw partido
   por target passes entra una vez por pasada), `DispatchDirect` (usa `cs_program` de la cola, tras el HLE),
-  `InvalidateMemory`; `vk_presenter.cpp` `Present` → `EndFrame` (submit del frame de VPEngine). Indirectos: no.
-- CMake (bloque `VPENGINE_GPU_DIR`): `gpu/core/src` (sin null_backend), `gpu/metal/src/metal_backend.mm`,
-  `integrations/shadps4/gpu/src`; define `SHADPS4_VPENGINE_RENDERER=1`. `visionos/vpengine-gpu.ref`: ver «Estado».
+  `InvalidateMemory`; `vk_presenter.cpp` `Present` → `EndFrame` (submit del frame de VPKEngine). Indirectos: no.
+- CMake (bloque `VPKENGINE_GPU_DIR`): `gpu/core/src` (sin null_backend), `gpu/metal/src/metal_backend.mm`,
+  `integrations/shadps4/gpu/src`; define `SHADPS4_VPKENGINE_RENDERER=1`. `visionos/vpkengine-gpu.ref`: ver «Estado».
   `core-inputs.txt` incluye gpu/core, gpu/metal e integrations/shadps4/gpu.
-- Log: `VPENGINE_GPU gpu.metal ...` al arrancar; cada 120 frames `vpps4.frame n=.. draws=hechos/total dispatches=..
+- Log: `VPKENGINE_GPU gpu.metal ...` al arrancar; cada 120 frames `vpps4.frame n=.. draws=hechos/total dispatches=..
   passes shaders shader_errors textures targets uploads skip[motivo]=n` + `gpu.frame/cut/pso` (encoders, barreras,
   ms de GPU); `vpps4.first skip=/note=` la primera vez de cada motivo; errores `gpu.err` / `vpps4.shader error` (≤200).
 - Qué mirar: % de draws hechos, motivos de salto más frecuentes, encoders/frame (KK ~50) y ms de GPU por frame (KK ~30).
   Límites conocidos: texturas teseladas sin destesar (vacías), indirectos, primer instance offset, swizzle de T#.
 
-## Interfaz de rasterizador (hito 1 del cliente VPEngine, sin cambio de comportamiento)
+## Interfaz de rasterizador (hito 1 del cliente VPKEngine, sin cambio de comportamiento)
 - `src/video_core/rasterizer_interface.h`: `VideoCore::RasterizerInterface` (virtual puro) con lo que usan Liverpool,
   `Core::MemoryManager` y `VideoCore::PageManager`: Draw/DrawIndirect, DispatchDirect/Indirect, marcadores, Fill/CopyBuffer,
   ReadDataFromGds, Invalidate/ReadMemory, IsMapped, Map/UnmapMemory, CpSync, Flush, Finish, OnSubmit.
 - `vk_rasterizer.h`: `Vulkan::Rasterizer final : public VideoCore::RasterizerInterface` (los métodos con `override`).
 - `liverpool.h` (`BindRasterizer`, miembro), `core/memory.h` (`SetRasterizer`, miembro), `page_manager.{h,cpp}`: usan la
-  interfaz. Diseño del renderer VPEngine: VPEngine `docs/ADAPTER.md`.
+  interfaz. Diseño del renderer VPKEngine: VPKEngine `docs/ADAPTER.md`.
 
-## Comprobación de shaders de VPEngine en el visor (Modo diagnóstico)
-- `visionos-app.yml`: paso «VPEngine shader translator» clona escojoncio/VPEngine en `vpengine/` al commit de
-  `visionos/vpengine-gpu.ref` (actualizarlo para coger traductor nuevo); `core-inputs.txt` incluye `gpu/shader` de VPEngine
-  (clave de caché del núcleo); `VPENGINE_GPU_DIR=$PWD/vpengine/gpu bash build-core.sh` → `-DVPENGINE_GPU_DIR`.
-- `CMakeLists.txt` (bloque `SHADPS4_VISIONOS`): con `VPENGINE_GPU_DIR`, compila `gpu/shader/{ir,msl}/src/*.cpp`,
-  `gcn/src/{gcn,lift}.cpp` + `src/platform/visionos/vpengine_shader_check.{h,mm}` (ARC) dentro de `shadps4`;
-  define `SHADPS4_VPENGINE_SHADER_CHECK=1`.
-- `vk_pipeline_cache.cpp` `CompileModule`, tras `TranslateProgram`: `VpengineShaderCheck::Check(code, info, runtime_info,
-  perm_idx)` si `SHADPS4_VPENGINE_SHADER_CHECK=1` (la app lo pone con «Modo diagnóstico», `AstroSettings.swift`).
-- `vpengine_shader_check.mm`: `LiftInput` con el estado real (user SGPRs = `num_user_data`, PS `addr_flags`, formatos
+## Comprobación de shaders de VPKEngine en el visor (Modo diagnóstico)
+- `visionos-app.yml`: paso «VPKEngine shader translator» clona escojoncio/VPKEngine en `vpkengine/` al commit de
+  `visionos/vpkengine-gpu.ref` (actualizarlo para coger traductor nuevo); `core-inputs.txt` incluye `gpu/shader` de VPKEngine
+  (clave de caché del núcleo); `VPKENGINE_GPU_DIR=$PWD/vpkengine/gpu bash build-core.sh` → `-DVPKENGINE_GPU_DIR`.
+- `CMakeLists.txt` (bloque `SHADPS4_VISIONOS`): con `VPKENGINE_GPU_DIR`, compila `gpu/shader/{ir,msl}/src/*.cpp`,
+  `gcn/src/{gcn,lift}.cpp` + `src/platform/visionos/vpkengine_shader_check.{h,mm}` (ARC) dentro de `shadps4`;
+  define `SHADPS4_VPKENGINE_SHADER_CHECK=1`.
+- `vk_pipeline_cache.cpp` `CompileModule`, tras `TranslateProgram`: `VpkengineShaderCheck::Check(code, info, runtime_info,
+  perm_idx)` si `SHADPS4_VPKENGINE_SHADER_CHECK=1` (la app lo pone con «Modo diagnóstico», `AstroSettings.swift`).
+- `vpkengine_shader_check.mm`: `LiftInput` con el estado real (user SGPRs = `num_user_data`, PS `addr_flags`, formatos
   de exportación por MRT, CS tamaño de grupo/tgid/LDS, VS `num_input_vgprs` y el fetch de `ParseFetchShader`) →
-  `vpgcn::lift` → `vpmsl::emitMsl` → `newLibraryWithSource` asíncrono (Metal 3.1, fast math). Log: `VPENGINE_SHADER
+  `vpgcn::lift` → `vpmsl::emitMsl` → `newLibraryWithSource` asíncrono (Metal 3.1, fast math). Log: `VPKENGINE_SHADER
   <st>_<hash>_<perm> OK: lift X ms, N bytes, Metal Y ms` o `lift:/verifier:/Metal:` + primera línea; resumen
-  `VPENGINE_SHADERS: ...` cada 10. Fallos → `<ShaderDir>/vpengine/<nombre>.metal(.txt)` / `.lift.txt`
-  (ShaderDir = `VPS4/VPEngine/shaders` en modo diagnóstico). No cambia el render.
+  `VPKENGINE_SHADERS: ...` cada 10. Fallos → `<ShaderDir>/vpkengine/<nombre>.metal(.txt)` / `.lift.txt`
+  (ShaderDir = `VPS4/VPKEngine/shaders` en modo diagnóstico). No cambia el render.
 - Descriptores reales (`describe` del `LiftInput`): el check lee los dwords del T#/V# donde el lifter los trazó
   (user data del draw, punteros vía `vm_read_overwrite`, que falla en vez de fallar la página con direcciones viejas de
   pipelines precargados; tablas tras el código desde `pgm_base`) → dimensión (1D/2D/3D/cubo/arrays, cubo array si
   `last_array > 5`), tipo de texel (Uint/Sint/float) y dfmt/nfmt de buffers tipados. Antes todo era 2D float.
 - Censo de draws (mismo modo): estado por `pgm_hash` (pendiente/OK/fallo pegajoso/etapa no soportada, primer error);
-  `vk_rasterizer.cpp` `NoteVpengineDraw` (Draw y DrawIndirect, tras tener pipeline: hashes de `GetStages()`) y
+  `vk_rasterizer.cpp` `NoteVpkengineDraw` (Draw y DrawIndirect, tras tener pipeline: hashes de `GetStages()`) y
   `NoteDispatch` (DispatchDirect antes del HLE, DispatchIndirect); `vk_presenter.cpp` `Present` → `EndFrame`. Cada 10 s:
-  `VPENGINE_DRAWS: N frames, per frame D draws (X% with every shader running in VPEngine, Y% waiting …)` + hasta 8
-  líneas `VPENGINE_DRAWS   blocked by <st>_<hash>: n per frame (motivo)`. Traductor: VPEngine 55e09c4 (semántica
+  `VPKENGINE_DRAWS: N frames, per frame D draws (X% with every shader running in VPKEngine, Y% waiting …)` + hasta 8
+  líneas `VPKENGINE_DRAWS   blocked by <st>_<hash>: n per frame (motivo)`. Traductor: VPKEngine 55e09c4 (semántica
   exacta validada con test diferencial, también con control de flujo; LDS de píxel como memoria por carril: 174/174 del
   corpus; stores tipados y formatos empaquetados; `image_get_lod`).
 
-## Volcado de shaders para VPEngine (va en la misma build que la limpieza)
+## Volcado de shaders para VPKEngine (va en la misma build que la limpieza)
 - `emulator.cpp` (`#ifdef SHADPS4_VISIONOS`, tras `SHADPS4_PIPELINE_CACHE`): `SHADPS4_DUMP_SHADERS=<carpeta>` → crea la carpeta,
   `SetUserPath(ShaderDir, carpeta)` + `SetDumpShaders(true)`; log `GPU dumpShaders: true`. shadPS4 escribe en `<carpeta>/dumps`
   `<etapa>_<hash>.bin` (código GCN, en `CompileModule`), `vs_<hash>.fetch.bin`, `.spv` y `irprogram.txt`.
-- App (`AstroSettings.swift`): con «Modo diagnóstico» → `SHADPS4_DUMP_SHADERS=VPS4/VPEngine/shaders`; texto del ajuste
-  actualizado (`SettingsView.swift`). Para VPEngine solo valen `.bin` y `.fetch.bin` (corpus del lifter GCN → VPIR).
+- App (`AstroSettings.swift`): con «Modo diagnóstico» → `SHADPS4_DUMP_SHADERS=VPS4/VPKEngine/shaders`; texto del ajuste
+  actualizado (`SettingsView.swift`). Para VPKEngine solo valen `.bin` y `.fetch.bin` (corpus del lifter GCN → VPIR).
 
 ## Build en curso — limpieza de ajustes, «Modo diagnóstico», diagnósticos de KITCHEN
 - App (`Core/AstroSettings.swift`, `Views/SettingsView.swift`): quitados los ajustes `vulkan_driver`, `async_shaders`, `shader_cache`, `gs_in_pass`, `heap_between_passes`, `merge_passes`, `light_barriers`, `device_barriers`, `list_restart`, `constant_ubo`, `exact_pixel_math`, `raw_image_sync`, `antialias`, `real_time`, `close_launcher`, `controller_to_app`, `gpu_clock_scale`, `gpu_test`, `pass_diagnostics`, `msaa` (claves viejas en settings.txt: ignoradas en `apply`). `environment` pasa fijos: `SHADPS4_VK_DRIVER=kosmickrisp`, `ASYNC_PIPELINES=1`, `PIPELINE_CACHE=1` (sin env el emulador la deja apagada), `KK_GS_IN_PASS=1`, `KK_HEAP_BETWEEN_PASSES=1`, `KK_LIGHT_BARRIERS=0`, `MERGE_PASSES=1`, `LIST_RESTART=0`, `CONSTANT_UBO=1` (sin env: apagado), `EXACT_PIXEL_MATH=0`, `RAW_IMAGE_SYNC=1`, `RESOLVE_AA=0`, `GPU_CLOCK_SCALE=auto` (el factor solo lo mueve el `GpuClockTuner` de CUSA12392). `closeLauncher`/`controllerToApp` = `let true`. Borrado `Controller/RumbleTest.swift` y `PlayStationController.testRumble`. Nuevo ajuste `diagnostics` («Modo diagnóstico», sección Diagnóstico, por defecto no) → `SHADPS4_DIAGNOSTICS=1`, `SHADPS4_FRAME_STATS=2`, `SHADPS4_GPU_BENCH=shaders`, `GPU_STAMP_LOG`, `QUALITY_DUMP`, `KK_CENSUS`. Sin texto que mande a editar settings.txt. Código de KK sin tocar (decisión: no más cambios en KK). Trazas `BACHATA_*` de la plataforma base: no tocadas (comparte la build de Quest; inertes en visionOS).
@@ -151,7 +158,7 @@ Compactada el 2026-10-11: lo resuelto queda en «Histórico» como una línea; e
 - `texture_cache.{h,cpp}`: `InvalidateWholeImagesFromGPU` reconoce capas enteras de arrays de 1 nivel thin (`raw_layer_writes`, `UploadRawLayers` sube solo esas capas; `LayerRangeInfo` ajusta `bank_swizzle` por slice); `FindImageForRawRead` + `raw_touched_images` + `raw_synced` (capas ya volcadas, se borra al dibujar/escribir); `raw_marked_in_bind` (no refrescar en el mismo bind que la marcó; `ClearRawBindMarks`); limpieza en `UnregisterImage`. Logs `RAW_WRITE … layers`, `RAW_IMAGE_SYNC`, `RAW_READ`.
 - `buffer_cache.{h,cpp}` `SynchronizeRawReadFromImage`: `TileImage` de imagen/capas al buffer antes de una lectura en bruto ≥64 KB. `tile_manager.{h,cpp}`: `TileImage` con `ImageInfo`. `vk_rasterizer.cpp`: `BindBuffers` llama a la sincronización; `BindResources` limpia marcas (SCOPE_EXIT); traza `TRACE   targets:` (blend cb0/cb1, cb1-3, `db_slice`). App: «Copias de imágenes por compute coherentes (sombras, TAA)» (`raw_image_sync`, por defecto sí → `SHADPS4_RAW_IMAGE_SYNC`).
 - `sceHmdReprojectionStart2dVr` (`hmd_reprojection.cpp`): 6 args u64; log de args + volcado hex (3 primeras); `GuestReadable` (QueryProtection, CpuRead, rango); busca descriptor Gnm plausible en los 6 args (dirección y punteros dentro): Color2D, 64–4096, pitch≥ancho, parejas dfmt/nfmt y tile modes en lista blanca, tamaño dentro del área mapeada. Etiqueta de frame: solo se registran candidatos en el log (no se usa). Envía `HmdFrame{is_screen=true}` → `driver.cpp` `SubmitScreenFrameInternal` (pantalla 70° fija, comparte `screen_pose`; sin casco/host o sin pose → `FinishFlip`) → `vk_presenter` `PrepareTextureAsScreenHmdFrame` (vista con el swizzle del descriptor; `ComposeScreenAsHmdFrame` común con `PrepareScreenAsHmdFrame`). Swizzle de los ojos: ya se respetaba (`ImageViewInfo` usa `DstSelect`); el R/B cambiado del volcado es del blit en crudo. Log `HMD frame … eye` con dfmt/nfmt/dst_sel/vista.
-- Rendimiento: los ~0,11 ms por corte de KITCHEN son dependencias reales (pirámide de bloom ping-pong). `image.cpp` `Transit`: destino solo adjunto de color → `ColorAttachmentOutput`; solo profundidad → `Early|LateFragmentTests` (antes `AllGraphics|Compute`: hacía que `KK_LIGHT_BARRIERS` esperase siempre antes de vértices). KK (parche): `KK_BARRIER_VISIBILITY=device` → `end_encoder` con `MTL4VisibilityOptionDevice` en vez de `ResourceAlias` (`mtl_barrier_after_stages_device_visible`); app «Barreras ligeras entre pasadas (experimental)» (`device_barriers`, por defecto no). Decisión: no más cambios en KosmicKrisp (el traductor gráfico propio de VPEngine lo sustituirá). Ideas para VPEngine, no para KK: compresión sin pérdidas (imágenes sin ShaderWrite/PixelFormatView cuando no hagan falta), barreras por dependencia real en vez de ALL→ALL por encoder, espera de vértices solo si el VS lee imágenes, foveado.
+- Rendimiento: los ~0,11 ms por corte de KITCHEN son dependencias reales (pirámide de bloom ping-pong). `image.cpp` `Transit`: destino solo adjunto de color → `ColorAttachmentOutput`; solo profundidad → `Early|LateFragmentTests` (antes `AllGraphics|Compute`: hacía que `KK_LIGHT_BARRIERS` esperase siempre antes de vértices). KK (parche): `KK_BARRIER_VISIBILITY=device` → `end_encoder` con `MTL4VisibilityOptionDevice` en vez de `ResourceAlias` (`mtl_barrier_after_stages_device_visible`); app «Barreras ligeras entre pasadas (experimental)» (`device_barriers`, por defecto no). Decisión: no más cambios en KosmicKrisp (el traductor gráfico propio de VPKEngine lo sustituirá). Ideas para VPKEngine, no para KK: compresión sin pérdidas (imágenes sin ShaderWrite/PixelFormatView cuando no hagan falta), barreras por dependencia real en vez de ALL→ALL por encoder, espera de vértices solo si el VS lee imágenes, foveado.
 
 ## Build 34050d6 — espera de la GPU en una etiqueta de frame vecina aún no entregada
 - Log 20:38 (build e9697ac): KITCHEN se queda colgado al entrar en VR (sin imagen ni sonido). `sceHmdReprojectionStart` frame 0 registra la etiqueta `0x7019f25ba0` (se libera); la GPU espera `==0` en **`0x7019f25bd0`** (la del frame 1, 0x30 más allá, vale 1) **antes** de que el juego haya llamado a ReprojectionStart del frame 1 → `SatisfyReprojectionLabelWait` no la conoce → gfx bloqueada para siempre (836 M vueltas) y el juego espera a esa GPU. En logs anteriores el frame 1 se registraba antes (carrera; el cambio de tiempos de `RAW_WRITE` la destapó).
@@ -215,7 +222,7 @@ Compactada el 2026-10-11: lo resuelto queda en «Histórico» como una línea; e
 Datos de los logs del visor (Vision Pro M2), ASTRO BOT, KosmicKrisp salvo donde se dice.
 
 ### Cadena
-- CPU del juego: FEX (JIT). VPEngine (AOT sin JIT, build aparte `visionos-vpengine`, repo escojoncio/VPEngine): convierte en el visor (318/335 piezas), firma del pack aceptada, el eboot no llega a engancharse; nunca ejecutó el juego.
+- CPU del juego: FEX (JIT). VPKEngine (AOT sin JIT, build aparte `visionos-vpkengine`, repo escojoncio/VPKEngine): convierte en el visor (318/335 piezas), firma del pack aceptada, el eboot no llega a engancharse; nunca ejecutó el juego.
 - GPU: GCN → SPIR-V (shadPS4) → KK: SPIR-V → NIR → MSL → compilador de Metal. MoltenVK: SPIR-V → SPIRV-Cross → MSL.
 - Imagen: 1440x1536 por ojo, ambos ojos por frame, reproyección por pose en `GameRenderer.swift`, SMAA propio. Límite: GPU (94–100 % en el mundo); la CPU no limita.
 
@@ -281,14 +288,14 @@ Datos de los logs del visor (Vision Pro M2), ASTRO BOT, KosmicKrisp salvo donde 
 - Logs: `Core/LogFiles.swift` (`consola-*.txt`), `Views/LogsView.swift`.
 ### CI
 - `.github/workflows/visionos-app.yml`: solo `[build]` o dispatch (el filtro `paths` mira el push: un `[build]` que solo toca la bitácora no compila → dispatch); borra borradores de `visionos-latest`, publica y comprueba el enlace; `concurrency` en el job; caché del core y de KK.
-- `kosmickrisp-visionos.yml` (dispatch), `stikdebug-visionos.yml` (StikDebug con autoquit), `visionos-vpengine.yml` (`[build-vpengine]`).
+- `kosmickrisp-visionos.yml` (dispatch), `stikdebug-visionos.yml` (StikDebug con autoquit), `visionos-vpkengine.yml` (`[build-vpkengine]`).
 - Commits: identidad `Claude` con email vacío.
 
 ## Histórico (resuelto; detalle en git)
 - 2026-10-07/08: arranque bajo FEX, bucle de fallos de página por páginas de 16 KB (resuelto), SIGBUS de Darwin, KosmicKrisp en visionOS (GS reales, ambos ojos), fusión con upstream AstroQuest 0.20, análisis de los GS de ASTRO BOT.
 - 2026-10-08/09: memoria (JIT 512 MB, staging/VMA de móvil, cierre por memoria a 2160), pasada 16384² arreglada, GS en la pasada, FXAA (quitado) → SMAA, MetalFX y resolución dinámica (quitados), carpeta VPS4, comprobación de `sce_sys`, idiomas, audio PHASE 3D y micro, petardeo de audio, vibración (arreglada: `makePlayer` simple; el reproductor avanzado fallaba en visionOS 27), mando por GameController, reloj de GPU del juego (sombras siempre), bancos de GPU por etapas y por shader, censo de KK.
 - 2026-10-10/11: constantes como UBO, caché de pipelines en disco con precarga, selector de juego, caché por driver, cálculo no exacto en píxeles.
-- VPEngine (2026-10-09): variante sin JIT; 7 pruebas en el visor hasta firma del pack aceptada; eboot sin enganchar. Seguimiento en el repo de VPEngine.
+- VPKEngine (2026-10-09): variante sin JIT; 7 pruebas en el visor hasta firma del pack aceptada; eboot sin enganchar. Seguimiento en el repo de VPKEngine.
 
 ## Pendiente (no rendimiento)
 - KITCHEN (CUSA06799) y otros PSVR: ver «Estado».
@@ -298,18 +305,18 @@ Datos de los logs del visor (Vision Pro M2), ASTRO BOT, KosmicKrisp salvo donde 
 - Aviso de FEX «Failed to mprotect last page of code buffer» (inofensivo).
 
 ## 2026-10-12 · Diagnóstico de ojos negros
-- `vpengine_renderer.mm` `Present::ComposeEyes`: cada 600 frames, línea `VPENGINE_PRESENT eye N overlaps: ...` con `Renderer::describeAt` (targets/imágenes GPU que solapan la memoria del ojo). Necesita VPEngine con `describeAt` (commit vpps4 del mismo día).
+- `vpkengine_renderer.mm` `Present::ComposeEyes`: cada 600 frames, línea `VPKENGINE_PRESENT eye N overlaps: ...` con `Renderer::describeAt` (targets/imágenes GPU que solapan la memoria del ojo). Necesita VPKEngine con `describeAt` (commit vpps4 del mismo día).
 
-## 2026-10-12 · VPEngine: rendimiento en el mundo (~6 fps en log 18:39)
-- `vpengine_renderer.mm`: `cachedSpan` (caché de 128 pares ventana→span, se vacía en `MapMemory`/`UnmapMemory`) sustituye a `mappedSpan` (bucle de `vm_region_64`) en `hooks.region` y `readable`, que se llaman por binding y por draw.
-- `FillBuffer`/`CopyBuffer` (no GDS): submit + `waitIdle` solo si `Renderer::gpuMayAccess` dice que el rango solapa trabajo GPU pendiente; tras cada `waitIdle` → `Renderer::gpuIdle()`. Línea `VPENGINE_GPU dma: N packets without a GPU wait, M after one` cada 120 submits.
+## 2026-10-12 · VPKEngine: rendimiento en el mundo (~6 fps en log 18:39)
+- `vpkengine_renderer.mm`: `cachedSpan` (caché de 128 pares ventana→span, se vacía en `MapMemory`/`UnmapMemory`) sustituye a `mappedSpan` (bucle de `vm_region_64`) en `hooks.region` y `readable`, que se llaman por binding y por draw.
+- `FillBuffer`/`CopyBuffer` (no GDS): submit + `waitIdle` solo si `Renderer::gpuMayAccess` dice que el rango solapa trabajo GPU pendiente; tras cada `waitIdle` → `Renderer::gpuIdle()`. Línea `VPKENGINE_GPU dma: N packets without a GPU wait, M after one` cada 120 submits.
 - `leftOut`: además del primero, cuenta en 1000/10000/100000/cada millón (`draws left out: ... xN`), para cuantificar GS/ES/LS y fast clear.
-- `visionos/vpengine-gpu.ref` → VPEngine 8de52d2 (gpuMayAccess/gpuIdle, hash de texturas limitado, volcado `vpps4.shader dump`).
+- `visionos/vpkengine-gpu.ref` → VPKEngine 8de52d2 (gpuMayAccess/gpuIdle, hash de texturas limitado, volcado `vpps4.shader dump`).
 - Próximo log: comprobar fps del mundo, proporción dma sin/con espera, y copiar las líneas `vpps4.shader dump` de los 2 VS rechazados.
 
 ## 2026-10-12 · Ojos estéreo como slices; diagnóstico de draws ES/LS/GS
-- Log 19:05: ojos negros. T# ojo 0 0x70723e0000 / ojo 1 0x7072ce0000 (0x900000 = 1536*1536*4: dos slices de un target array); ningún target de color de VPEngine cerca ⇒ los producen los draws ES/LS/GS excluidos en `Rasterizer::Draw` (los de VS sin traducir sí registran target).
-- `vpengine_renderer.mm` `describeGeometryDraw`: para los 8 primeros pares distintos (etapas, CB0) registra `VPENGINE_GEOM stages ... gs_mode gs_instances out_prim max_vert esgs/gsvs/vert itemsize prim cbN@addr WxH pitch slices fmt` y vuelca una vez las palabras de LS/HS/ES/GS/VS/PS (`VPENGINE_GEOM <etapa> @addr code@N: ...`, 128 palabras/línea).
-- `Present::ComposeEyes`: si el T# no es un target pero cae en el slice k>0 de un target array (`Renderer::colorTargetSlice`), vista 2D de ese slice (`newTextureViewWithPixelFormat ... slices:(k,1)`). Línea `VPENGINE_PRESENT eye ... array_slice=k|-1`.
-- `visionos/vpengine-gpu.ref` → VPEngine fb2ce98 (lift por flujo de datos: los 2 VS y el CS rechazados traducen; `colorTargetSlice`; targets con capas >=).
-- Próximo log: copiar todas las líneas `VPENGINE_GEOM` para implementar la ruta GS (amplificación estéreo a 2 capas).
+- Log 19:05: ojos negros. T# ojo 0 0x70723e0000 / ojo 1 0x7072ce0000 (0x900000 = 1536*1536*4: dos slices de un target array); ningún target de color de VPKEngine cerca ⇒ los producen los draws ES/LS/GS excluidos en `Rasterizer::Draw` (los de VS sin traducir sí registran target).
+- `vpkengine_renderer.mm` `describeGeometryDraw`: para los 8 primeros pares distintos (etapas, CB0) registra `VPKENGINE_GEOM stages ... gs_mode gs_instances out_prim max_vert esgs/gsvs/vert itemsize prim cbN@addr WxH pitch slices fmt` y vuelca una vez las palabras de LS/HS/ES/GS/VS/PS (`VPKENGINE_GEOM <etapa> @addr code@N: ...`, 128 palabras/línea).
+- `Present::ComposeEyes`: si el T# no es un target pero cae en el slice k>0 de un target array (`Renderer::colorTargetSlice`), vista 2D de ese slice (`newTextureViewWithPixelFormat ... slices:(k,1)`). Línea `VPKENGINE_PRESENT eye ... array_slice=k|-1`.
+- `visionos/vpkengine-gpu.ref` → VPKEngine fb2ce98 (lift por flujo de datos: los 2 VS y el CS rechazados traducen; `colorTargetSlice`; targets con capas >=).
+- Próximo log: copiar todas las líneas `VPKENGINE_GEOM` para implementar la ruta GS (amplificación estéreo a 2 capas).

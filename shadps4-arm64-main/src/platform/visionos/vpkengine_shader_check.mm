@@ -1,5 +1,5 @@
-// VPEngine shader check: see vpengine_shader_check.h.
-#include "vpengine_shader_check.h"
+// VPKEngine shader check: see vpkengine_shader_check.h.
+#include "vpkengine_shader_check.h"
 
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
@@ -32,7 +32,7 @@
 #include "vpgcn/lift.h"
 #include "vpmsl/msl.h"
 
-namespace VpengineShaderCheck {
+namespace VpkengineShaderCheck {
 namespace {
 
 struct Tally {
@@ -48,7 +48,7 @@ Tally& tally() {
     return t;
 }
 
-// Per program hash: what VPEngine made of it (any permutation failing makes it Failed).
+// Per program hash: what VPKEngine made of it (any permutation failing makes it Failed).
 enum class Status : uint8_t { Pending, Ok, Failed, Unsupported };
 struct Program {
     Status status = Status::Pending;
@@ -61,7 +61,7 @@ struct Census {
     // Since the last report.
     unsigned frames = 0;
     uint64_t draws = 0, drawsOk = 0, drawsPending = 0, dispatches = 0, dispatchesOk = 0, dispatchesPending = 0;
-    std::unordered_map<uint64_t, uint64_t> blocking;  // hash -> draws + dispatches it kept from VPEngine
+    std::unordered_map<uint64_t, uint64_t> blocking;  // hash -> draws + dispatches it kept from VPKEngine
     std::chrono::steady_clock::time_point since = std::chrono::steady_clock::now();
 };
 Census& census() {
@@ -120,7 +120,7 @@ const char* stageName(Shader::Stage s) {
 }
 
 std::filesystem::path outDir() {
-    auto dir = Common::FS::GetUserPath(Common::FS::PathType::ShaderDir) / "vpengine";
+    auto dir = Common::FS::GetUserPath(Common::FS::PathType::ShaderDir) / "vpkengine";
     std::error_code e;
     std::filesystem::create_directories(dir, e);
     return dir;
@@ -128,7 +128,7 @@ std::filesystem::path outDir() {
 
 void logTally(Tally& t) {
     LOG_INFO(Render_Vulkan,
-             "VPENGINE_SHADERS: {} seen, {} other stages, {} lifted ({} via dispatch loop), {} lift errors, "
+             "VPKENGINE_SHADERS: {} seen, {} other stages, {} lifted ({} via dispatch loop), {} lift errors, "
              "{} verifier errors, {} Metal OK, {} Metal errors, {:.1f} ms Metal compile on average",
              t.seen, t.skipped, t.lifted, t.dispatchLoops, t.liftFailed, t.emitFailed, t.compiled,
              t.compileFailed, t.compiled ? t.compileMs / t.compiled : 0.0);
@@ -216,7 +216,7 @@ std::optional<vpgcn::DescriptorInfo> describeDescriptor(const vpgcn::DescriptorS
 
 bool Enabled() {
     static const bool on = [] {
-        const char* v = std::getenv("SHADPS4_VPENGINE_SHADER_CHECK");
+        const char* v = std::getenv("SHADPS4_VPKENGINE_SHADER_CHECK");
         return v && v[0] == '1';
     }();
     return on;
@@ -302,7 +302,7 @@ void Check(std::span<const uint32_t> code, const Shader::Info& info, const Shade
     if (!r.errors.empty()) {
         std::string all;
         for (const std::string& e : r.errors) all += e + "\n";
-        LOG_WARNING(Render_Vulkan, "VPENGINE_SHADER {} lift: {}", name, r.errors.front());
+        LOG_WARNING(Render_Vulkan, "VPKENGINE_SHADER {} lift: {}", name, r.errors.front());
         std::ofstream(outDir() / (name + ".lift.txt")) << all;
         setStatus(hash, stage, Status::Failed, "lift: " + r.errors.front());
         std::lock_guard g(t.lock);
@@ -314,7 +314,7 @@ void Check(std::span<const uint32_t> code, const Shader::Info& info, const Shade
     }
     vpmsl::EmitResult m = vpmsl::emitMsl(r.module);
     if (!m.errors.empty()) {
-        LOG_WARNING(Render_Vulkan, "VPENGINE_SHADER {} verifier: {}", name, m.errors.front());
+        LOG_WARNING(Render_Vulkan, "VPKENGINE_SHADER {} verifier: {}", name, m.errors.front());
         setStatus(hash, stage, Status::Failed, "verify: " + m.errors.front());
         std::lock_guard g(t.lock);
         ++t.seen;
@@ -331,7 +331,7 @@ void Check(std::span<const uint32_t> code, const Shader::Info& info, const Shade
     }
     id<MTLDevice> dev = device();
     if (!dev) {
-        LOG_WARNING(Render_Vulkan, "VPENGINE_SHADER no Metal device");
+        LOG_WARNING(Render_Vulkan, "VPKENGINE_SHADER no Metal device");
         setStatus(hash, stage, Status::Failed, "no Metal device");
         return;
     }
@@ -356,7 +356,7 @@ void Check(std::span<const uint32_t> code, const Shader::Info& info, const Shade
               if (library) {
                   setStatus(hash, stage, Status::Ok);
                   LOG_INFO(Render_Vulkan,
-                           "VPENGINE_SHADER {} OK: lift {:.2f} ms ({}), {} bytes of MSL, Metal {:.1f} ms, {} notes",
+                           "VPKENGINE_SHADER {} OK: lift {:.2f} ms ({}), {} bytes of MSL, Metal {:.1f} ms, {} notes",
                            name, liftMs, structured ? "structured" : "dispatch loop", mslBytes, ms, notes);
                   std::lock_guard g(tt.lock);
                   ++tt.compiled;
@@ -365,7 +365,7 @@ void Check(std::span<const uint32_t> code, const Shader::Info& info, const Shade
                   return;
               }
               const std::string msg = firstLine(error.localizedDescription);
-              LOG_WARNING(Render_Vulkan, "VPENGINE_SHADER {} Metal: {}", name, msg);
+              LOG_WARNING(Render_Vulkan, "VPKENGINE_SHADER {} Metal: {}", name, msg);
               setStatus(hash, stage, Status::Failed, "Metal: " + msg);
               std::ofstream(outDir() / (name + ".metal")) << source;
               std::ofstream(outDir() / (name + ".metal.txt"))
@@ -415,7 +415,7 @@ void EndFrame() {
     // Ready = every shader lifted and compiled by Metal; waiting = a shader not checked (yet): compiled
     // before diagnostic mode or still in the queue; the rest is blocked (listed below).
     LOG_INFO(Render_Vulkan,
-             "VPENGINE_DRAWS: {} frames, per frame {:.0f} draws ({} ready in VPEngine, {} waiting, {} blocked) and "
+             "VPKENGINE_DRAWS: {} frames, per frame {:.0f} draws ({} ready in VPKEngine, {} waiting, {} blocked) and "
              "{:.1f} dispatches ({} ready, {} waiting, {} blocked); {} programs known",
              c.frames, c.draws / n, pct(c.drawsOk, c.draws), pct(c.drawsPending, c.draws),
              pct(c.draws - c.drawsOk - c.drawsPending, c.draws), c.dispatches / n, pct(c.dispatchesOk, c.dispatches),
@@ -425,7 +425,7 @@ void EndFrame() {
     std::sort(top.begin(), top.end(), [](const auto& a, const auto& b) { return a.second > b.second; });
     for (size_t k = 0; k < top.size() && k < 8; ++k) {
         const Program& p = c.programs[top[k].first];
-        LOG_INFO(Render_Vulkan, "VPENGINE_DRAWS   blocked by {}_{:016x}: {:.1f} per frame ({})", p.stage, top[k].first,
+        LOG_INFO(Render_Vulkan, "VPKENGINE_DRAWS   blocked by {}_{:016x}: {:.1f} per frame ({})", p.stage, top[k].first,
                  top[k].second / n, p.reason.empty() ? "?" : p.reason);
     }
     c.frames = 0;
@@ -434,4 +434,4 @@ void EndFrame() {
     c.since = now;
 }
 
-} // namespace VpengineShaderCheck
+} // namespace VpkengineShaderCheck

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 // The frames a presenter hands videoout/driver.cpp, apart from the presenter itself (the
-// VPEngine presenter on visionOS uses them as tokens, with no Vulkan device behind them).
+// VPKEngine presenter on visionOS uses them as tokens, with no Vulkan device behind them).
 #pragma once
 
 #include <imgui.h>
