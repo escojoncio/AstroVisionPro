@@ -915,11 +915,15 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
 
     // Rasterizer state.
     const auto& vp = regs.viewports[0];
-    // PA_CL_VTE_CNTL: a transform that is switched off is the identity (scale 1, offset 0).
+    // PA_CL_VTE_CNTL: a transform that is switched off is the identity (scale 1, offset 0). With the x / y
+    // scale off the vertices are already screen coordinates: the renderer then maps the whole target
+    // (vpps4::Viewport::xScreen / yScreen), not a 2x2 viewport.
     const auto& vte = regs.viewport_control;
     d.viewport = {vte.xscale_enable ? vp.xscale : 1.0f, vte.xoffset_enable ? vp.xoffset : 0.0f,
                   vte.yscale_enable ? vp.yscale : 1.0f, vte.yoffset_enable ? vp.yoffset : 0.0f,
                   vte.zscale_enable ? vp.zscale : 1.0f, vte.zoffset_enable ? vp.zoffset : 0.0f};
+    d.viewport.xScreen = !vte.xscale_enable;
+    d.viewport.yScreen = !vte.yscale_enable;
     // Scissors: screen, window and generic (the last two shifted by the window offset), and the
     // viewport scissor when enabled; combined by the renderer.
     {
