@@ -702,6 +702,8 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
     }
     if (pendingIndirect != 0) {
         d.indirectAddress = pendingIndirect;
+        d.indirectCountAddress = pendingCount;
+        d.drawIndex = pendingIndex;
         if (is_indexed) d.count = std::max<u32>(regs.max_index_size, 1);
         else d.count = 1;
     }
@@ -710,21 +712,24 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
 
 void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u32 size, u32 max_count,
                               VAddr count_address) {
+    // Every draw reads its arguments on the GPU; with a count buffer the GPU also decides which of
+    // the max_count draws are live (the converter zeroes the rest): nothing is read on the CPU.
+    constexpr u32 kMaxMultiDraw = 1024;
     u32 count = std::max<u32>(max_count, 1);
-    if (count_address != 0) {
-        // The count the GPU would read, as the CPU sees it now (GPU work that writes it in this
-        // frame is not seen).
-        u32 n = 0;
-        if (readable(count_address, 4) >= 4) std::memcpy(&n, reinterpret_cast<const void*>(count_address), 4);
-        count = std::min(count, n);
-        leftOut("indirect draw count read from memory by the CPU (approximation)");
+    if (count > kMaxMultiDraw) {
+        Census::Note("draw-skip", "multi-draw indirect beyond 1024 draws truncated", fmt::format("max_count={}", max_count));
+        count = kMaxMultiDraw;
     }
     const u32 stride = size != 0 ? size : (is_indexed ? 20 : 16);
     for (u32 k = 0; k < count; ++k) {
         pendingIndirect = arg_address + offset + u64(k) * stride;
+        pendingCount = count_address;
+        pendingIndex = k;
         Draw(is_indexed, 0);
     }
     pendingIndirect = 0;
+    pendingCount = 0;
+    pendingIndex = 0;
 }
 
 void Rasterizer::DispatchDirect() {
