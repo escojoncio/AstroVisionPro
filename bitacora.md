@@ -346,3 +346,10 @@ Datos de los logs del visor (Vision Pro M2), ASTRO BOT, KosmicKrisp salvo donde 
 ## gs: conversion de registros geometria
 - Cambio: shadps4-arm64-main/src/platform/visionos/vpkengine_renderer.mm (Rasterizer::Draw): ES/GS/copy VS -> DrawState.es/gs/vs + geom; vsOutCntl; attachFetch para ES.
 - Sin compilar (Linux). Pendiente de prueba en dispositivo.
+
+## ps4/integration: union de state, coherence, tiling, msaa, gs, cpucost, submit, pm4
+- `visionos/vpkengine-gpu.ref` fija VPKEngine ps4/integration (ver el hash en el fichero). Notas en `PROGRESS-integration.md`.
+- `vpkengine_renderer.mm`: `syncForDma` = escritura de vuelta de imagenes (coherence) + espera parcial (Scheduler::syncCpu); `watchCv` es `condition_variable_any` (el lock del motor es recursivo); `OnCoherencePoint` llama `Renderer::coherencePoint` si el paquete invalida lectores; `SyncGpuWrites(wait)` y `Finish` usan `scheduler->finish()` y drenan la oclusion.
+- `liverpool.cpp`: `VideoCore::WriteGuestLabel` definida fuera de `AmdGpu` (estaba dentro: ocultaba `VideoCore::RasterizerInterface`).
+- Tests Linux (proyecto CMake minimo, `NOT SHADPS4_VISIONOS`): census, reg_audit, pm4_exec, liverpool_pm4: 4/4.
+- Pendiente: compilar .mm/Swift en macOS (CI); medir en visor.

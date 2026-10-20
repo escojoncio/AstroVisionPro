@@ -31,6 +31,7 @@
 #include "vpkengine_census.h"
 #include "vpkengine_xr.h"
 #include "video_core/amdgpu/liverpool.h"
+#include "video_core/amdgpu/pm4_exec.h"
 #include "video_core/amdgpu/reg_audit.h"
 #include "video_core/amdgpu/regs.h"
 #include "video_core/amdgpu/resource.h"
@@ -212,7 +213,7 @@ struct Engine {
     // Watchdog: submits recorded work that nothing else asked for once the policy says so (a label
     // waiting too long, a frame open too long). Takes `lock`, sleeps on watchCv.
     std::thread watchdog;
-    std::condition_variable watchCv;
+    std::condition_variable_any watchCv;  // (the engine lock is recursive: condition_variable takes only std::mutex)
     std::atomic<u64> submits{0};
     std::atomic<unsigned> errorLines{0};
     // Set by the rasterizer: page watches (renderer hooks watchWrites / watchOwned).
@@ -1251,15 +1252,17 @@ bool Rasterizer::SyncGpuWrites(VAddr addr, u64 size, bool wait) {
     return true;
 }
 
-// ACQUIRE_MEM / SURFACE_SYNC. Thin on purpose: Metal orders GPU work itself, and guest memory is
-// unified, so there is nothing to flush; the memory tracker of the coherence area plugs in here.
+// ACQUIRE_MEM / SURFACE_SYNC. Metal orders GPU work itself and guest memory is unified, so a flush of
+// the GPU's own caches needs nothing (the memory tracker orders the images; render targets reach
+// memory lazily, when the CPU or a raw access needs them). When the title invalidates the readers'
+// caches over a bounded range, whatever the host cannot watch there is looked at again (shader code,
+// textures without write watches): Renderer::coherencePoint.
 void Rasterizer::OnCoherencePoint(VAddr base, u64 size, u32 coher_cntl) {
-    (void)base;
-    (void)size;
-    (void)coher_cntl;
     Engine& e = engine();
     std::scoped_lock g{e.lock};
     e.applyPending();
+    if (e.renderer && size && AmdGpu::Pm4::CoherInvalidatesReaders(coher_cntl))
+        e.renderer->coherencePoint(base, size);
 }
 
 u64 Rasterizer::Flush() {
