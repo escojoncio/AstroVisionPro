@@ -317,8 +317,13 @@ struct Engine {
             if (scheduler) syncForDma(0, ~u64(0));
             else renderer->syncToMemory(0, ~u64(0));
             renderer->invalidate(0, ~u64(0));
+            if (scheduler) scheduler->forgetLabelValues(0, ~u64(0));
         }
-        for (auto [a, n] : work) renderer->invalidate(a, n);
+        for (auto [a, n] : work) {
+            renderer->invalidate(a, n);
+            // (the CPU rewrote it: a queued label value no longer says what a wait finds there)
+            if (scheduler) scheduler->forgetLabelValues(a, n);
+        }
     }
     bool failed = false;
     u64 dmaUnsynced = 0, dmaSynced = 0;  // DMA packets done on the CPU without / after a GPU wait
@@ -1283,6 +1288,7 @@ void Rasterizer::FillBuffer(VAddr address, u32 num_bytes, u32 value, bool is_gds
     for (; k + 4 <= num_bytes; k += 4) std::memcpy(p + k, &value, 4);
     for (; k < num_bytes; ++k) p[k] = u8(value >> (8 * (k & 3)));
     e.renderer->invalidate(address, num_bytes);  // (no page watches: tell the texture cache)
+    if (e.scheduler) e.scheduler->forgetLabelValues(address, num_bytes);
 }
 
 void Rasterizer::CopyBuffer(VAddr dst, VAddr src, u32 num_bytes, bool dst_gds, bool src_gds) {
@@ -1316,6 +1322,7 @@ void Rasterizer::CopyBuffer(VAddr dst, VAddr src, u32 num_bytes, bool dst_gds, b
     }
     std::memmove(reinterpret_cast<void*>(dst), reinterpret_cast<const void*>(src), num_bytes);
     e.renderer->invalidate(dst, num_bytes);
+    if (e.scheduler) e.scheduler->forgetLabelValues(dst, num_bytes);
 }
 
 u32 Rasterizer::ReadDataFromGds(u32 gds_offset) {
@@ -1594,8 +1601,22 @@ bool Rasterizer::PrepareLabelWait(const void* address, u32 size, u32 function, u
 // A WAIT_REG_MEM poll found nothing: blocks on the frame that produces the value instead of spinning.
 bool Rasterizer::IdleLabelWait(const void* address, u32 size) {
     Engine& e = engine();
-    std::scoped_lock g{e.lock};
-    return e.scheduler && e.scheduler->idleWait(reinterpret_cast<u64>(address), size, 2);
+    uint64_t target = 0;
+    {
+        std::scoped_lock g{e.lock};
+        if (!e.scheduler) return false;
+        target = e.scheduler->idleTarget(reinterpret_cast<u64>(address), size);
+    }
+    if (!target) return false;
+    // The wait itself is outside the engine lock: the other queues, the compositor and the recording
+    // thread keep running meanwhile. Then a short sleep gives them the core.
+    e.scheduler->waitGpu(target, 2);
+    {
+        std::scoped_lock g{e.lock};
+        if (e.scheduler) e.scheduler->pumpLabels();
+    }
+    std::this_thread::sleep_for(std::chrono::microseconds{50});
+    return true;
 }
 
 void Rasterizer::WriteDataOrdered(void* address, const void* data, u32 size) {
@@ -1609,6 +1630,7 @@ void Rasterizer::WriteDataOrdered(void* address, const void* data, u32 size) {
             if (e.renderer) e.renderer->syncToMemory(reinterpret_cast<u64>(address), size);
             e.scheduler->syncCpu(reinterpret_cast<u64>(address), size, vp4gpu::SubmitReason::WriteData);
             std::memcpy(address, data, size);
+            e.scheduler->forgetLabelValues(reinterpret_cast<u64>(address), size);
             return;
         }
     }
@@ -1750,101 +1772,89 @@ struct PresentState {
 
     // Draws `regions` into a new headset frame of width x height; -1 if the host has none free.
     // ---- EYE_STATS: what each eye picture holds, every 2 s (a black picture shows as luma 0, 0 % lit).
+    // A compute kernel reduces each eye to 64x64 blocks (strided samples of each) in a small persistent
+    // shared buffer; the completion handler adds up 4096 entries. Nothing is copied, nothing big is read.
+    static constexpr u32 kStatsGrid = 64;
     std::chrono::steady_clock::time_point stats_at{};
     std::atomic<bool> stats_busy{false};
+    id<MTLComputePipelineState> stats_pso{nil};
+    std::array<id<MTLBuffer>, 2> stats_buf{};
 
-    // Mean luminance and share of non-black pixels of `tex` (shared storage, read on the CPU, every 2nd pixel).
-    static void logEyeStats(u32 eye, id<MTLTexture> tex) {
-        const u32 w = u32(tex.width), h = u32(tex.height);
-        const MTLPixelFormat f = tex.pixelFormat;
-        u32 bpp = 0;
-        switch (f) {
-        case MTLPixelFormatRGBA8Unorm:
-        case MTLPixelFormatRGBA8Unorm_sRGB:
-        case MTLPixelFormatBGRA8Unorm:
-        case MTLPixelFormatBGRA8Unorm_sRGB:
-        case MTLPixelFormatRGB10A2Unorm: bpp = 4; break;
-        case MTLPixelFormatRGBA16Float: bpp = 8; break;
-        default: break;
+    // Under build_mutex (with the compose pipeline, off the first frame's path).
+    void buildStatsPipeline(id<MTLDevice> dev) {
+        static const char* kSource = R"MSL(
+#include <metal_stdlib>
+using namespace metal;
+kernel void vp_eye_stats(texture2d<float, access::read> t [[texture(0)]], device float2* out [[buffer(0)]],
+                         uint2 gid [[thread_position_in_grid]]) {
+    const uint w = t.get_width(), h = t.get_height();
+    const uint x0 = gid.x * w / 64, x1 = (gid.x + 1) * w / 64, y0 = gid.y * h / 64, y1 = (gid.y + 1) * h / 64;
+    const uint sx = max((x1 - x0) / 8, 1u), sy = max((y1 - y0) / 8, 1u);
+    float l = 0, nz = 0, n = 0;
+    for (uint y = y0; y < y1; y += sy)
+        for (uint x = x0; x < x1; x += sx) {
+            const float4 c = t.read(uint2(x, y));
+            l += (c.r + c.g + c.b) / 3.0;
+            nz += (c.r > 0 || c.g > 0 || c.b > 0) ? 1.0 : 0.0;
+            n += 1.0;
         }
-        if (!bpp || !w || !h) {
-            LOG_INFO(Render_Vulkan, "EYE_STATS eye {} {}x{} format {} not measured", eye, w, h, u32(f));
-            return;
-        }
-        std::vector<u8> bytes(size_t(w) * h * bpp);
-        [tex getBytes:bytes.data() bytesPerRow:size_t(w) * bpp fromRegion:MTLRegionMake2D(0, 0, w, h) mipmapLevel:0];
-        double luma = 0;
-        u64 lit = 0, count = 0;
-        for (u32 y = 0; y < h; y += 2) {
-            const u8* row = bytes.data() + size_t(y) * w * bpp;
-            for (u32 x = 0; x < w; x += 2) {
-                const u8* px = row + size_t(x) * bpp;
-                float r, g, b;
-                if (f == MTLPixelFormatRGBA16Float) {
-                    const __fp16* hp = reinterpret_cast<const __fp16*>(px);
-                    r = hp[0], g = hp[1], b = hp[2];
-                } else if (f == MTLPixelFormatRGB10A2Unorm) {
-                    u32 v;
-                    std::memcpy(&v, px, 4);
-                    r = float(v & 1023) / 1023.f, g = float((v >> 10) & 1023) / 1023.f, b = float((v >> 20) & 1023) / 1023.f;
-                } else {
-                    r = px[0] / 255.f, g = px[1] / 255.f, b = px[2] / 255.f;
-                }
-                luma += (r + g + b) / 3.0;
-                lit += (r > 0 || g > 0 || b > 0) ? 1 : 0;
-                ++count;
-            }
-        }
-        LOG_INFO(Render_Vulkan, "EYE_STATS eye {} {}x{} format {} avg_luma {:.4f} non_zero {:.1f}%", eye, w, h, u32(f),
-                 count ? luma / double(count) : 0.0, count ? 100.0 * double(lit) / double(count) : 0.0);
+    out[gid.y * 64 + gid.x] = float2(l / max(n, 1.0), nz / max(n, 1.0));
+}
+)MSL";
+        NSError* error = nil;
+        id<MTLLibrary> lib = [dev newLibraryWithSource:@(kSource) options:nil error:&error];
+        id<MTLFunction> fn = lib ? [lib newFunctionWithName:@"vp_eye_stats"] : nil;
+        if (fn) stats_pso = [dev newComputePipelineStateWithFunction:fn error:&error];
+        for (auto& b : stats_buf) b = [dev newBufferWithLength:kStatsGrid * kStatsGrid * sizeof(float) * 2
+                                                       options:MTLResourceStorageModeShared];
+        if (!stats_pso) LOG_WARNING(Render_Vulkan, "EYE_STATS kernel unavailable");
     }
 
-    // Under the engine lock, after the eyes' drawing is submitted: copies both eyes into shared textures
-    // behind it on the queue and measures them when the copy completes.
+    static void logEyeStats(u32 eye, u32 w, u32 h, u32 format, id<MTLBuffer> buf) {
+        const float* v = static_cast<const float*>(buf.contents);
+        double luma = 0, lit = 0;
+        for (u32 i = 0; i < kStatsGrid * kStatsGrid; ++i) luma += v[2 * i], lit += v[2 * i + 1];
+        const double n = kStatsGrid * kStatsGrid;
+        LOG_INFO(Render_Vulkan, "EYE_STATS eye {} {}x{} format {} avg_luma {:.4f} non_zero {:.1f}%", eye, w, h, format,
+                 luma / n, 100.0 * lit / n);
+    }
+
+    // Under the engine lock, after the eyes' drawing is submitted: reduces both eyes behind it on the queue.
     void eyeStats(Engine& e, const std::array<id<MTLTexture>, 2>& eyes) {
         const auto now = std::chrono::steady_clock::now();
         if (now - stats_at < std::chrono::seconds{2}) return;
         stats_at = now;
-        if (!eyes[0] && !eyes[1]) return;
-        if (stats_busy.exchange(true)) return;
-        id<MTLDevice> dev = (__bridge id<MTLDevice>)e.backend->nativeDevice();
-        std::array<id<MTLTexture>, 2> copies{};
-        for (u32 k = 0; k < 2; ++k) {
-            if (!eyes[k]) continue;
-            MTLTextureDescriptor* td = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:eyes[k].pixelFormat
-                                                                                          width:eyes[k].width
-                                                                                         height:eyes[k].height
-                                                                                      mipmapped:NO];
-            td.storageMode = MTLStorageModeShared;
-            td.usage = MTLTextureUsageShaderRead;
-            copies[k] = [dev newTextureWithDescriptor:td];
+        {
+            std::scoped_lock built{build_mutex};
+            if (!stats_pso && !stats_buf[0]) buildStatsPipeline((__bridge id<MTLDevice>)e.backend->nativeDevice());
         }
-        const std::array<id<MTLTexture>, 2> src = eyes;
-        e.device->drain();
+        if (!stats_pso) return;
+        std::array<id<MTLTexture>, 2> src{};
+        for (u32 k = 0; k < 2; ++k)
+            if (eyes[k] && eyes[k].textureType == MTLTextureType2D && eyes[k].sampleCount == 1) src[k] = eyes[k];
+        if (!src[0] && !src[1]) return;
+        if (stats_busy.exchange(true)) return;
+        const auto pso = stats_pso;
+        const auto bufs = stats_buf;
         bool queued = false;
         e.device->withBackend([&] { queued = e.backend->encodeInterop(
             [&](void* cbp) {
                 id<MTLCommandBuffer> cb = (__bridge id<MTLCommandBuffer>)cbp;
-                id<MTLBlitCommandEncoder> blit = [cb blitCommandEncoder];
-                blit.label = @"eye stats";
+                id<MTLComputeCommandEncoder> enc = [cb computeCommandEncoder];
+                enc.label = @"eye stats";
+                [enc setComputePipelineState:pso];
                 for (u32 k = 0; k < 2; ++k) {
-                    if (!src[k] || !copies[k]) continue;
-                    [blit copyFromTexture:src[k]
-                              sourceSlice:0
-                              sourceLevel:0
-                             sourceOrigin:MTLOriginMake(0, 0, 0)
-                               sourceSize:MTLSizeMake(src[k].width, src[k].height, 1)
-                                toTexture:copies[k]
-                         destinationSlice:0
-                         destinationLevel:0
-                        destinationOrigin:MTLOriginMake(0, 0, 0)];
+                    if (!src[k]) continue;
+                    [enc setTexture:src[k] atIndex:0];
+                    [enc setBuffer:bufs[k] offset:0 atIndex:0];
+                    [enc dispatchThreads:MTLSizeMake(kStatsGrid, kStatsGrid, 1) threadsPerThreadgroup:MTLSizeMake(8, 8, 1)];
                 }
-                [blit endEncoding];
+                [enc endEncoding];
             },
             "vp.eyestats",
-            [this, copies] {
+            [this, src, bufs] {
                 for (u32 k = 0; k < 2; ++k)
-                    if (copies[k]) logEyeStats(k, copies[k]);
+                    if (src[k]) logEyeStats(k, u32(src[k].width), u32(src[k].height), u32(src[k].pixelFormat), bufs[k]);
                 stats_busy = false;
             }); });
         if (!queued) stats_busy = false;

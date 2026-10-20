@@ -1732,7 +1732,7 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                 while (!gpu_order_met && !wait_reg_mem->Test(regs.reg_array)) {
                     WaitRegMemIdle(rasterizer, wait_reg_mem, label_looks);
                     // The frame the label belongs to may be handed over after the wait began.
-                    if ((++label_looks >= 64 || (label_looks & 0x3f) == 0) &&
+                    if ((++label_looks & 0x3f) == 0 &&
                         wait_reg_mem->mem_space.Value() == PM4CmdWaitRegMem::MemSpace::Memory) {
                         Libraries::Hmd::SatisfyReprojectionLabelWait(
                             wait_reg_mem->Address<u32*>(),
@@ -2175,7 +2175,7 @@ Liverpool::Task Liverpool::ProcessCompute(std::span<const u32> acb, u32 vqid) {
             u64 label_looks = 0;
             while (!gpu_order_met && !wait_reg_mem->Test(regs.reg_array)) {
                 WaitRegMemIdle(rasterizer, wait_reg_mem, label_looks);
-                if ((++label_looks >= 64 || (label_looks & 0x3f) == 0) &&
+                if ((++label_looks & 0x3f) == 0 &&
                     wait_reg_mem->mem_space.Value() == PM4CmdWaitRegMem::MemSpace::Memory) {
                     Libraries::Hmd::SatisfyReprojectionLabelWait(
                         wait_reg_mem->Address<u32*>(),
