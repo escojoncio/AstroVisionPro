@@ -271,7 +271,13 @@ struct Engine {
         pendingAll = false;
         pendingLock.clear(std::memory_order_release);
         if (!renderer) return;
-        if (all) renderer->invalidate(0, ~u64(0));
+        if (all) {
+            // Which ranges the CPU wrote is unknown: images ahead of memory are written back (and the GPU waited
+            // for) first, so marking everything CPU-written does not drop the content only they hold.
+            if (scheduler) syncForDma(0, ~u64(0));
+            else renderer->syncToMemory(0, ~u64(0));
+            renderer->invalidate(0, ~u64(0));
+        }
         for (auto [a, n] : work) renderer->invalidate(a, n);
     }
     bool failed = false;
@@ -742,6 +748,10 @@ struct Rasterizer::Impl {
     // Keyed by (start, size) with a count: two images may share a range.
     std::mutex owned_mutex;
     std::map<std::pair<VAddr, u64>, u32> owned;
+    // When each owned range was first found ahead of memory after a write back (engine lock): past kAheadLimit
+    // the owner is dropped instead of retrying the fault for ever.
+    std::map<std::pair<VAddr, u64>, std::chrono::steady_clock::time_point> aheadSince;
+    static constexpr std::chrono::milliseconds kAheadLimit{200};
     bool ownedWatchEnabled = std::getenv("VPK_NO_OWNED_WATCH") == nullptr;
 
     // Owned ranges let go of lately (resolveOwned, setOwned off): two threads that fault on the same
@@ -772,6 +782,9 @@ struct Rasterizer::Impl {
         std::scoped_lock l{owned_mutex};
         if (on) {
             if (owned[{a, n}]++ != 0) return;
+            // (re-protected: a fault here is a fresh one, not the late arrival of the access that released it)
+            for (auto& r : releasedOwned)
+                if (r.size && r.start < a + n && r.start + r.size > a) r.size = 0;
             page_manager.UpdatePageWatchers<true>(a, n);
             page_manager.UpdateReadWatchers<true>(a, n);
         } else {
@@ -1024,7 +1037,7 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
     ra.cullFront = regs.polygon_control.cull_front;
     ra.cullBack = regs.polygon_control.cull_back;
     ra.frontFaceClockwise = regs.polygon_control.front_face == AmdGpu::FrontFace::Clockwise;
-    // PA_SU_POLY_OFFSET_*: the first word of poly_offset is the clamp register.
+    // PA_SU_POLY_OFFSET_*: poly_offset.depth_bias is the clamp register (its first word, db_fmt_cntl, is read below).
     ra.offsetFront = regs.polygon_control.enable_polygon_offset_front;
     ra.offsetBack = regs.polygon_control.enable_polygon_offset_back;
     ra.offsetPara = regs.polygon_control.enable_polygon_offset_para;
@@ -1301,22 +1314,51 @@ bool Rasterizer::Impl::resolveOwned(VAddr addr, bool write) {
             // (writes the images back and waits only for the frames that touch those ranges)
             for (auto [s, z] : hit) e.syncForDma(s, z);
         }
-        std::scoped_lock l{owned_mutex};
-        for (auto [s, z] : hit) {
-            auto it = owned.find({s, z});
-            if (it == owned.end()) continue;
-            // An image that could not be written back yet (its kernel is still compiling) is still ahead
-            // of the memory: the pages stay protected and the access is retried.
-            if (e.renderer && e.renderer->tracker().ownerImage(s, z) != 0) {
-                stillAhead = true;
-                continue;
+        std::vector<std::pair<VAddr, u64>> overdue;
+        {
+            std::scoped_lock l{owned_mutex};
+            const auto now = std::chrono::steady_clock::now();
+            for (auto [s, z] : hit) {
+                auto it = owned.find({s, z});
+                if (it == owned.end()) {
+                    aheadSince.erase({s, z});
+                    continue;
+                }
+                // An image that could not be written back yet (its kernel is still compiling) is still ahead
+                // of the memory: the pages stay protected and the access is retried, for a while.
+                if (e.renderer && e.renderer->tracker().ownerImage(s, z) != 0) {
+                    const auto since = aheadSince.try_emplace({s, z}, now).first->second;
+                    if (now - since < kAheadLimit) {
+                        stillAhead = true;
+                        continue;
+                    }
+                    overdue.push_back({s, z});  // never written back (layout the re-tiler refuses): give up below
+                    continue;
+                }
+                aheadSince.erase({s, z});
+                for (u32 k = 0; k < it->second; ++k) {
+                    page_manager.UpdateReadWatchers<false>(s, z);
+                    page_manager.UpdatePageWatchers<false>(s, z);
+                }
+                owned.erase(it);
+                noteReleasedOwned(s, z);
+                if (write) e.queueInvalidate(s, z);
             }
-            for (u32 k = 0; k < it->second; ++k) {
-                page_manager.UpdateReadWatchers<false>(s, z);
-                page_manager.UpdatePageWatchers<false>(s, z);
+        }
+        // (outside owned_mutex: dropping the owner hands the host its page release, which takes it)
+        for (auto [s, z] : overdue) {
+            aheadSince.erase({s, z});
+            e.renderer->abandonOwners(s, z);
+            Census::Note("owned-abandoned", fmt::format("{:#x}+{:#x}", s, z),
+                         "image ahead of memory could not be written back for 200 ms: pages released, memory left as it is");
+            {
+                std::scoped_lock l{owned_mutex};
+                if (owned.erase({s, z})) {  // (abandonOwners releases through setOwned; this covers a count left over)
+                    page_manager.UpdateReadWatchers<false>(s, z);
+                    page_manager.UpdatePageWatchers<false>(s, z);
+                    noteReleasedOwned(s, z);
+                }
             }
-            owned.erase(it);
-            noteReleasedOwned(s, z);
             if (write) e.queueInvalidate(s, z);
         }
     }

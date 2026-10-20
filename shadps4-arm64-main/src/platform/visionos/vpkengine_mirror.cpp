@@ -17,6 +17,7 @@ struct Mirror {
     uint64_t end = 0;
     uint64_t signature = 0;
     void* base = nullptr;
+    Clock::time_point staleSince{};  // first lookup that could not confirm / replace it (zero: confirmed)
 };
 
 struct Retired {
@@ -51,6 +52,10 @@ std::map<uint64_t, Failure>& failures() {
 constexpr auto kRetireAfter = std::chrono::seconds(10);
 // A range the host refused is not asked again for this long (unless its pages changed).
 constexpr auto kRetryAfter = std::chrono::seconds(2);
+// A mirror that cannot be confirmed (the VM map cannot be walked, or the pages changed and a new mapping keeps
+// being refused) is served this long; then it is dropped from service: the old pages may no longer be the
+// guest's, and the caller falls back as it does for a range with no mirror (no aliasing of the guest pages).
+constexpr auto kServeStaleFor = std::chrono::seconds(5);
 
 uint64_t mixIn(uint64_t h, uint64_t v) {
     h ^= v + 0x9E3779B97F4A7C15ull + (h << 6) + (h >> 2);
@@ -124,11 +129,18 @@ void* GuestMirror(uint64_t begin, uint64_t end) {
     // by now. The old pages are the right ones unless the mapping was replaced, which the next
     // successful lookup finds out.
     const auto previous = [&]() -> void* {
-        return it != mirrors().end() && it->second.end == end ? it->second.base : nullptr;
+        if (it == mirrors().end() || it->second.end != end) return nullptr;
+        Mirror& m = it->second;
+        const auto now = Clock::now();
+        if (m.staleSince == Clock::time_point{}) m.staleSince = now;
+        return now - m.staleSince < kServeStaleFor ? m.base : nullptr;
     };
     if (!signature) return previous();
     if (it != mirrors().end()) {
-        if (it->second.end == end && it->second.signature == signature) return it->second.base;
+        if (it->second.end == end && it->second.signature == signature) {
+            it->second.staleSince = {};
+            return it->second.base;
+        }
     }
     if (auto f = failures().find(begin);
         f != failures().end() && f->second.end == end && f->second.signature == signature &&
