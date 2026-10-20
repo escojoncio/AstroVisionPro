@@ -502,9 +502,20 @@ void multiAutoAndMisc() {
     CHECK(f.mem[500] == 5);
 }
 
+// PA_SC_GENERIC_SCISSOR_TL: WINDOW_OFFSET_DISABLE is bit 31, TL_Y [30:16], TL_X [14:0].
+void scissorWindowOffsetDisableBit() {
+    AmdGpu::ViewportScissor v;
+    std::memset(&v, 0, sizeof(v));
+    v.window_offset_disable = 1;
+    u32 w[2];
+    std::memcpy(w, &v, sizeof(w));
+    CHECK(w[0] == 0x80000000u && w[1] == 0);
+}
+
 } // namespace
 
 int main() {
+    scissorWindowOffsetDisableBit();
     atomics();
     registers();
     loadsAndWrites();
