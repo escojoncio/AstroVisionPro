@@ -1448,6 +1448,9 @@ if (SHADPS4_VISIONOS)
                 ${VPKENGINE_PS4_DIR}/src/renderer.cpp
                 ${VPKENGINE_PS4_DIR}/src/tiling.cpp
                 ${VPKENGINE_PS4_DIR}/src/fetch.cpp
+                ${VPKENGINE_PS4_DIR}/src/memory_tracker.cpp
+                src/platform/visionos/vpkengine_mirror.h
+                src/platform/visionos/vpkengine_mirror.cpp
                 src/platform/visionos/vpkengine_renderer.h
                 src/platform/visionos/vpkengine_renderer.mm
                 src/platform/visionos/vpkengine_presenter.h

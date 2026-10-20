@@ -42,6 +42,11 @@ public:
     template <bool track>
     void UpdatePageWatchers(VAddr addr, u64 size) const;
 
+    /// Same for read watchers: a page with a read watcher and a write watcher is inaccessible
+    /// (used for memory whose newest bytes live in a GPU image, vpkengine_renderer.mm).
+    template <bool track>
+    void UpdateReadWatchers(VAddr addr, u64 size) const;
+
     /// Updates watches in the pages touching the specified region using a mask.
     template <bool track, bool is_read = false>
     void UpdatePageWatchersForRegion(VAddr base_addr, RegionBits& mask) const;

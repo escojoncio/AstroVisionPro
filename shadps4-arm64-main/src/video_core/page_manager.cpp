@@ -466,6 +466,11 @@ void PageManager::UpdatePageWatchers(VAddr addr, u64 size) const {
     impl->UpdatePageWatchers<track, false>(addr, size);
 }
 
+template <bool track>
+void PageManager::UpdateReadWatchers(VAddr addr, u64 size) const {
+    impl->UpdatePageWatchers<track, true>(addr, size);
+}
+
 template <bool track, bool is_read>
 void PageManager::UpdatePageWatchersForRegion(VAddr base_addr, RegionBits& mask) const {
     impl->UpdatePageWatchersForRegion<track, is_read>(base_addr, mask);
@@ -473,6 +478,8 @@ void PageManager::UpdatePageWatchersForRegion(VAddr base_addr, RegionBits& mask)
 
 template void PageManager::UpdatePageWatchers<true>(VAddr addr, u64 size) const;
 template void PageManager::UpdatePageWatchers<false>(VAddr addr, u64 size) const;
+template void PageManager::UpdateReadWatchers<true>(VAddr addr, u64 size) const;
+template void PageManager::UpdateReadWatchers<false>(VAddr addr, u64 size) const;
 template void PageManager::UpdatePageWatchersForRegion<true, true>(VAddr base_addr,
                                                                    RegionBits& mask) const;
 template void PageManager::UpdatePageWatchersForRegion<true, false>(VAddr base_addr,
