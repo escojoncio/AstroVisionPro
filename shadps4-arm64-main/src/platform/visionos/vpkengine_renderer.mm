@@ -942,6 +942,7 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
         sr.windowOffsetX = regs.window_offset.window_x_offset;
         sr.windowOffsetY = regs.window_offset.window_y_offset;
         sr.windowOffsetDisable = regs.window_scissor.window_offset_disable;
+        sr.genericOffsetDisable = regs.generic_scissor.window_offset_disable;
         sr.viewportScissorEnable = regs.mode_control.vport_scissor_enable;
     }
     vpps4::Raster& ra = d.raster;
@@ -953,6 +954,14 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
     ra.offsetBack = regs.polygon_control.enable_polygon_offset_back;
     ra.offsetPara = regs.polygon_control.enable_polygon_offset_para;
     ra.offsetClamp = regs.poly_offset.depth_bias;
+    // DB_FMT_CNTL: NEG_NUM_DB_BITS (signed byte, minus the depth bits) and DB_IS_FLOAT_FMT. A zero register
+    // (never written) leaves the unit to the depth target's format.
+    if (const u32 fmt = regs.poly_offset.db_fmt_cntl) {
+        const int bits = -int(int8_t(fmt & 0xFF));
+        ra.dbFmtValid = bits > 0 && bits <= 32;
+        ra.dbBits = uint8_t(ra.dbFmtValid ? bits : 24);
+        ra.dbIsFloat = (fmt >> 8) & 1;
+    }
     ra.frontScale = regs.poly_offset.front_scale;
     ra.frontOffset = regs.poly_offset.front_offset;
     ra.backScale = regs.poly_offset.back_scale;

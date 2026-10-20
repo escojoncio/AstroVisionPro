@@ -562,6 +562,18 @@ void Liverpool::ExecSetPredication(const PM4Header* header) {
         visible = value != 0;
         break;
     }
+    case u32(Pm4::PredicationOp::Bool32): {
+        if (!CpReadable(p.address, 4)) {
+            break;
+        }
+        if (rasterizer) {
+            rasterizer->SyncGpuWrites(p.address, 4, !p.no_wait);
+        }
+        u32 value;
+        std::memcpy(&value, reinterpret_cast<const void*>(p.address), 4);
+        visible = value != 0;
+        break;
+    }
     default:
         // PRIMCOUNT compares stream-out counters, which do not exist here: always visible.
         Census::Note("predication", "SET_PREDICATION op unsupported (draws kept)", std::to_string(p.op));

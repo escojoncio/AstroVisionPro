@@ -196,7 +196,7 @@ inline u64 SumZPass(const ZPassPair* pairs, u32 count, bool& all_valid) {
 
 // ---- SET_PREDICATION ------------------------------------------------------------------------------
 
-enum class PredicationOp : std::uint8_t { Clear = 0, ZPass = 1, PrimCount = 2, Bool64 = 3 };
+enum class PredicationOp : std::uint8_t { Clear = 0, ZPass = 1, PrimCount = 2, Bool64 = 3, Bool32 = 4 };
 
 struct SetPredication {
     u64 address;          // START_ADDR (40 bits)
