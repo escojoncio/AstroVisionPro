@@ -388,6 +388,11 @@ struct Engine {
                  double(t.submits) / s, double(t.emptySubmits) / s, double(calls) / s,
                  calls ? double(adapter) / 1e3 / double(calls) : 0.0, t.calls ? t.drawMs * 1e3 / double(t.calls) : 0.0,
                  double(t.userDataReused) / s, double(t.alignedCopyReused) / s);
+        LOG_INFO(Render_Vulkan,
+                 "VPKENGINE_GPU cpu bind phases (ms/s): descriptor read {:.1f}, texture lookup/refresh {:.1f}, buffer lookup {:.1f}, "
+                 "constant copy+memcmp {:.1f}, uploads {:.1f}, argument table/other {:.1f}",
+                 t.bindDescMs / s, t.bindTexMs / s, t.bindBufMs / s, t.bindCbMs / s, t.bindUploadMs / s,
+                 (t.bindMs - t.bindDescMs - t.bindTexMs - t.bindBufMs - t.bindCbMs - t.bindUploadMs) / s);
         if (scheduler) LOG_INFO(Render_Vulkan, "VPKENGINE_GPU {}", scheduler->takeSummary());
     }
 
