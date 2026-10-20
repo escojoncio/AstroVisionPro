@@ -329,3 +329,9 @@ Datos de los logs del visor (Vision Pro M2), ASTRO BOT, KosmicKrisp salvo donde 
 - `Present::ComposeEyes`: si el T# no es un target pero cae en el slice k>0 de un target array (`Renderer::colorTargetSlice`), vista 2D de ese slice (`newTextureViewWithPixelFormat ... slices:(k,1)`). Línea `VPKENGINE_PRESENT eye ... array_slice=k|-1`.
 - `visionos/vpkengine-gpu.ref` → VPKEngine fb2ce98 (lift por flujo de datos: los 2 VS y el CS rechazados traducen; `colorTargetSlice`; targets con capas >=).
 - Próximo log: copiar todas las líneas `VPKENGINE_GEOM` para implementar la ruta GS (amplificación estéreo a 2 capas).
+
+## MSAA del juego y foveado del pase de ojo (rama ps4/msaa)
+- `vpkengine_renderer.mm`: `setMaxSamples` lee `SHADPS4_MAX_MSAA` (1/2/4, por defecto 4, saturado a 4) en vez de 1 fijo; `setFoveation` lee `SHADPS4_GAME_FOVEATION` (por defecto apagado). `colorTarget()` rellena `coverage` (`1<<attrib.num_samples_log2`), `fastClear` (`info.fast_clear`) y `clearWord` (`clear_word0/1`); `samples` sigue siendo `NumSamples()` (fragmentos de color, EQAA). `depth.depthCopy/copySample` desde `depth_render_control`. `EliminateFastClear` y `FmaskDecompress` pasan a no-op silenciosos (sin `leftOut`).
+- `AstroSettings.swift`: `msaaSamples` (clave `msaa_samples`, 4; solo acepta 1/2/4) -> `SHADPS4_MAX_MSAA`; `gameFoveation` (clave `game_foveation`, apagado) -> `SHADPS4_GAME_FOVEATION` (distinto de `foveation`, que es del compositor). `defaultFile` actualizado. `SettingsView.swift`: selector "Antialiasing del juego (MSAA)" y conmutador "Renderizado foveado (experimental)".
+- No compilado ni probado aquí (Linux): .mm y Swift sin verificar en macOS/visionOS.
+- Pendiente: `alphaToMask` queda sin cablear (el registro DB_ALPHA_TO_MASK es del área de estado); probar en visor 4x/2x/1x y foveado; el foveado y MSAA son excluyentes por pase.

@@ -314,9 +314,15 @@ struct Engine {
         };
         renderer = std::make_unique<vpps4::Renderer>(*device, std::move(hooks));
         renderer->setSummaryEvery(kEvery);
-        // No MSAA: antialiasing is temporal (VPKTAA), 1 sample per pixel. The game's MSAA targets
-        // become single-sample; its resolves become copies.
-        renderer->setMaxSamples(1);
+        // MSAA: the game's targets keep their sample count up to the app's limit (SHADPS4_MAX_MSAA,
+        // 1/2/4, default 4; Apple GPUs stop at 4). 1 turns it off: the targets become single-sample
+        // and the game's resolves become copies. Foveation (SHADPS4_GAME_FOVEATION=1, default off)
+        // is exclusive with MSAA: a pass that has both draws without foveation.
+        int maxMsaa = 4;
+        if (const char* v = std::getenv("SHADPS4_MAX_MSAA")) maxMsaa = std::clamp(std::atoi(v), 1, 4);
+        renderer->setMaxSamples(uint8_t(maxMsaa));
+        const char* fov = std::getenv("SHADPS4_GAME_FOVEATION");
+        renderer->setFoveation(fov && std::atoi(fov) != 0);
         LOG_INFO(Render_Vulkan, "VPKENGINE_GPU renderer on (VPKEngine draws everything in Metal; no Vulkan device)");
         return true;
     }
@@ -371,7 +377,10 @@ vpps4::ColorTarget colorTarget(const AmdGpu::Regs& regs, unsigned i) {
     c.tileMode = cb.info.linear_general ? 31 : uint8_t(cb.attrib.tile_mode_index);
     c.sliceStart = uint16_t(cb.BaseSlice());
     c.sliceCount = uint16_t(cb.NumSlices());
-    c.samples = uint8_t(cb.NumSamples());
+    c.samples = uint8_t(cb.NumSamples());  // colour fragments (EQAA: what the surface stores)
+    c.coverage = uint8_t(1u << cb.attrib.num_samples_log2);
+    c.fastClear = cb.info.fast_clear;
+    c.clearWord = {cb.clear_word0, cb.clear_word1};
     return c;
 }
 
@@ -538,8 +547,10 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
     const auto& regs = impl->liverpool->regs;
     using Mode = AmdGpu::ColorControl::OperationMode;
     switch (regs.color_control.mode) {
-    case Mode::EliminateFastClear: return leftOut("fast clear elimination (no fast-clear metadata)");
-    case Mode::FmaskDecompress: return leftOut("FMask decompression (no MSAA on the host)");
+    // No-ops by design: the host keeps no CMASK/FMASK compression (a fast clear is a real clear, an FMask
+    // read is the identity map), so there is nothing to eliminate or decompress.
+    case Mode::EliminateFastClear:
+    case Mode::FmaskDecompress: return;
     case Mode::Resolve: {
         if (!regs.color_buffers[0] || !regs.color_buffers[1]) return;
         Engine& e = engine();
@@ -600,6 +611,8 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
         d.depth.stencilClear = regs.depth_render_control.stencil_clear_enable;
         d.depth.clearDepth = regs.depth_clear;
         d.depth.clearStencil = uint8_t(regs.stencil_clear);
+        d.depth.depthCopy = regs.depth_render_control.depth_copy;
+        d.depth.copySample = uint8_t(regs.depth_render_control.copy_sample);
     }
     const auto& dc = regs.depth_control;
     d.depthStencil.depthTest = dc.depth_enable;
