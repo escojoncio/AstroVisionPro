@@ -329,3 +329,7 @@ Datos de los logs del visor (Vision Pro M2), ASTRO BOT, KosmicKrisp salvo donde 
 - `Present::ComposeEyes`: si el T# no es un target pero cae en el slice k>0 de un target array (`Renderer::colorTargetSlice`), vista 2D de ese slice (`newTextureViewWithPixelFormat ... slices:(k,1)`). Línea `VPKENGINE_PRESENT eye ... array_slice=k|-1`.
 - `visionos/vpkengine-gpu.ref` → VPKEngine fb2ce98 (lift por flujo de datos: los 2 VS y el CS rechazados traducen; `colorTargetSlice`; targets con capas >=).
 - Próximo log: copiar todas las líneas `VPKENGINE_GEOM` para implementar la ruta GS (amplificación estéreo a 2 capas).
+
+## gs: conversion de registros geometria
+- Cambio: shadps4-arm64-main/src/platform/visionos/vpkengine_renderer.mm (Rasterizer::Draw): ES/GS/copy VS -> DrawState.es/gs/vs + geom; vsOutCntl; attachFetch para ES.
+- Sin compilar (Linux). Pendiente de prueba en dispositivo.
