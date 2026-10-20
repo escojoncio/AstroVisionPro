@@ -57,12 +57,18 @@ uint64_t mixIn(uint64_t h, uint64_t v) {
     return h * 0xBF58476D1CE4E5B9ull;
 }
 
-// Identifies the pages behind [begin, end): the VM entries' extents, backing objects and offsets.
-// A mapping replaced by another one (munmap + mmap, MAP_FIXED) changes it; protection changes
-// (the page watches) do not. 0 if the range cannot be walked.
+// Identifies the pages behind [begin, end): the backing object of each run of the range and the
+// object offset the range's first byte would have (offset - position), so that the same pages mapped
+// at the same layout give the same signature however the VM map cut them into entries. Page
+// protection changes (the page watches: a partial mprotect splits an entry, which changes its base
+// and size) must not change it, or every watch would make a new vm_remap and a new no-copy buffer.
+// A mapping replaced by another one (munmap + mmap, MAP_FIXED) changes the object or the offset.
+// 0 if the range cannot be walked.
 uint64_t signatureOf(uint64_t begin, uint64_t end) {
     uint64_t h = 0xcbf29ce484222325ull;
     vm_address_t at = vm_address_t(begin);
+    bool have = false;
+    uint64_t lastObject = 0, lastShift = 0;
     while (at < end) {
         vm_address_t base = at;
         vm_size_t size = 0;
@@ -73,10 +79,15 @@ uint64_t signatureOf(uint64_t begin, uint64_t end) {
                                  &count) != KERN_SUCCESS ||
             base > at || size == 0)
             return 0;
-        h = mixIn(h, base);
-        h = mixIn(h, size);
-        h = mixIn(h, info.object_id);
-        h = mixIn(h, info.offset);
+        // (the object offset of the range's first byte, wrapping: it only has to be equal for equal layouts)
+        const uint64_t shift = uint64_t(info.offset) - (uint64_t(base) - begin);
+        const uint64_t object = info.object_id;
+        if (!have || object != lastObject || shift != lastShift) {
+            h = mixIn(h, object);
+            h = mixIn(h, shift);
+            have = true;
+            lastObject = object, lastShift = shift;
+        }
         at = base + size;
     }
     return h ? h : 1;
@@ -105,19 +116,24 @@ void reap() {
 void* GuestMirror(uint64_t begin, uint64_t end) {
     if (end <= begin || (begin | end) & (vm_page_size - 1)) return nullptr;
     const uint64_t signature = signatureOf(begin, end);
-    if (!signature) return nullptr;
     std::scoped_lock l{mutex()};
     reap();
     auto it = mirrors().find(begin);
+    // A transient failure (the VM map could not be walked, vm_remap refused once) keeps the mirror
+    // this span had: the caller must not fall back to the guest addresses, which may be page-protected
+    // by now. The old pages are the right ones unless the mapping was replaced, which the next
+    // successful lookup finds out.
+    const auto previous = [&]() -> void* {
+        return it != mirrors().end() && it->second.end == end ? it->second.base : nullptr;
+    };
+    if (!signature) return previous();
     if (it != mirrors().end()) {
         if (it->second.end == end && it->second.signature == signature) return it->second.base;
-        release(it->second, begin);  // other pages (or another extent) now: a new mirror
-        mirrors().erase(it);
     }
     if (auto f = failures().find(begin);
         f != failures().end() && f->second.end == end && f->second.signature == signature &&
         Clock::now() - f->second.at < kRetryAfter)
-        return nullptr;
+        return previous();
     vm_address_t target = 0;
     vm_prot_t current = 0, maximum = 0;
     const kern_return_t kr = vm_remap(mach_task_self(), &target, vm_size_t(end - begin), 0, VM_FLAGS_ANYWHERE,
@@ -131,9 +147,13 @@ void* GuestMirror(uint64_t begin, uint64_t end) {
     }
     if (!ok) {
         failures()[begin] = {end, signature, Clock::now()};
-        return nullptr;
+        return previous();
     }
     failures().erase(begin);
+    if (it != mirrors().end()) {
+        release(it->second, begin);  // other pages (or another extent) now: the old mirror retires
+        mirrors().erase(it);
+    }
     mirrors()[begin] = {end, signature, reinterpret_cast<void*>(target)};
     return reinterpret_cast<void*>(target);
 }
