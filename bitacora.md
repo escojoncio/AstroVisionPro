@@ -354,3 +354,8 @@ Datos de los logs del visor (Vision Pro M2), ASTRO BOT, KosmicKrisp salvo donde 
 - Tests Linux (proyecto CMake minimo, `NOT SHADPS4_VISIONOS`): census, reg_audit, pm4_exec, liverpool_pm4: 4/4.
 - Pendiente: compilar .mm/Swift en macOS (CI); medir en visor.
 - CMake de la app: anadidos los fuentes de formats/state/msaa/cpucost/submit que faltaban (ver PROGRESS-integration.md).
+
+## fix-final: hallazgos de la revision adversarial (ps4/integration)
+- `vpkengine_renderer.mm`: `resolveOwned` limita a 200 ms el reintento de un rango que sigue por delante de la memoria (`aheadSince`, `kAheadLimit`); pasado el limite `Renderer::abandonOwners` suelta el dueno, se liberan las paginas y se anota en Census (`owned-abandoned`). `applyPending` con `pendingAll` escribe de vuelta todas las imagenes (`syncForDma(0, ~0)`) antes de `invalidate(0, ~0)`. `setOwned(on)` borra de `releasedOwned` lo solapado (un rango reprotegido ya no cuenta como "liberado hace poco"). Comentario de `poly_offset` corregido.
+- `vpkengine_mirror.cpp` `GuestMirror`: el espejo previo solo se sirve `kServeStaleFor` (5 s) si no se puede confirmar/reemplazar; despues devuelve nullptr (regla de no alias).
+- Sin compilar (Linux): .mm revisado a mano; la CI de macOS lo comprobara.
