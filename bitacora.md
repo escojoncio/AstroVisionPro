@@ -6,6 +6,11 @@ App visionOS en `visionos/` (SwiftUI + Compositor Services + ARKit + GameControl
 JIT: arena RWX preparada por StikDebug (protocolo `brk #0xf00d` + universal.js); la app hace detach al terminar.
 Compactada el 2026-10-11: lo resuelto queda en «Histórico» como una línea; el detalle está en el historial de git de este fichero (`git log -p bitacora.md`).
 
+## Rama `ps4/cpucost` (2026-10-20): caches persistentes y menos CPU por draw (sin compilar para visionOS)
+- `vpkengine_renderer.mm`: `start()` fija `MetalOptions::cacheRoot = <CacheDir>/vpkengine/<serial>/metal` y llama `renderer->setCacheRoot(<...>/vpps4)` (traducciones GCN->MSL y lista de pipelines; ver `PROGRESS-cpucost.md` de VPKEngine). Draw: `Engine::fetchAddresses` (FetchAddressMemo) y `Engine::fetchBodies` (subrutina fetch por dirección + generación `SpanCache::mapGen` + comparación de contenido) en lugar de caminar el VS y la subrutina en cada draw.
+- `astro_core.mm`: `SHADPS4_CACHE_DIR` -> `PathType::CacheDir`. `AstroSettings.swift`: pasa `GameFolder.caches` (VPS4/Cachés) en esa variable.
+- Pendiente: compilar en CI macOS; comprobar en visor que `Cachés/vpkengine/<serial>/` se llena y que el segundo arranque no traduce.
+
 ## Rama `ps4/base`: integración sobre las copias congeladas vp4 de VPKEngine (2026-10-20; sin compilar para visionOS)
 - `visionos/vpkengine-gpu.ref` fija el commit de la rama `ps4/base` de VPKEngine (`0f6dffd`), que trae `gpu/ps4/engine/{core,metal,ir,msl,gcn}` (namespaces `vp4gpu`, `vp4gpu::metal`, `vp4ir`, `vp4msl`; `vpgcn` igual).
 - `shadps4-arm64-main/CMakeLists.txt` (~1416-1470): fuentes e includes salen de `${VPKENGINE_GPU_DIR}/ps4/engine/...` (ir, msl, gcn, core sin `null_backend.cpp`, `metal/src/metal_backend.mm`) + `gpu/ps4` (vpps4); se quita el respaldo a `integrations/shadps4/gpu`.
