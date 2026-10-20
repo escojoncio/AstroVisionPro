@@ -365,3 +365,8 @@ Datos de los logs del visor (Vision Pro M2), ASTRO BOT, KosmicKrisp salvo donde 
 - `platform/visionos/vpkengine_renderer.mm`: `Rasterizer::PrepareLabelWait/IdleLabelWait`, `ScheduleLabelWrite` pasa el valor; `EYE_STATS` cada 2 s (luma media y % no negro por ojo, copia blit a textura compartida); `ExplainAddress` (hook `explainAddress`); prewarm del pipeline de composicion en hilo aparte; log de CPU con `aligned copies reused`.
 - Sin compilar (Linux): .mm revisado a mano; la CI de macOS lo comprobara.
 - Revision de fix-device1: `IdleLabelWait` espera fuera del lock del motor y cede 50 us; `SatisfyReprojectionLabelWait` cada 64 miradas; `forgetLabelValues` en invalidaciones de CPU, DMA y WriteDataOrdered; `EYE_STATS` con kernel de reduccion 64x64 (buffers compartidos persistentes, sin copia ni drain, solo 2D de 1 muestra).
+
+## fix-device3: segunda tanda de logs
+- `platform/visionos/vpkengine_renderer.mm` `report()`: linea `VPKENGINE_GPU cpu bind phases (ms/s)` (descriptor, textura, buffer, copia CB+memcmp, subidas, resto = tabla de argumentos). `visionos/vpkengine-gpu.ref` -> b2a447b (resolves del titulo no se descartan, anillo encadenado, image_load depth, busy ranges fusionados).
+- Funciona (Linux): tests AVP 4/4. .mm sin compilar aqui; la CI de macOS lo comprobara.
+- Pendiente: medir en visor (ojos no negros, `ring_chains`, fases de bind, `full_waits`).
