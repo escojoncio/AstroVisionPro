@@ -81,6 +81,13 @@ final class GameRenderer: @unchecked Sendable {
 
     private var lastPresentation: TimeInterval = 0
     private var refreshPeriod: TimeInterval = 1.0 / 90.0
+    /// The refresh rate the emulated headset keeps to: the highest standard rate the display has been
+    /// seen at (90 Hz, say), held when the system lowers the display's rate for heat. The game's
+    /// frames then stay on a fixed schedule (45 a second = every second refresh at 90 Hz, set by
+    /// "Imágenes por segundo") and the compositor reprojects them onto the slower display, instead of the
+    /// game slowing down with it.
+    private var nominalRefresh: Float = 0
+    private static let standardRefreshRates: [Float] = [120, 100, 90, 72, 60]
     private var lastIpd: Float = 0
     private var framesTaken = 0
     private var refreshes = 0
@@ -213,7 +220,13 @@ final class GameRenderer: @unchecked Sendable {
             }
         }
         lastPresentation = presentation
-        astro_core_display_refresh(Float(1.0 / refreshPeriod))
+        // A measured rate near a standard one raises the nominal rate; it never lowers it (a throttled
+        // 50 Hz display is not one of them, and 55 Hz, close to 60, is below the 90 already held).
+        let measured = Float(1.0 / refreshPeriod)
+        for rate in Self.standardRefreshRates where abs(measured - rate) / rate < 0.08 {
+            nominalRefresh = max(nominalRefresh, rate)
+        }
+        astro_core_display_refresh(nominalRefresh > 0 ? nominalRefresh : measured)
         astro_core_set_showing(true)
 
         // Where the head will be when the frame the game draws next is shown.
@@ -329,7 +342,7 @@ final class GameRenderer: @unchecked Sendable {
         case .critical: thermal = "critical"
         @unknown default: thermal = "unknown"
         }
-        text += String(format: "; display %.0f Hz, thermal %@", 1.0 / refreshPeriod, thermal)
+        text += String(format: "; display %.0f Hz (game clock %.0f Hz), thermal %@", 1.0 / refreshPeriod, nominalRefresh, thermal)
         if let frame {
             if let texture = frameTexture {
                 text += "; texture \(texture.width)x\(texture.height) format \(texture.pixelFormat.rawValue)"

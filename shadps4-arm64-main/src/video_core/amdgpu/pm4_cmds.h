@@ -4,6 +4,7 @@
 #pragma once
 
 #include <cstring>
+#include <functional>
 #include "common/assert.h"
 #include "common/bit_field.h"
 #include "common/types.h"
@@ -977,6 +978,51 @@ struct PM4CmdReleaseMem {
         default: {
             UNREACHABLE();
         }
+        }
+    }
+
+    /// The same, but the data write and the interrupt are handed to `schedule(address, value,
+    /// size, then)` (address null: interrupt only) to happen when the GPU has finished the work
+    /// before this packet, instead of at once. A GDS-to-memory store still goes through gds_to_mem.
+    void SignalFenceScheduled(auto&& schedule, auto&& signal_irq, auto&& gds_to_mem) const {
+        void* address = nullptr;
+        u64 value = 0;
+        u32 size = 0;
+        switch (data_sel.Value()) {
+        case DataSelect::Data32Low:
+            address = Address<void*>(), value = DataDWord(), size = sizeof(u32);
+            break;
+        case DataSelect::Data64:
+            address = Address<void*>(), value = DataQWord(), size = sizeof(u64);
+            break;
+        case DataSelect::GpuClock64:
+            value = GetGpuClock64(), address = Address<void*>(), size = sizeof(u64);
+            AmdGpu::GameClock::NoteStamp(address, value, false);
+            break;
+        case DataSelect::PerfCounter:
+            value = GetGpuPerfCounter(), address = Address<void*>(), size = sizeof(u64);
+            AmdGpu::GameClock::NoteStamp(address, value, true);
+            break;
+        case DataSelect::GdsMemStore:
+            gds_to_mem(Address<VAddr>(), gds_index, num_dw);
+            break;
+        default:
+            UNREACHABLE();
+        }
+        bool irq = false;
+        switch (int_sel.Value()) {
+        case InterruptSelect::None:
+            break;
+        case InterruptSelect::IrqUndocumented:
+            [[fallthrough]];
+        case InterruptSelect::IrqWhenWriteConfirm:
+            irq = true;
+            break;
+        default:
+            UNREACHABLE();
+        }
+        if (address != nullptr || irq) {
+            schedule(address, value, size, irq ? std::function<void()>(signal_irq) : std::function<void()>{});
         }
     }
 };

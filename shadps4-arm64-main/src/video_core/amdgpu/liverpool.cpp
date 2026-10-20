@@ -45,6 +45,41 @@ static void MaybeRecordVideoOutLabelLock(Libraries::VideoOut::VideoOutPort* vo_p
     vo_port->flip_labels.RecordGpuLock(vo_port->LabelIndex(address));
 }
 
+namespace VideoCore {
+void WriteGuestLabel(void* address, u64 value, u32 size) {
+    auto* memory = Core::Memory::Instance();
+    if (!memory->TryWriteBacking(address, &value, size)) {
+        std::memcpy(address, &value, size);
+    }
+}
+} // namespace VideoCore
+
+/// A label write (and interrupt) of EVENT_WRITE_EOP / EOS / RELEASE_MEM: done when the GPU has
+/// finished the work before it (the renderer decides), at once without a renderer.
+static void ScheduleLabel(VideoCore::RasterizerInterface* rasterizer, void* address, u64 value,
+                          u32 size, std::function<void()> then) {
+    if (rasterizer) {
+        rasterizer->ScheduleLabelWrite(address, value, size, std::move(then));
+        return;
+    }
+    if (address) {
+        VideoCore::WriteGuestLabel(address, value, size);
+    }
+    if (then) {
+        then();
+    }
+}
+
+/// IT_WRITE_DATA to memory, ordered with the GPU work that touches it.
+static void WriteDataToMemory(VideoCore::RasterizerInterface* rasterizer, void* address,
+                              const void* data, u32 size) {
+    if (rasterizer) {
+        rasterizer->WriteDataOrdered(address, data, size);
+    } else {
+        std::memcpy(address, data, size);
+    }
+}
+
 static const char* dcb_task_name{"DCB_TASK"};
 static const char* ccb_task_name{"CCB_TASK"};
 
@@ -846,16 +881,13 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
             }
             case PM4ItOpcode::EventWriteEos: {
                 const auto* event_eos = reinterpret_cast<const PM4CmdEventWriteEos*>(header);
-                event_eos->SignalFence([](void* address, u64 data, u32 num_bytes) {
-                    auto* memory = Core::Memory::Instance();
-                    if (!memory->TryWriteBacking(address, &data, num_bytes)) {
-                        memcpy(address, &data, num_bytes);
-                    }
+                event_eos->SignalFence([&](void* address, u64 data, u32 num_bytes) {
+                    ScheduleLabel(rasterizer, address, data, num_bytes, {});
                 });
                 if (event_eos->command == PM4CmdEventWriteEos::Command::GdsStore) {
                     ASSERT(event_eos->size == 1);
                     if (rasterizer) {
-                        rasterizer->Finish();
+                        rasterizer->SyncGds();
                         const u32 value = rasterizer->ReadDataFromGds(event_eos->gds_index);
                         *event_eos->Address() = value;
                     }
@@ -864,14 +896,27 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
             }
             case PM4ItOpcode::EventWriteEop: {
                 const auto* event_eop = reinterpret_cast<const PM4CmdEventWriteEop*>(header);
+                // The data and the interrupt are the GPU's: done when the work recorded before this
+                // packet has finished (ScheduleLabel), not when the packet is parsed.
+                void* label_address = nullptr;
+                u64 label_value = 0;
+                u32 label_size = 0;
+                bool label_irq = false;
                 event_eop->SignalFence(
-                    [](void* address, u64 data, u32 num_bytes) {
-                        auto* memory = Core::Memory::Instance();
-                        if (!memory->TryWriteBacking(address, &data, num_bytes)) {
-                            memcpy(address, &data, num_bytes);
-                        }
+                    [&](void* address, u64 data, u32 num_bytes) {
+                        label_address = address;
+                        label_value = data;
+                        label_size = num_bytes;
                     },
-                    [] { Platform::IrqC::Instance()->Signal(Platform::InterruptId::GfxEop); });
+                    [&] { label_irq = true; });
+                if (label_address != nullptr || label_irq) {
+                    ScheduleLabel(rasterizer, label_address, label_value, label_size,
+                                  label_irq ? std::function<void()>([] {
+                                      Platform::IrqC::Instance()->Signal(
+                                          Platform::InterruptId::GfxEop);
+                                  })
+                                            : std::function<void()>{});
+                }
                 break;
             }
             case PM4ItOpcode::DmaData: {
@@ -917,7 +962,7 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                 u64* address = write_data->Address<u64*>();
                 if (!write_data->wr_one_addr.Value()) {
                     MaybeRecordVideoOutLabelLock(vo_port, address, write_data->data, data_size);
-                    std::memcpy(address, write_data->data, data_size);
+                    WriteDataToMemory(rasterizer, address, write_data->data, data_size);
                 } else {
                     UNREACHABLE();
                 }
@@ -1000,6 +1045,11 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                 }
                 if (wait_reg_mem->mem_space.Value() == PM4CmdWaitRegMem::MemSpace::Memory &&
                     !wait_reg_mem->Test(regs.reg_array)) {
+                    // What produces the value (recorded work, a label write waiting for it) must be
+                    // on the GPU before polling, or this waits for work nobody has started.
+                    if (rasterizer) {
+                        rasterizer->PrepareLabelWait(wait_reg_mem->Address<const void*>(), 4);
+                    }
                     Libraries::Hmd::SatisfyReprojectionLabelWait(
                         wait_reg_mem->Address<u32*>(),
                         static_cast<u32>(wait_reg_mem->function.Value()), wait_reg_mem->ref,
@@ -1415,7 +1465,8 @@ Liverpool::Task Liverpool::ProcessCompute(std::span<const u32> acb, u32 vqid) {
             if (!write_data->wr_one_addr.Value()) {
                 MaybeRecordVideoOutLabelLock(vo_port, write_data->Address<u64*>(),
                                              write_data->data, data_size);
-                std::memcpy(write_data->Address<void*>(), write_data->data, data_size);
+                WriteDataToMemory(rasterizer, write_data->Address<void*>(), write_data->data,
+                                  data_size);
             } else {
                 UNREACHABLE();
             }
@@ -1443,6 +1494,9 @@ Liverpool::Task Liverpool::ProcessCompute(std::span<const u32> acb, u32 vqid) {
             }
             if (wait_reg_mem->mem_space.Value() == PM4CmdWaitRegMem::MemSpace::Memory &&
                 !wait_reg_mem->Test(regs.reg_array)) {
+                if (rasterizer) {
+                    rasterizer->PrepareLabelWait(wait_reg_mem->Address<const void*>(), 4);
+                }
                 Libraries::Hmd::SatisfyReprojectionLabelWait(
                     wait_reg_mem->Address<u32*>(), static_cast<u32>(wait_reg_mem->function.Value()),
                     wait_reg_mem->ref, wait_reg_mem->mask, true);
@@ -1480,7 +1534,10 @@ Liverpool::Task Liverpool::ProcessCompute(std::span<const u32> acb, u32 vqid) {
         }
         case PM4ItOpcode::ReleaseMem: {
             const auto* release_mem = reinterpret_cast<const PM4CmdReleaseMem*>(header);
-            release_mem->SignalFence(
+            release_mem->SignalFenceScheduled(
+                [this](void* address, u64 value, u32 size, std::function<void()> then) {
+                    ScheduleLabel(rasterizer, address, value, size, std::move(then));
+                },
                 [pipe_id = queue.pipe_id] {
                     Platform::IrqC::Instance()->Signal(static_cast<Platform::InterruptId>(pipe_id));
                 },

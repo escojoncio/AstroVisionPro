@@ -45,8 +45,8 @@ struct SettingsView: View {
                     }
                     Toggle(L("Antialiasing SMAA", "SMAA antialiasing"), isOn: flag("smaa", \.edgeSmoothing))
                     Picker(L("Imágenes por segundo", "Frames per second"), selection: number("fps", \.fps)) {
+                        Text(L("45 · fijo, recomendado", "45 · locked, recommended")).tag(45)
                         Text("60").tag(60)
-                        Text("45").tag(45)
                         Text("30").tag(30)
                     }
                     LabeledContent(L("Campo de visión", "Field of view")) {
