@@ -26,6 +26,7 @@
 #include "vpkengine_census.h"
 #include "vpkengine_xr.h"
 #include "video_core/amdgpu/liverpool.h"
+#include "video_core/amdgpu/reg_audit.h"
 #include "video_core/amdgpu/regs.h"
 #include "video_core/amdgpu/resource.h"
 #include "video_core/page_manager.h"
@@ -344,6 +345,7 @@ struct Engine {
         {
             Timer t{submitNs};
             renderer->submit();
+            renderer->drainOcclusion(false);  // ZPASS_DONE results of frames that finished
         }
         report();
     }
@@ -391,6 +393,42 @@ void leftOut(const char* why) {
     if (n == 1) LOG_INFO(Render_Vulkan, "VPKENGINE_GPU first draw left out: {}", why);
     else if (n == 1000 || n == 10000 || n == 100000 || n % 1000000 == 0)
         LOG_INFO(Render_Vulkan, "VPKENGINE_GPU draws left out: {} x{}", why, n);
+}
+
+// Context registers the draw path reads (everything else that is set away from its reset value is
+// reported once per value to the census, category "reg": a register the title uses and nothing here
+// honours). Whole registers: a partly read one (e.g. PA_SU_SC_MODE_CNTL) counts as read.
+void auditContextRegs(const AmdGpu::Regs& regs) {
+    static std::mutex m;
+    std::unique_lock l{m, std::try_to_lock};
+    if (!l.owns_lock()) return;
+    static AmdGpu::RegAudit::Auditor* auditor = [] {
+        auto defaults = std::make_unique<AmdGpu::Regs>();
+        defaults->SetDefaults();
+        auto* a = new AmdGpu::RegAudit::Auditor(&defaults->reg_array[AmdGpu::RegAudit::kContextBase]);
+        const auto base = reinterpret_cast<const u8*>(defaults->reg_array.data());
+        auto consume = [&](const void* field, size_t bytes) {
+            a->Consume(u32((reinterpret_cast<const u8*>(field) - base) / sizeof(u32)), u32((bytes + 3) / sizeof(u32)));
+        };
+#define VPK_READ(f) consume(&defaults->f, sizeof(defaults->f))
+        VPK_READ(stage_enable); VPK_READ(color_buffers); VPK_READ(color_control); VPK_READ(color_target_mask);
+        VPK_READ(color_shader_mask); VPK_READ(blend_control); VPK_READ(blend_constants); VPK_READ(depth_buffer);
+        VPK_READ(depth_view); VPK_READ(depth_render_control); VPK_READ(depth_clear); VPK_READ(stencil_clear);
+        VPK_READ(depth_control); VPK_READ(stencil_control); VPK_READ(stencil_ref_front); VPK_READ(stencil_ref_back);
+        VPK_READ(viewports[0]); VPK_READ(screen_scissor); VPK_READ(polygon_control); VPK_READ(primitive_type);
+        VPK_READ(num_indices); VPK_READ(num_instances); VPK_READ(index_buffer_type); VPK_READ(index_base_address);
+        VPK_READ(index_offset); VPK_READ(max_index_size); VPK_READ(vgt_instance_step_rate_0);
+        VPK_READ(vgt_instance_step_rate_1); VPK_READ(ps_input_addr); VPK_READ(color_export_format);
+        VPK_READ(ps_inputs);
+        // num_interp is a bit-field: the word after ps_input_addr and its padding word.
+        consume(reinterpret_cast<const u8*>(&defaults->ps_input_addr) + sizeof(defaults->ps_input_addr) + 4, 4);
+#undef VPK_READ
+        return a;
+    }();
+    auditor->Check(&regs.reg_array[AmdGpu::RegAudit::kContextBase], [](u32 reg, u32 value) {
+        if (reg == 0) return Census::Note("reg", "audit table full");
+        Census::Note("reg", fmt::format("{:#06x}={:#010x}", reg, value), "context register set, not read by the renderer");
+    });
 }
 
 // ES/LS (geometry / tessellation) draws are left out: log what they are, so the path can be
@@ -559,6 +597,7 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
     default: break;
     }
     if (regs.primitive_type == AmdGpu::PrimitiveType::None) return;
+    auditContextRegs(regs);
     if (regs.stage_enable.es_en || regs.stage_enable.ls_en || regs.stage_enable.gs_en || regs.stage_enable.hs_en)
     {
         describeGeometryDraw(regs);
@@ -861,6 +900,45 @@ void Rasterizer::UnmapMemory(VAddr addr, u64 size) {
     spanCache().clear();
 }
 
+// ZPASS_DONE: the renderer counts the samples that pass and writes them when the GPU is done.
+bool Rasterizer::ZPassDone(VAddr address, u32 pairs) {
+    Engine& e = engine();
+    std::scoped_lock g{e.lock};
+    if (!e.start()) return false;
+    e.applyPending();
+    return e.renderer->zpassDone(address, pairs);
+}
+
+// The command processor reads occlusion results (SET_PREDICATION, OCCLUSION_QUERY): with `wait`
+// the GPU is finished first (submit + wait, then the results are written).
+bool Rasterizer::SyncGpuWrites(VAddr addr, u64 size, bool wait) {
+    Engine& e = engine();
+    std::scoped_lock g{e.lock};
+    if (!e.renderer) return true;
+    e.applyPending();
+    if (!e.renderer->occlusionPending(addr, size)) return true;
+    if (!wait) {
+        e.renderer->drainOcclusion(false);
+        return !e.renderer->occlusionPending(addr, size);
+    }
+    e.submit();
+    e.waitGpu(Engine::WaitDma);
+    e.renderer->gpuIdle();
+    e.renderer->drainOcclusion(true);
+    return true;
+}
+
+// ACQUIRE_MEM / SURFACE_SYNC. Thin on purpose: Metal orders GPU work itself, and guest memory is
+// unified, so there is nothing to flush; the memory tracker of the coherence area plugs in here.
+void Rasterizer::OnCoherencePoint(VAddr base, u64 size, u32 coher_cntl) {
+    (void)base;
+    (void)size;
+    (void)coher_cntl;
+    Engine& e = engine();
+    std::scoped_lock g{e.lock};
+    e.applyPending();
+}
+
 u64 Rasterizer::Flush() {
     Engine& e = engine();
     std::scoped_lock g{e.lock};
@@ -875,7 +953,10 @@ void Rasterizer::Finish() {
     e.applyPending();
     e.submit();
     if (e.backend) e.waitGpu(Engine::WaitFinish);
-    if (e.renderer) e.renderer->gpuIdle();
+    if (e.renderer) {
+        e.renderer->gpuIdle();
+        e.renderer->drainOcclusion(true);
+    }
 }
 
 // ---- Presenter ----------------------------------------------------------------------------------

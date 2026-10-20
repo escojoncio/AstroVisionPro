@@ -58,6 +58,10 @@ public:
     void MapMemory(VAddr addr, u64 size) override;
     void UnmapMemory(VAddr addr, u64 size) override;
 
+    bool ZPassDone(VAddr address, u32 pairs) override;
+    bool SyncGpuWrites(VAddr addr, u64 size, bool wait) override;
+    void OnCoherencePoint(VAddr base, u64 size, u32 coher_cntl) override;
+
     void CpSync() override {}
     u64 Flush() override;
     void Finish() override;
