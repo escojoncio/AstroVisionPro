@@ -23,6 +23,7 @@
 #include <fmt/ranges.h>
 #include "common/logging/log.h"
 #include "core/libraries/videoout/buffer.h"
+#include "vpkengine_census.h"
 #include "vpkengine_xr.h"
 #include "video_core/amdgpu/liverpool.h"
 #include "video_core/amdgpu/regs.h"
@@ -33,6 +34,7 @@
 #include "vpps4/fetch.h"
 #include "vpps4/formats.h"
 #include "vpps4/renderer.h"
+#include "vpps4/report.h"
 
 namespace VpkengineRenderer {
 namespace {
@@ -312,6 +314,10 @@ struct Engine {
         hooks.uploaded = [this](uint64_t a, uint64_t n) {
             if (uploaded) uploaded(a, n);
         };
+        // What vpps4 skips / approximates / cannot translate goes to the census.
+        vpps4::setReportSink([](void*, const char* cat, const char* key, const char* detail) {
+            Census::Note(cat ? cat : "vpps4", key ? key : "", detail ? detail : "");
+        });
         renderer = std::make_unique<vpps4::Renderer>(*device, std::move(hooks));
         renderer->setSummaryEvery(kEvery);
         // No MSAA: antialiasing is temporal (VPKTAA), 1 sample per pixel. The game's MSAA targets
@@ -377,6 +383,7 @@ vpps4::ColorTarget colorTarget(const AmdGpu::Regs& regs, unsigned i) {
 
 // Counts of draws left out before the renderer, by reason (logged the first time each).
 void leftOut(const char* why) {
+    Census::Note("draw-skip", why);
     static std::mutex m;
     static std::map<std::string, u64> counts;
     std::scoped_lock l{m};
