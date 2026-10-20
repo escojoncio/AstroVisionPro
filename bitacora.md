@@ -6,6 +6,14 @@ App visionOS en `visionos/` (SwiftUI + Compositor Services + ARKit + GameControl
 JIT: arena RWX preparada por StikDebug (protocolo `brk #0xf00d` + universal.js); la app hace detach al terminar.
 Compactada el 2026-10-11: lo resuelto queda en «Histórico» como una línea; el detalle está en el historial de git de este fichero (`git log -p bitacora.md`).
 
+## Rama `ps4/base`: integración sobre las copias congeladas vp4 de VPKEngine (2026-10-20; sin compilar para visionOS)
+- `visionos/vpkengine-gpu.ref` fija el commit de la rama `ps4/base` de VPKEngine (`0f6dffd`), que trae `gpu/ps4/engine/{core,metal,ir,msl,gcn}` (namespaces `vp4gpu`, `vp4gpu::metal`, `vp4ir`, `vp4msl`; `vpgcn` igual).
+- `shadps4-arm64-main/CMakeLists.txt` (~1416-1470): fuentes e includes salen de `${VPKENGINE_GPU_DIR}/ps4/engine/...` (ir, msl, gcn, core sin `null_backend.cpp`, `metal/src/metal_backend.mm`) + `gpu/ps4` (vpps4); se quita el respaldo a `integrations/shadps4/gpu`.
+- `vpkengine_renderer.mm`: includes y tipos `vpgpu::`→`vp4gpu::`, `vpmsl::`→`vp4msl::`, `vpir::`→`vp4ir::`. `vpkengine_shader_check.mm`: `vpmsl/msl.h`→`vp4msl/msl.h`, `vpir::`→`vp4ir::`. Mismos `framesInFlight = 6`, `setMaxSamples(1)`.
+- `encodeInterop` (cuadro del visor, con `completed`) ya no existe en metal2: la copia vp4 lo trae como envoltorio sobre `encodeNative`. `waitIdle()` devuelve `WaitResult` (se ignora, como antes); metal2 añade detección de dispositivo perdido.
+- `.github/workflows/visionos-app.yml`: la clave de caché del emulador usa `git ls-tree` de `gpu/ps4` (incluye `engine/`).
+- Pendiente: primera build de CI con esta rama; revisar errores de compilación `.mm`; probar el cuadro del visor (`encodeInterop`).
+
 ## Renombrado VPEngine → VPKEngine (2026-10-13)
 - Todas las menciones, rutas e identificadores pasan a VPKEngine (repo `escojoncio/VPKEngine`, checkout `vpkengine/`).
   Datos antiguos del visor (carpetas VPEngine, ajustes, certificado, packs `vpengine.vpgame`) se traspasan solos

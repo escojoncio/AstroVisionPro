@@ -28,8 +28,8 @@
 #include "video_core/amdgpu/regs.h"
 #include "video_core/amdgpu/resource.h"
 #include "video_core/page_manager.h"
-#include "vpgpu/core/device.h"
-#include "vpgpu/metal/metal_backend.h"
+#include "vp4gpu/core/device.h"
+#include "vp4gpu/metal/metal_backend.h"
 #include "vpps4/fetch.h"
 #include "vpps4/formats.h"
 #include "vpps4/renderer.h"
@@ -164,15 +164,15 @@ u64 readable(u64 address, u64 want) {
 }
 
 // MSL from the shader translator, as the Metal backend takes it (msl.h argument contract).
-vpgpu::metal::MslShader toMetal(const vpmsl::MslShader& s) {
-    vpgpu::metal::MslShader m;
+vp4gpu::metal::MslShader toMetal(const vp4msl::MslShader& s) {
+    vp4gpu::metal::MslShader m;
     m.source = s.source;
     m.entry = "vp_main";
     m.argumentBufferIndex = 0;
     m.threadsPerGroup = s.workgroupSize;
     m.colorOutputs = s.colorOutputs;
-    for (const vpmsl::Argument& a : s.arguments)
-        m.arguments.push_back({vpgpu::BindKind(uint8_t(a.kind) + 1), uint16_t(a.index), a.offset});
+    for (const vp4msl::Argument& a : s.arguments)
+        m.arguments.push_back({vp4gpu::BindKind(uint8_t(a.kind) + 1), uint16_t(a.index), a.offset});
     return m;
 }
 
@@ -180,9 +180,9 @@ vpgpu::metal::MslShader toMetal(const vpmsl::MslShader& s) {
 // thread) and the presenter. Everything that records goes under `lock`.
 struct Engine {
     std::mutex lock;
-    vpgpu::metal::ShaderTable shaders;
-    std::unique_ptr<vpgpu::metal::MetalBackend> backend;
-    std::unique_ptr<vpgpu::Device> device;
+    vp4gpu::metal::ShaderTable shaders;
+    std::unique_ptr<vp4gpu::metal::MetalBackend> backend;
+    std::unique_ptr<vp4gpu::Device> device;
     std::unique_ptr<vpps4::Renderer> renderer;
     std::atomic<u64> submits{0};
     std::atomic<unsigned> errorLines{0};
@@ -287,16 +287,16 @@ struct Engine {
         if (renderer || failed) return renderer != nullptr;
         // Liverpool submits ~15 command buffers per presented frame: with only 3 in flight the CPU
         // blocked on the GPU's latency every few submits. vpps4's upload rings (8) cover 6 + 1.
-        vpgpu::metal::MetalOptions options;
+        vp4gpu::metal::MetalOptions options;
         options.framesInFlight = 6;
-        backend = std::make_unique<vpgpu::metal::MetalBackend>(shaders, [this](const std::string& l) { log(l); },
+        backend = std::make_unique<vp4gpu::metal::MetalBackend>(shaders, [this](const std::string& l) { log(l); },
                                                                options);
         if (!backend->ok()) {
             failed = true;
             LOG_CRITICAL(Render_Vulkan, "VPKENGINE_GPU no Metal device: nothing can be drawn");
             return false;
         }
-        device = std::make_unique<vpgpu::Device>(*backend, 2, [this](const std::string& l) { log(l); });
+        device = std::make_unique<vp4gpu::Device>(*backend, 2, [this](const std::string& l) { log(l); });
         vpps4::Hooks hooks;
         hooks.region = [](uint64_t address, uint64_t size, vpps4::GuestRegion& out) {
             if (address < 0x10000) return false;
@@ -307,7 +307,7 @@ struct Engine {
             out = {begin, end - begin, reinterpret_cast<void*>(begin)};
             return true;
         };
-        hooks.shader = [this](uint64_t id, vpir::Stage, const vpmsl::MslShader& s) { shaders.add(id, toMetal(s)); };
+        hooks.shader = [this](uint64_t id, vp4ir::Stage, const vp4msl::MslShader& s) { shaders.add(id, toMetal(s)); };
         hooks.log = [this](const std::string& l) { log(l); };
         hooks.uploaded = [this](uint64_t a, uint64_t n) {
             if (uploaded) uploaded(a, n);
@@ -985,7 +985,7 @@ struct PresentState {
 
     // The texture VPKEngine has for a T#, after recording whatever fills it.
     static id<MTLTexture> textureOf(Engine& e, const vpps4::ImageDesc& d) {
-        const vpgpu::TextureId tid = e.renderer->textureFor(d);
+        const vp4gpu::TextureId tid = e.renderer->textureFor(d);
         if (!tid) return nil;
         return (__bridge id<MTLTexture>)e.backend->nativeTexture(tid);
     }
@@ -1070,8 +1070,8 @@ int ComposeEyes(std::span<const AmdGpu::Image, 2> eye_textures, const Core::Vr::
         // A T# at slice k > 0 of an array colour target (stereo eyes as the two slices of one
         // target): that slice as a 2D view. Slice 0 is the target's own address (textureOf).
         u16 slice = 0;
-        const vpgpu::TextureId arrayTarget = e.renderer->colorTargetAt(d.address)
-                                                 ? vpgpu::TextureId{}
+        const vp4gpu::TextureId arrayTarget = e.renderer->colorTargetAt(d.address)
+                                                 ? vp4gpu::TextureId{}
                                                  : e.renderer->colorTargetSlice(d.address, d.width, d.height, slice);
         if (arrayTarget) {
             id<MTLTexture> t = (__bridge id<MTLTexture>)e.backend->nativeTexture(arrayTarget);

@@ -1416,35 +1416,34 @@ if (SHADPS4_VISIONOS)
     # VPKEngine's shader translator (GCN -> VPIR -> MSL), checked against the headset's Metal
     # compiler in diagnostic mode (src/platform/visionos/vpkengine_shader_check.mm).
     if (VPKENGINE_GPU_DIR)
+        # The PS4 path uses VPKEngine's frozen copies in gpu/ps4/engine (namespaces vp4gpu, vp4ir, vp4msl;
+        # branch ps4/base): they evolve independently of gpu/core, gpu/metal2 and gpu/shader.
+        set(VPKENGINE_ENGINE_DIR ${VPKENGINE_GPU_DIR}/ps4/engine)
         file(GLOB VPKENGINE_SHADER_SOURCES
-            ${VPKENGINE_GPU_DIR}/shader/ir/src/*.cpp
-            ${VPKENGINE_GPU_DIR}/shader/msl/src/*.cpp)
+            ${VPKENGINE_ENGINE_DIR}/ir/src/*.cpp
+            ${VPKENGINE_ENGINE_DIR}/msl/src/*.cpp)
         list(APPEND VPKENGINE_SHADER_SOURCES
-            ${VPKENGINE_GPU_DIR}/shader/gcn/src/gcn.cpp
-            ${VPKENGINE_GPU_DIR}/shader/gcn/src/lift.cpp)
+            ${VPKENGINE_ENGINE_DIR}/gcn/src/gcn.cpp
+            ${VPKENGINE_ENGINE_DIR}/gcn/src/lift.cpp)
         target_sources(shadps4 PRIVATE ${VPKENGINE_SHADER_SOURCES}
             src/platform/visionos/vpkengine_shader_check.h
             src/platform/visionos/vpkengine_shader_check.mm)
         target_include_directories(shadps4 PRIVATE
-            ${VPKENGINE_GPU_DIR}/shader/ir/include
-            ${VPKENGINE_GPU_DIR}/shader/msl/include
-            ${VPKENGINE_GPU_DIR}/shader/gcn/include)
+            ${VPKENGINE_ENGINE_DIR}/ir/include
+            ${VPKENGINE_ENGINE_DIR}/msl/include
+            ${VPKENGINE_ENGINE_DIR}/gcn/include)
         target_compile_definitions(shadps4 PRIVATE SHADPS4_VPKENGINE_SHADER_CHECK=1)
         set_source_files_properties(src/platform/visionos/vpkengine_shader_check.mm
             PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
-        # VPKEngine renderer (gpu/core + Metal backend + VPKEngine's PS4 renderer, gpu/ps4):
+        # VPKEngine renderer (vp4gpu core + Metal backend + VPKEngine's PS4 renderer, gpu/ps4):
         # the only renderer on visionOS (src/platform/visionos/vpkengine_renderer.h). The Vulkan
         # path is still compiled but never started.
-        # gpu/ps4 since VPKEngine dropped integrations/; a pinned older checkout still has the old place.
         set(VPKENGINE_PS4_DIR ${VPKENGINE_GPU_DIR}/ps4)
-        if (NOT EXISTS ${VPKENGINE_PS4_DIR}/src/renderer.cpp)
-            set(VPKENGINE_PS4_DIR ${VPKENGINE_GPU_DIR}/../integrations/shadps4/gpu)
-        endif()
-        if (EXISTS ${VPKENGINE_PS4_DIR}/src/renderer.cpp)
-            file(GLOB VPKENGINE_CORE_SOURCES ${VPKENGINE_GPU_DIR}/core/src/*.cpp)
+        if (EXISTS ${VPKENGINE_PS4_DIR}/src/renderer.cpp AND EXISTS ${VPKENGINE_ENGINE_DIR}/metal/src/metal_backend.mm)
+            file(GLOB VPKENGINE_CORE_SOURCES ${VPKENGINE_ENGINE_DIR}/core/src/*.cpp)
             list(FILTER VPKENGINE_CORE_SOURCES EXCLUDE REGEX "null_backend\\.cpp$")
             target_sources(shadps4 PRIVATE ${VPKENGINE_CORE_SOURCES}
-                ${VPKENGINE_GPU_DIR}/metal/src/metal_backend.mm
+                ${VPKENGINE_ENGINE_DIR}/metal/src/metal_backend.mm
                 ${VPKENGINE_PS4_DIR}/src/formats.cpp
                 ${VPKENGINE_PS4_DIR}/src/renderer.cpp
                 ${VPKENGINE_PS4_DIR}/src/tiling.cpp
@@ -1456,16 +1455,16 @@ if (SHADPS4_VISIONOS)
                 src/platform/visionos/vpkengine_xr.h
                 src/platform/visionos/vpkengine_xr.cpp)
             target_include_directories(shadps4 PRIVATE
-                ${VPKENGINE_GPU_DIR}/core/include
-                ${VPKENGINE_GPU_DIR}/metal/include
+                ${VPKENGINE_ENGINE_DIR}/core/include
+                ${VPKENGINE_ENGINE_DIR}/metal/include
                 ${VPKENGINE_PS4_DIR}/include)
             target_compile_definitions(shadps4 PRIVATE SHADPS4_VPKENGINE_ONLY=1)
-            set_source_files_properties(${VPKENGINE_GPU_DIR}/metal/src/metal_backend.mm
+            set_source_files_properties(${VPKENGINE_ENGINE_DIR}/metal/src/metal_backend.mm
                 src/platform/visionos/vpkengine_renderer.mm
                 PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
-            message(STATUS "VPKEngine renderer: ${VPKENGINE_PS4_DIR}")
+            message(STATUS "VPKEngine renderer: ${VPKENGINE_PS4_DIR} (engine ${VPKENGINE_ENGINE_DIR})")
         else()
-            message(WARNING "VPKEngine renderer sources missing at ${VPKENGINE_PS4_DIR}: update visionos/vpkengine-gpu.ref")
+            message(WARNING "VPKEngine renderer sources missing at ${VPKENGINE_PS4_DIR} / ${VPKENGINE_ENGINE_DIR}: update visionos/vpkengine-gpu.ref (branch ps4/base)")
         endif()
         message(STATUS "VPKEngine shader check: ${VPKENGINE_GPU_DIR}")
     endif()
