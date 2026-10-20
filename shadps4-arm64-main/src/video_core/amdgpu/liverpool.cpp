@@ -48,15 +48,6 @@ static void MaybeRecordVideoOutLabelLock(Libraries::VideoOut::VideoOutPort* vo_p
     vo_port->flip_labels.RecordGpuLock(vo_port->LabelIndex(address));
 }
 
-namespace VideoCore {
-void WriteGuestLabel(void* address, u64 value, u32 size) {
-    auto* memory = Core::Memory::Instance();
-    if (!memory->TryWriteBacking(address, &value, size)) {
-        std::memcpy(address, &value, size);
-    }
-}
-} // namespace VideoCore
-
 /// A label write (and interrupt) of EVENT_WRITE_EOP / EOS / RELEASE_MEM: done when the GPU has
 /// finished the work before it (the renderer decides), at once without a renderer.
 static void ScheduleLabel(VideoCore::RasterizerInterface* rasterizer, void* address, u64 value,
@@ -2282,3 +2273,13 @@ void Liverpool::SubmitAsc(u32 gnm_vqid, std::span<const u32> acb) {
 }
 
 } // namespace AmdGpu
+
+// (Declared in video_core/rasterizer_interface.h: outside AmdGpu, where the name lives.)
+namespace VideoCore {
+void WriteGuestLabel(void* address, u64 value, u32 size) {
+    auto* memory = Core::Memory::Instance();
+    if (!memory->TryWriteBacking(address, &value, size)) {
+        std::memcpy(address, &value, size);
+    }
+}
+} // namespace VideoCore
