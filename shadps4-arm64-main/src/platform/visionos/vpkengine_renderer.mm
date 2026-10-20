@@ -48,6 +48,7 @@
 
 namespace VpkengineRenderer {
 namespace {
+void PrewarmCompose(void* nativeDevice);  // (defined with PresentState)
 
 // Guest addresses are host addresses. Buffers alias guest memory through windows of this size
 // (aligned), cut down to the mapped part around the address: one huge mapping as a single
@@ -377,11 +378,11 @@ struct Engine {
         LOG_INFO(Render_Vulkan,
                  "VPKENGINE_GPU cpu: draw_adapter {:.1f} ms/s, vpps4.draw {:.1f}, shader lookup {:.1f}, bind {:.1f}, "
                  "pipeline request {:.1f}, frame compile+submit {:.1f} ({:.0f} submits/s, {:.0f} empty/s), "
-                 "draws {:.0f}/s, per-draw {:.2f} us adapter / {:.2f} us vpps4, user data reused {:.0f}/s",
+                 "draws {:.0f}/s, per-draw {:.2f} us adapter / {:.2f} us vpps4, user data reused {:.0f}/s, aligned copies reused {:.0f}/s",
                  msps(adapter), t.drawMs / s, t.shaderMs / s, t.bindMs / s, t.pipelineMs / s, t.submitMs / s,
                  double(t.submits) / s, double(t.emptySubmits) / s, double(calls) / s,
                  calls ? double(adapter) / 1e3 / double(calls) : 0.0, t.calls ? t.drawMs * 1e3 / double(t.calls) : 0.0,
-                 double(t.userDataReused) / s);
+                 double(t.userDataReused) / s, double(t.alignedCopyReused) / s);
         if (scheduler) LOG_INFO(Render_Vulkan, "VPKENGINE_GPU {}", scheduler->takeSummary());
     }
 
@@ -510,6 +511,8 @@ struct Engine {
         renderer->setCacheRoot(cacheDir / "vpps4");
         LOG_INFO(Render_Vulkan, "VPKENGINE_GPU persistent caches in {}", cacheDir.string());
         LOG_INFO(Render_Vulkan, "VPKENGINE_GPU renderer on (VPKEngine draws everything in Metal; no Vulkan device)");
+        // Off the first frame's path: the headset compositing shader is compiled meanwhile.
+        if (VpkengineXr::Available()) PrewarmCompose(backend->nativeDevice());
         return true;
     }
 
@@ -1687,8 +1690,15 @@ struct PresentState {
             VpkengineXr::Start(e.backend->nativeDevice());
             started = true;
         }
+        return buildPipeline((__bridge id<MTLDevice>)e.backend->nativeDevice());
+    }
+
+    // The compositing pipeline (Metal source compiled at run time: ~100+ ms the first time). Built at start
+    // by prewarm() on a thread of its own; ensure() waits for it if it is still running.
+    std::mutex build_mutex;
+    bool buildPipeline(id<MTLDevice> dev) {
+        std::scoped_lock built{build_mutex};
         if (pipeline || pipelineFailed) return pipeline != nil;
-        id<MTLDevice> dev = (__bridge id<MTLDevice>)e.backend->nativeDevice();
         NSError* error = nil;
         id<MTLLibrary> lib = [dev newLibraryWithSource:@(kComposeSource) options:nil error:&error];
         MTLRenderPipelineDescriptor* pd = [MTLRenderPipelineDescriptor new];
@@ -1897,6 +1907,12 @@ struct PresentState {
 PresentState& present() {
     static PresentState& p = *new PresentState;
     return p;
+}
+
+void PrewarmCompose(void* nativeDevice) {
+    if (!nativeDevice) return;
+    id<MTLDevice> dev = (__bridge id<MTLDevice>)nativeDevice;
+    std::thread([dev] { present().buildPipeline(dev); }).detach();
 }
 
 } // namespace

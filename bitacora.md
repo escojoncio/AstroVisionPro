@@ -359,3 +359,8 @@ Datos de los logs del visor (Vision Pro M2), ASTRO BOT, KosmicKrisp salvo donde 
 - `vpkengine_renderer.mm`: `resolveOwned` limita a 200 ms el reintento de un rango que sigue por delante de la memoria (`aheadSince`, `kAheadLimit`); pasado el limite `Renderer::abandonOwners` suelta el dueno, se liberan las paginas y se anota en Census (`owned-abandoned`). `applyPending` con `pendingAll` escribe de vuelta todas las imagenes (`syncForDma(0, ~0)`) antes de `invalidate(0, ~0)`. `setOwned(on)` borra de `releasedOwned` lo solapado (un rango reprotegido ya no cuenta como "liberado hace poco"). Comentario de `poly_offset` corregido.
 - `vpkengine_mirror.cpp` `GuestMirror`: el espejo previo solo se sirve `kServeStaleFor` (5 s) si no se puede confirmar/reemplazar; despues devuelve nullptr (regla de no alias).
 - Sin compilar (Linux): .mm revisado a mano; la CI de macOS lo comprobara.
+
+## fix-device1: log del primer dispositivo (ASTRO BOT)
+- `video_core/amdgpu/liverpool.cpp` (gfx y ASC): `WaitRegMem` llama `PrepareLabelWait(addr,4,func,ref,mask)`; si devuelve true (cumplido en orden de GPU) no hay bucle; si no, tras 64 miradas `WaitRegMemIdle` bloquea en `IdleLabelWait` (<=2 ms) o duerme 20-200 us en vez de `YIELD` en caliente. `rasterizer_interface.h`: nuevos `PrepareLabelWait(...)->bool` e `IdleLabelWait`.
+- `platform/visionos/vpkengine_renderer.mm`: `Rasterizer::PrepareLabelWait/IdleLabelWait`, `ScheduleLabelWrite` pasa el valor; `EYE_STATS` cada 2 s (luma media y % no negro por ojo, copia blit a textura compartida); `ExplainAddress` (hook `explainAddress`); prewarm del pipeline de composicion en hilo aparte; log de CPU con `aligned copies reused`.
+- Sin compilar (Linux): .mm revisado a mano; la CI de macOS lo comprobara.
