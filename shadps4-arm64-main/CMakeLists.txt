@@ -1442,11 +1442,18 @@ if (SHADPS4_VISIONOS)
         if (EXISTS ${VPKENGINE_PS4_DIR}/src/renderer.cpp AND EXISTS ${VPKENGINE_ENGINE_DIR}/metal/src/metal_backend.mm)
             file(GLOB VPKENGINE_CORE_SOURCES ${VPKENGINE_ENGINE_DIR}/core/src/*.cpp)
             list(FILTER VPKENGINE_CORE_SOURCES EXCLUDE REGEX "null_backend\\.cpp$")
+            # The GPU tiler's Metal kernels paste the addressing header in as text: made here like
+            # VPKEngine's own CMake does (gpu/ps4/CMakeLists.txt).
+            file(READ ${VPKENGINE_PS4_DIR}/include/vpps4/tiling_addr.h VPT_ADDR_TEXT)
+            set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${VPKENGINE_PS4_DIR}/include/vpps4/tiling_addr.h)
+            configure_file(${VPKENGINE_PS4_DIR}/src/tiling_addr_text.cpp.in ${CMAKE_CURRENT_BINARY_DIR}/vpps4_tiling_addr_text.cpp @ONLY)
             target_sources(shadps4 PRIVATE ${VPKENGINE_CORE_SOURCES}
                 ${VPKENGINE_ENGINE_DIR}/metal/src/metal_backend.mm
                 ${VPKENGINE_PS4_DIR}/src/formats.cpp
                 ${VPKENGINE_PS4_DIR}/src/renderer.cpp
                 ${VPKENGINE_PS4_DIR}/src/tiling.cpp
+                ${VPKENGINE_PS4_DIR}/src/gpu_tiler.cpp
+                ${CMAKE_CURRENT_BINARY_DIR}/vpps4_tiling_addr_text.cpp
                 ${VPKENGINE_PS4_DIR}/src/fetch.cpp
                 ${VPKENGINE_PS4_DIR}/src/memory_tracker.cpp
                 src/platform/visionos/vpkengine_mirror.h
