@@ -571,7 +571,16 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
             if (!cb) continue;
             vpps4::ColorTarget& c = d.color[i];
             c = colorTarget(regs, i);
+            // The size the title set the target up with (SetRenderTarget's extent), not the tile-aligned
+            // pitch and height: sizes, viewports and later reads of the target agree with the title's.
+            if (const auto& ext = impl->liverpool->last_cb_extent[i]; ext.Valid() && ext.width <= c.width && ext.height <= c.height) {
+                c.width = ext.width;
+                c.height = ext.height;
+            }
             c.writeMask = uint8_t(regs.color_target_mask.GetMask(i) & regs.color_shader_mask.GetMask(i));
+            c.forceDstAlpha1 = cb.attrib.force_dst_alpha_1;
+            c.blendClamp = cb.info.blend_clamp;
+            c.blendBypass = cb.info.blend_bypass;
             const auto& b = regs.blend_control[i];
             vpps4::Blend& bl = d.blend[i];
             bl.enable = b.enable;
@@ -582,7 +591,17 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
             bl.alphaSrc = uint8_t(b.alpha_src_factor);
             bl.alphaDst = uint8_t(b.alpha_dst_factor);
             bl.alphaFunc = uint8_t(b.alpha_func);
+            bl.disableRop3 = b.disable_rop3;
         }
+    d.rop3 = uint8_t(regs.color_control.rop3);
+    d.degamma = regs.color_control.degamma_enable;
+    // DB_ALPHA_TO_MASK.ALPHA_TO_MASK_ENABLE (0xA2DC), unless DB_SHADER_CONTROL turns it off.
+    d.alphaToMask = (regs.reg_array[0xA2DC] & 1u) != 0 && !regs.depth_shader_control.alpha_to_mask_disable;
+    d.psKill = regs.depth_shader_control.kill_enable;
+    d.psExportsZ = regs.depth_shader_control.z_export_enable;
+    d.psExportsStencil = regs.depth_shader_control.stencil_test_val_export_enable ||
+                         regs.depth_shader_control.stencil_op_val_export_enable;
+    d.psExportsMask = regs.depth_shader_control.mask_export_enable;
     d.blendColor = regs.blend_constants;
     const auto& db = regs.depth_buffer;
     if (db.DepthValid() || db.StencilValid()) {
@@ -600,6 +619,22 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
         d.depth.stencilClear = regs.depth_render_control.stencil_clear_enable;
         d.depth.clearDepth = regs.depth_clear;
         d.depth.clearStencil = uint8_t(regs.stencil_clear);
+        if (const auto& ext = impl->liverpool->last_db_extent; ext.Valid() && ext.width <= d.depth.width && ext.height <= d.depth.height) {
+            d.depth.width = ext.width;
+            d.depth.height = ext.height;
+        }
+        // Tested against the read base, written at the write base.
+        d.depth.zWriteAddress = db.DepthWriteValid() ? db.DepthWriteAddress() : 0;
+        d.depth.stencilWriteAddress = db.StencilWriteValid() ? db.StencilWriteAddress() : 0;
+        d.depth.zReadOnly = regs.depth_view.z_read_only;
+        d.depth.stencilReadOnly = regs.depth_view.stencil_read_only;
+        const auto& ov = regs.depth_render_override;
+        d.depth.forceZDirty = ov.force_z_dirty;
+        d.depth.forceZValid = ov.force_z_valid;
+        d.depth.forceStencilDirty = ov.force_stencil_dirty;
+        d.depth.forceStencilValid = ov.force_stencil_valid;
+        d.depth.boundsMin = regs.depth_bounds_min;
+        d.depth.boundsMax = regs.depth_bounds_max;
     }
     const auto& dc = regs.depth_control;
     d.depthStencil.depthTest = dc.depth_enable;
@@ -607,22 +642,76 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
     d.depthStencil.depthFunc = uint8_t(dc.depth_func);
     d.depthStencil.stencilTest = dc.stencil_enable;
     d.depthStencil.backfaceEnable = dc.backface_enable;
+    d.depthStencil.depthBounds = dc.depth_bounds_enable;
+    d.depthStencil.colorWritesOnDepthFail = dc.enable_color_writes_on_depth_fail;
+    d.depthStencil.noColorWritesOnDepthPass = dc.disable_color_writes_on_depth_pass;
     const auto& sc = regs.stencil_control;
     d.depthStencil.front = {uint8_t(dc.stencil_ref_func), uint8_t(sc.stencil_fail_front), uint8_t(sc.stencil_zpass_front),
                             uint8_t(sc.stencil_zfail_front), regs.stencil_ref_front.stencil_test_val,
-                            regs.stencil_ref_front.stencil_mask, regs.stencil_ref_front.stencil_write_mask};
+                            regs.stencil_ref_front.stencil_mask, regs.stencil_ref_front.stencil_write_mask,
+                            regs.stencil_ref_front.stencil_op_val};
     d.depthStencil.back = {uint8_t(dc.stencil_bf_func), uint8_t(sc.stencil_fail_back), uint8_t(sc.stencil_zpass_back),
                            uint8_t(sc.stencil_zfail_back), regs.stencil_ref_back.stencil_test_val,
-                           regs.stencil_ref_back.stencil_mask, regs.stencil_ref_back.stencil_write_mask};
+                           regs.stencil_ref_back.stencil_mask, regs.stencil_ref_back.stencil_write_mask,
+                           regs.stencil_ref_back.stencil_op_val};
 
     // Rasterizer state.
     const auto& vp = regs.viewports[0];
-    d.viewport = {vp.xscale, vp.xoffset, vp.yscale, vp.yoffset, vp.zscale, vp.zoffset};
-    const auto& ss = regs.screen_scissor;
-    d.scissor = {ss.top_left_x, ss.top_left_y, ss.bottom_right_x, ss.bottom_right_y};
-    d.raster.cullFront = regs.polygon_control.cull_front;
-    d.raster.cullBack = regs.polygon_control.cull_back;
-    d.raster.frontFaceClockwise = regs.polygon_control.front_face == AmdGpu::FrontFace::Clockwise;
+    // PA_CL_VTE_CNTL: a transform that is switched off is the identity (scale 1, offset 0).
+    const auto& vte = regs.viewport_control;
+    d.viewport = {vte.xscale_enable ? vp.xscale : 1.0f, vte.xoffset_enable ? vp.xoffset : 0.0f,
+                  vte.yscale_enable ? vp.yscale : 1.0f, vte.yoffset_enable ? vp.yoffset : 0.0f,
+                  vte.zscale_enable ? vp.zscale : 1.0f, vte.zoffset_enable ? vp.zoffset : 0.0f};
+    // Scissors: screen, window and generic (the last two shifted by the window offset), and the
+    // viewport scissor when enabled; combined by the renderer.
+    {
+        auto plain = [](const AmdGpu::Scissor& q) {
+            return vpps4::Scissor{q.top_left_x, q.top_left_y, q.bottom_right_x, q.bottom_right_y};
+        };
+        auto boxed = [](const AmdGpu::ViewportScissor& q) {
+            return vpps4::Scissor{int32_t(q.top_left_x), int32_t(q.top_left_y), int32_t(q.bottom_right_x), int32_t(q.bottom_right_y)};
+        };
+        vpps4::ScissorRegs& sr = d.scissorRegs;
+        sr.present = true;
+        sr.screen = plain(regs.screen_scissor);
+        sr.window = boxed(regs.window_scissor);
+        sr.generic = boxed(regs.generic_scissor);
+        sr.viewportScissor = boxed(regs.viewport_scissors[0]);
+        sr.windowOffsetX = regs.window_offset.window_x_offset;
+        sr.windowOffsetY = regs.window_offset.window_y_offset;
+        sr.windowOffsetDisable = regs.window_scissor.window_offset_disable;
+        sr.viewportScissorEnable = regs.mode_control.vport_scissor_enable;
+    }
+    vpps4::Raster& ra = d.raster;
+    ra.cullFront = regs.polygon_control.cull_front;
+    ra.cullBack = regs.polygon_control.cull_back;
+    ra.frontFaceClockwise = regs.polygon_control.front_face == AmdGpu::FrontFace::Clockwise;
+    // PA_SU_POLY_OFFSET_*: the first word of poly_offset is the clamp register.
+    ra.offsetFront = regs.polygon_control.enable_polygon_offset_front;
+    ra.offsetBack = regs.polygon_control.enable_polygon_offset_back;
+    ra.offsetPara = regs.polygon_control.enable_polygon_offset_para;
+    ra.offsetClamp = regs.poly_offset.depth_bias;
+    ra.frontScale = regs.poly_offset.front_scale;
+    ra.frontOffset = regs.poly_offset.front_offset;
+    ra.backScale = regs.poly_offset.back_scale;
+    ra.backOffset = regs.poly_offset.back_offset;
+    // PA_CL_CLIP_CNTL / PA_CL_VS_OUT_CNTL.
+    ra.clipDisable = regs.IsClipDisabled();
+    ra.zclipNearDisable = regs.clipper_control.zclip_near_disable;
+    ra.zclipFarDisable = regs.clipper_control.zclip_far_disable;
+    ra.clipSpaceZeroToW = regs.clipper_control.clip_space == AmdGpu::ClipSpace::ZeroToW;
+    ra.userClipPlanes = uint8_t(regs.clipper_control.user_clip_plane_enable);
+    ra.vsOutputsViewportIndex = regs.vs_output_control.use_vtx_viewport_idx;
+    ra.vsOutputsClipDistances = regs.vs_output_control.clip_distance_enable != 0;
+    ra.polygonModeEnable = regs.polygon_control.enable_polygon_mode != 0;
+    ra.polygonModeFront = uint8_t(regs.polygon_control.polygon_mode_front);
+    ra.polygonModeBack = uint8_t(regs.polygon_control.polygon_mode_back);
+    ra.provokingLast = regs.polygon_control.provoking_vtx_last == AmdGpu::ProvokingVtxLast::Last;
+    ra.lineWidth = regs.line_control.Width();
+    // VGT_MULTI_PRIM_IB_RESET_EN / _INDX.
+    ra.primitiveRestart = (regs.enable_primitive_restart & 1) != 0;
+    ra.restartIndex = regs.primitive_restart_index;
+    d.indexSwap = uint8_t(regs.index_buffer_type.swap_mode);
     d.primitive = vpps4::PrimitiveType(uint8_t(regs.primitive_type));
 
     // Geometry. (The fetch subroutine adds its own vertex offset SGPR: only VGT_INDX_OFFSET here.)
