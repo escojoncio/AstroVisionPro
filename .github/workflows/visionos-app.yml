@@ -35,7 +35,8 @@ jobs:
           fetch-depth: 1
           submodules: false
 
-      # VPKEngine's shader translator, at the commit in visionos/vpkengine-gpu.ref (built into the
+      # VPKEngine's PS4 path (branch ps4/base: gpu/ps4 + its frozen engine copies in gpu/ps4/engine), at the
+      # commit in visionos/vpkengine-gpu.ref (built into the
       # emulator; checked against the headset's Metal compiler in diagnostic mode).
       - name: VPKEngine shader translator
         run: |
@@ -51,7 +52,7 @@ jobs:
       - name: What the emulator is built from
         run: |
           git ls-tree -r HEAD shadps4-arm64-main/externals | awk '$2 == "commit"' > core-inputs.txt
-          (cd vpkengine && git ls-tree -r HEAD gpu/shader/ir gpu/shader/msl gpu/shader/gcn/src gpu/shader/gcn/include gpu/core gpu/metal/src gpu/metal/include gpu/ps4 integrations/shadps4/gpu) >> core-inputs.txt
+          (cd vpkengine && git ls-tree -r HEAD gpu/ps4) >> core-inputs.txt
           echo "FEX $(cat shadps4-arm64-main/runtime/locks/components.lock.json | shasum)" >> core-inputs.txt
       - uses: actions/cache@v4
         id: core

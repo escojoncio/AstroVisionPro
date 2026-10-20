@@ -950,3 +950,38 @@ gtest_discover_tests(shadps4_preset_test
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
     DISCOVERY_TIMEOUT 60
 )
+
+# PM4 command processor: the census, the pure packet arithmetic, and the real liverpool.cpp driven
+# with hand-made packets against the stub headers in video_core/liverpool_stubs (plain executables,
+# exit code 0 = pass; no gtest).
+if (NOT SHADPS4_VISIONOS)
+    add_executable(shadps4_census_test video_core/test_census.cpp
+        ${CMAKE_SOURCE_DIR}/src/platform/visionos/vpkengine_census.cpp)
+    target_include_directories(shadps4_census_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+    target_compile_features(shadps4_census_test PRIVATE cxx_std_23)
+    add_test(NAME shadps4_census COMMAND shadps4_census_test)
+
+    add_executable(shadps4_reg_audit_test video_core/test_reg_audit.cpp)
+    target_include_directories(shadps4_reg_audit_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+    target_compile_features(shadps4_reg_audit_test PRIVATE cxx_std_23)
+    add_test(NAME shadps4_reg_audit COMMAND shadps4_reg_audit_test)
+
+    add_executable(shadps4_pm4_exec_test video_core/test_pm4_exec.cpp)
+    target_include_directories(shadps4_pm4_exec_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+    target_compile_features(shadps4_pm4_exec_test PRIVATE cxx_std_23)
+    add_test(NAME shadps4_pm4_exec COMMAND shadps4_pm4_exec_test)
+
+    add_executable(shadps4_liverpool_pm4_test video_core/test_liverpool_pm4.cpp
+        ${CMAKE_SOURCE_DIR}/src/video_core/amdgpu/liverpool.cpp
+        ${CMAKE_SOURCE_DIR}/src/video_core/amdgpu/regs.cpp
+        ${CMAKE_SOURCE_DIR}/src/platform/visionos/vpkengine_census.cpp)
+    # The stubs come first: they shadow the emulator headers liverpool.cpp only calls into.
+    target_include_directories(shadps4_liverpool_pm4_test BEFORE PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/video_core/liverpool_stubs)
+    target_include_directories(shadps4_liverpool_pm4_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+    target_compile_features(shadps4_liverpool_pm4_test PRIVATE cxx_std_23)
+    target_compile_options(shadps4_liverpool_pm4_test PRIVATE -include cstring)
+    find_package(Threads REQUIRED)
+    target_link_libraries(shadps4_liverpool_pm4_test PRIVATE Threads::Threads)
+    add_test(NAME shadps4_liverpool_pm4 COMMAND shadps4_liverpool_pm4_test)
+endif()

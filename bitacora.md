@@ -6,6 +6,19 @@ App visionOS en `visionos/` (SwiftUI + Compositor Services + ARKit + GameControl
 JIT: arena RWX preparada por StikDebug (protocolo `brk #0xf00d` + universal.js); la app hace detach al terminar.
 Compactada el 2026-10-11: lo resuelto queda en «Histórico» como una línea; el detalle está en el historial de git de este fichero (`git log -p bitacora.md`).
 
+## Rama `ps4/cpucost` (2026-10-20): caches persistentes y menos CPU por draw (sin compilar para visionOS)
+- `vpkengine_renderer.mm`: `start()` fija `MetalOptions::cacheRoot = <CacheDir>/vpkengine/<serial>/metal` y llama `renderer->setCacheRoot(<...>/vpps4)` (traducciones GCN->MSL y lista de pipelines; ver `PROGRESS-cpucost.md` de VPKEngine). Draw: `Engine::fetchAddresses` (FetchAddressMemo) y `Engine::fetchBodies` (subrutina fetch por dirección + generación `SpanCache::mapGen` + comparación de contenido) en lugar de caminar el VS y la subrutina en cada draw.
+- `astro_core.mm`: `SHADPS4_CACHE_DIR` -> `PathType::CacheDir`. `AstroSettings.swift`: pasa `GameFolder.caches` (VPS4/Cachés) en esa variable.
+- Pendiente: compilar en CI macOS; comprobar en visor que `Cachés/vpkengine/<serial>/` se llena y que el segundo arranque no traduce.
+
+## Rama `ps4/base`: integración sobre las copias congeladas vp4 de VPKEngine (2026-10-20; sin compilar para visionOS)
+- `visionos/vpkengine-gpu.ref` fija el commit de la rama `ps4/base` de VPKEngine (`0f6dffd`), que trae `gpu/ps4/engine/{core,metal,ir,msl,gcn}` (namespaces `vp4gpu`, `vp4gpu::metal`, `vp4ir`, `vp4msl`; `vpgcn` igual).
+- `shadps4-arm64-main/CMakeLists.txt` (~1416-1470): fuentes e includes salen de `${VPKENGINE_GPU_DIR}/ps4/engine/...` (ir, msl, gcn, core sin `null_backend.cpp`, `metal/src/metal_backend.mm`) + `gpu/ps4` (vpps4); se quita el respaldo a `integrations/shadps4/gpu`.
+- `vpkengine_renderer.mm`: includes y tipos `vpgpu::`→`vp4gpu::`, `vpmsl::`→`vp4msl::`, `vpir::`→`vp4ir::`. `vpkengine_shader_check.mm`: `vpmsl/msl.h`→`vp4msl/msl.h`, `vpir::`→`vp4ir::`. Mismos `framesInFlight = 6`, `setMaxSamples(1)`.
+- `encodeInterop` (cuadro del visor, con `completed`) ya no existe en metal2: la copia vp4 lo trae como envoltorio sobre `encodeNative`. `waitIdle()` devuelve `WaitResult` (se ignora, como antes); metal2 añade detección de dispositivo perdido.
+- `.github/workflows/visionos-app.yml`: la clave de caché del emulador usa `git ls-tree` de `gpu/ps4` (incluye `engine/`).
+- Pendiente: primera build de CI con esta rama; revisar errores de compilación `.mm`; probar el cuadro del visor (`encodeInterop`).
+
 ## Renombrado VPEngine → VPKEngine (2026-10-13)
 - Todas las menciones, rutas e identificadores pasan a VPKEngine (repo `escojoncio/VPKEngine`, checkout `vpkengine/`).
   Datos antiguos del visor (carpetas VPEngine, ajustes, certificado, packs `vpengine.vpgame`) se traspasan solos
@@ -321,3 +334,28 @@ Datos de los logs del visor (Vision Pro M2), ASTRO BOT, KosmicKrisp salvo donde 
 - `Present::ComposeEyes`: si el T# no es un target pero cae en el slice k>0 de un target array (`Renderer::colorTargetSlice`), vista 2D de ese slice (`newTextureViewWithPixelFormat ... slices:(k,1)`). Línea `VPKENGINE_PRESENT eye ... array_slice=k|-1`.
 - `visionos/vpkengine-gpu.ref` → VPKEngine fb2ce98 (lift por flujo de datos: los 2 VS y el CS rechazados traducen; `colorTargetSlice`; targets con capas >=).
 - Próximo log: copiar todas las líneas `VPKENGINE_GEOM` para implementar la ruta GS (amplificación estéreo a 2 capas).
+
+## ps4/state: adaptador de registros gfx7 (2026-10-20; sin compilar, revisión línea a línea)
+- `shadps4-arm64-main/src/platform/visionos/vpkengine_renderer.mm` `Rasterizer::Draw`: rellena los campos nuevos de `vpps4::DrawState` — poly offset (`poly_offset`, nota: su primer campo es el clamp), PA_CL_CLIP_CNTL (clip_disable, zclip near/far, clip_space, user planes), PA_CL_VTE_CNTL (transformaciones desactivadas = identidad), scissors screen/window/generic/viewport[0] + window offset, modo de polígono, provoking, ancho de línea, restart (`enable_primitive_restart`, `primitive_restart_index`), swap de índices, ROP3/degamma, alpha-to-mask (`reg_array[0xA2DC]`), bases de escritura de Z/stencil, z/stencil read-only, force z/stencil dirty/valid, depth bounds, stencil_op_val, blend_clamp/bypass/force_dst_alpha_1/disable_rop3, tamaño de targets desde `last_cb_extent`/`last_db_extent`.
+- Pendiente: compilar en macOS; apuntar `visionos/vpkengine-gpu.ref` al commit de VPKEngine ps4/state al unir.
+## MSAA del juego y foveado del pase de ojo (rama ps4/msaa)
+- `vpkengine_renderer.mm`: `setMaxSamples` lee `SHADPS4_MAX_MSAA` (1/2/4, por defecto 4, saturado a 4) en vez de 1 fijo; `setFoveation` lee `SHADPS4_GAME_FOVEATION` (por defecto apagado). `colorTarget()` rellena `coverage` (`1<<attrib.num_samples_log2`), `fastClear` (`info.fast_clear`) y `clearWord` (`clear_word0/1`); `samples` sigue siendo `NumSamples()` (fragmentos de color, EQAA). `depth.depthCopy/copySample` desde `depth_render_control`. `EliminateFastClear` y `FmaskDecompress` pasan a no-op silenciosos (sin `leftOut`).
+- `AstroSettings.swift`: `msaaSamples` (clave `msaa_samples`, 4; solo acepta 1/2/4) -> `SHADPS4_MAX_MSAA`; `gameFoveation` (clave `game_foveation`, apagado) -> `SHADPS4_GAME_FOVEATION` (distinto de `foveation`, que es del compositor). `defaultFile` actualizado. `SettingsView.swift`: selector "Antialiasing del juego (MSAA)" y conmutador "Renderizado foveado (experimental)".
+- No compilado ni probado aquí (Linux): .mm y Swift sin verificar en macOS/visionOS.
+- Pendiente: `alphaToMask` queda sin cablear (el registro DB_ALPHA_TO_MASK es del área de estado); probar en visor 4x/2x/1x y foveado; el foveado y MSAA son excluyentes por pase.
+## gs: conversion de registros geometria
+- Cambio: shadps4-arm64-main/src/platform/visionos/vpkengine_renderer.mm (Rasterizer::Draw): ES/GS/copy VS -> DrawState.es/gs/vs + geom; vsOutCntl; attachFetch para ES.
+- Sin compilar (Linux). Pendiente de prueba en dispositivo.
+
+## ps4/integration: union de state, coherence, tiling, msaa, gs, cpucost, submit, pm4
+- `visionos/vpkengine-gpu.ref` fija VPKEngine ps4/integration (ver el hash en el fichero). Notas en `PROGRESS-integration.md`.
+- `vpkengine_renderer.mm`: `syncForDma` = escritura de vuelta de imagenes (coherence) + espera parcial (Scheduler::syncCpu); `watchCv` es `condition_variable_any` (el lock del motor es recursivo); `OnCoherencePoint` llama `Renderer::coherencePoint` si el paquete invalida lectores; `SyncGpuWrites(wait)` y `Finish` usan `scheduler->finish()` y drenan la oclusion.
+- `liverpool.cpp`: `VideoCore::WriteGuestLabel` definida fuera de `AmdGpu` (estaba dentro: ocultaba `VideoCore::RasterizerInterface`).
+- Tests Linux (proyecto CMake minimo, `NOT SHADPS4_VISIONOS`): census, reg_audit, pm4_exec, liverpool_pm4: 4/4.
+- Pendiente: compilar .mm/Swift en macOS (CI); medir en visor.
+- CMake de la app: anadidos los fuentes de formats/state/msaa/cpucost/submit que faltaban (ver PROGRESS-integration.md).
+
+## fix-final: hallazgos de la revision adversarial (ps4/integration)
+- `vpkengine_renderer.mm`: `resolveOwned` limita a 200 ms el reintento de un rango que sigue por delante de la memoria (`aheadSince`, `kAheadLimit`); pasado el limite `Renderer::abandonOwners` suelta el dueno, se liberan las paginas y se anota en Census (`owned-abandoned`). `applyPending` con `pendingAll` escribe de vuelta todas las imagenes (`syncForDma(0, ~0)`) antes de `invalidate(0, ~0)`. `setOwned(on)` borra de `releasedOwned` lo solapado (un rango reprotegido ya no cuenta como "liberado hace poco"). Comentario de `poly_offset` corregido.
+- `vpkengine_mirror.cpp` `GuestMirror`: el espejo previo solo se sirve `kServeStaleFor` (5 s) si no se puede confirmar/reemplazar; despues devuelve nullptr (regla de no alias).
+- Sin compilar (Linux): .mm revisado a mano; la CI de macOS lo comprobara.

@@ -44,9 +44,15 @@ struct SettingsView: View {
                         Text(L("La que elija el juego", "The game's choice")).tag("game")
                     }
                     Toggle(L("Antialiasing SMAA", "SMAA antialiasing"), isOn: flag("smaa", \.edgeSmoothing))
+                    Picker(L("Antialiasing del juego (MSAA)", "Game antialiasing (MSAA)"), selection: number("msaa_samples", \.msaaSamples)) {
+                        Text("4x").tag(4)
+                        Text("2x").tag(2)
+                        Text(L("Apagado (1x)", "Off (1x)")).tag(1)
+                    }
+                    Toggle(L("Renderizado foveado (experimental)", "Foveated rendering (experimental)"), isOn: flag("game_foveation", \.gameFoveation))
                     Picker(L("Imágenes por segundo", "Frames per second"), selection: number("fps", \.fps)) {
+                        Text(L("45 · fijo, recomendado", "45 · locked, recommended")).tag(45)
                         Text("60").tag(60)
-                        Text("45").tag(45)
                         Text("30").tag(30)
                     }
                     LabeledContent(L("Campo de visión", "Field of view")) {
