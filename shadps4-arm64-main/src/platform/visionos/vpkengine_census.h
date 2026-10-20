@@ -27,6 +27,13 @@ void SetPeriodSeconds(unsigned seconds);
 // what happened (an opcode, a reason, a register=value), `detail` is kept from the first sighting
 // only (truncated to 127 bytes). Keys longer than 95 bytes are cut. Thread-safe.
 void Note(std::string_view category, std::string_view key, std::string_view detail = {});
+// `count` events of one key at once (callers that aggregate per frame).
+void NoteN(std::string_view category, std::string_view key, std::string_view detail, uint64_t count);
+
+// Writes the final summary now and stops the periodic summary and the one at exit: for the owner of the
+// log to call before it tears the log down (a summary written after the log sink is gone is lost, or
+// worse, uses a dead sink). Events after it are still counted. Safe to call more than once.
+void Shutdown();
 
 struct Entry {
     std::string category;

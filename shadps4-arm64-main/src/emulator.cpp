@@ -49,6 +49,7 @@
 #endif
 #include "core/vr/vr_runtime.h"
 #include "emulator.h"
+#include "platform/visionos/vpkengine_census.h"
 #include "video_core/cache_storage.h"
 #include "video_core/renderdoc.h"
 
@@ -90,6 +91,9 @@ void Emulator::Shutdown() {
     if (exit_done) {
         return;
     }
+    // The census summary goes to the log: written before the log is flushed and torn down, not by an
+    // atexit handler that may run after the sink is gone.
+    Census::Shutdown();
     Common::Log::Flush();
     if (controllers) {
         controllers->ResetLightbarColors();
@@ -656,6 +660,7 @@ void Emulator::Restart(std::filesystem::path eboot_path,
 
     LOG_INFO(Common, "Restarting the emulator with args: {}", fmt::join(args, " "));
     Libraries::SaveData::Backup::StopThread();
+    Census::Shutdown();
     Common::Log::Shutdown();
 
     auto& ipc = IPC::Instance();

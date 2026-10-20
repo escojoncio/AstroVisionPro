@@ -1493,16 +1493,33 @@ if (SHADPS4_VISIONOS)
                 ${VPKENGINE_PS4_DIR}/src/renderer.cpp ${VPKENGINE_PS4_DIR}/src/formats.cpp
                 ${VPKENGINE_PS4_DIR}/src/fetch.cpp ${VPKENGINE_PS4_DIR}/src/translation_cache.cpp)
             list(SORT _vpps4_fp_sources)
+            # GLOB's CONFIGURE_DEPENDS only notices files added or removed: a content change must re-run
+            # configure too, or the fingerprint (and with it the saved translations) goes stale in an
+            # incremental build.
+            set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${_vpps4_fp_sources})
             set(_vpps4_fp_text "")
+            set(_vpmsl_fp_text "")
             foreach(f ${_vpps4_fp_sources})
                 file(READ ${f} _vpps4_fp_c)
                 file(RELATIVE_PATH _vpps4_fp_rel ${VPKENGINE_PS4_DIR} ${f})
                 string(APPEND _vpps4_fp_text "${_vpps4_fp_rel}\n${_vpps4_fp_c}\n")
+                # vp4msl's own fingerprint (vp4msl::translatorFingerprint, part of the cache key): the emitter
+                # and the IR it reads.
+                if(f MATCHES "/(msl|ir)/")
+                    string(APPEND _vpmsl_fp_text "${_vpps4_fp_rel}\n${_vpps4_fp_c}\n")
+                endif()
             endforeach()
             string(SHA256 _vpps4_fp_hash "${_vpps4_fp_text}")
             string(SUBSTRING ${_vpps4_fp_hash} 0 16 _vpps4_fp_hash)
+            string(SHA256 _vpmsl_fp_hash "${_vpmsl_fp_text}")
+            string(SUBSTRING ${_vpmsl_fp_hash} 0 16 _vpmsl_fp_hash)
             set_source_files_properties(${VPKENGINE_PS4_DIR}/src/translation_cache.cpp
                 PROPERTIES COMPILE_DEFINITIONS VPPS4_TRANSLATOR_HASH="${_vpps4_fp_hash}")
+            set_source_files_properties(${VPKENGINE_ENGINE_DIR}/msl/src/msl.cpp
+                PROPERTIES COMPILE_DEFINITIONS VPMSL_TRANSLATOR_HASH="${_vpmsl_fp_hash}")
+            if(_vpps4_fp_hash STREQUAL "" OR _vpmsl_fp_hash STREQUAL "")
+                message(FATAL_ERROR "VPKEngine translator fingerprint is empty: sources not found")
+            endif()
             target_compile_definitions(shadps4 PRIVATE SHADPS4_VPKENGINE_ONLY=1)
             set_source_files_properties(${VPKENGINE_ENGINE_DIR}/metal/src/metal_backend.mm
                 src/platform/visionos/vpkengine_renderer.mm
