@@ -60,6 +60,12 @@ struct AstroSettings {
     var diagnostics = false
     /// The game's picture antialiased (SMAA 1x, Render/EdgeSmoother.swift) before it is shown.
     var edgeSmoothing = true
+    /// The game's own MSAA, as many samples per pixel as the title asks for up to this limit: 1, 2 or 4
+    /// (SHADPS4_MAX_MSAA). 1 turns it off.
+    var msaaSamples = 4
+    /// Foveated rendering of the game's own eye pass (SHADPS4_GAME_FOVEATION), experimental. Not the
+    /// compositor's `foveation`.
+    var gameFoveation = false
     /// The language the game is played in: "system" (the headset's) or a language tag
     /// (GameLanguages.swift).
     var gameLanguage = "system"
@@ -149,6 +155,8 @@ struct AstroSettings {
         case "jit_arena_mb": jitArenaMB = min(max(Int(value) ?? jitArenaMB, 64), 2048)
         case "show_hands": showHands = flag
         case "smaa": edgeSmoothing = flag
+        case "msaa_samples": msaaSamples = [1, 2, 4].contains(Int(value) ?? 0) ? Int(value)! : msaaSamples
+        case "game_foveation": gameFoveation = flag
         case "spatial_audio": spatialAudio = flag
         case "diagnostics": diagnostics = value == "1"
         case "game_language": gameLanguage = value
@@ -182,7 +190,7 @@ struct AstroSettings {
             }
         }
         env.append("SHADPS4_VR_SHARPEN=\(sharpen)")
-        // (No MSAA: VPKEngine draws every target at 1 sample; antialiasing is temporal, VPKTAA.)
+        // (MSAA: SHADPS4_MAX_MSAA below; the game's own targets keep up to that many samples.)
         if !hands {
             env.append("SHADPS4_XR_HANDS=0")
         }
@@ -206,6 +214,8 @@ struct AstroSettings {
         // The headset is the app's: it is there from the start.
         env.append("SHADPS4_XR_WAIT=0")
         env.append("SHADPS4_SPATIAL_AUDIO=\(spatialAudio ? 1 : 0)")
+        env.append("SHADPS4_MAX_MSAA=\(msaaSamples)")
+        env.append("SHADPS4_GAME_FOVEATION=\(gameFoveation ? 1 : 0)")
         // The picture is VPKEngine's (Metal); there is no Vulkan driver. Fixed: the title's GPU
         // clock adjusted every frame (only for titles the emulator knows, ASTRO BOT).
         env.append("SHADPS4_GPU_CLOCK_SCALE=auto")
@@ -279,6 +289,10 @@ struct AstroSettings {
     show_hands=0
     # 1: antialiasing SMAA de la imagen del juego (bordes suaves sin emborronar las texturas).
     smaa=1
+    # Antialiasing del juego (MSAA): 1, 2 o 4 muestras por píxel como máximo (1: apagado).
+    msaa_samples=4
+    # 1: renderizado foveado del propio juego (experimental; no se combina con MSAA).
+    game_foveation=0
     # 1: audio 3D como el de PlayStation VR (cada sonido y altavoz con el HRTF de Apple, PHASE).
     spatial_audio=1
 
