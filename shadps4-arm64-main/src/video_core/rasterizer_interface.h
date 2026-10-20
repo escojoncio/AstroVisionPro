@@ -43,6 +43,31 @@ public:
     virtual void MapMemory(VAddr addr, u64 size) = 0;
     virtual void UnmapMemory(VAddr addr, u64 size) = 0;
 
+    // ---- Command processor hooks with a default (a renderer that implements them overrides) ----
+
+    /// EVENT_WRITE ZPASS_DONE: the depth block's pass counters are sampled into guest memory at
+    /// `address`, `pairs` slots of 16 bytes (begin and end u64 each, bit 63 = written). True: the
+    /// renderer counts the samples itself and writes the results when its GPU gets there (before
+    /// anything the command processor reads them with must call SyncGpuWrites). False: the command
+    /// processor writes a stand-in counter.
+    virtual bool ZPassDone(VAddr address, u32 pairs) {
+        return false;
+    }
+
+    /// The command processor is about to read guest memory [addr, addr + size) that queued GPU work
+    /// may still write (occlusion results for SET_PREDICATION / OCCLUSION_QUERY). With `wait` the
+    /// GPU is waited for until the range is final; without it the call only reports. Returns whether
+    /// the range is final now.
+    virtual bool SyncGpuWrites(VAddr addr, u64 size, bool wait) {
+        return true;
+    }
+
+    /// ACQUIRE_MEM / SURFACE_SYNC: a cache flush / invalidate point over guest [base, base + size)
+    /// (size ~0 = everything), with CP_COHER_CNTL's action bits (Pm4::kCoh*). Where render targets
+    /// written by the GPU become coherent with guest memory for readers: the renderer's memory
+    /// tracker (MemoryTracker::markGpuWrite) hangs here.
+    virtual void OnCoherencePoint(VAddr base, u64 size, u32 coher_cntl) {}
+
     virtual void CpSync() = 0;
     virtual u64 Flush() = 0;
     virtual void Finish() = 0;

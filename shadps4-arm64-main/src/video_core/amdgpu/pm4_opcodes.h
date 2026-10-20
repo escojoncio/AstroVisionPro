@@ -34,6 +34,7 @@ enum class PM4ItOpcode : u32 {
     IndirectBufferConst = 0x33,
     StrmoutBufferUpdate = 0x34,
     DrawIndexOffset2 = 0x35,
+    DrawPreamble = 0x36,
     WriteData = 0x37,
     DrawIndexIndirectMulti = 0x38,
     MemSemaphore = 0x39,
@@ -54,6 +55,7 @@ enum class PM4ItOpcode : u32 {
     ContextRegRmw = 0x51,
     AcquireMem = 0x58,
     Rewind = 0x59,
+    LoadUconfigReg = 0x5E,
     LoadShReg = 0x5F,
     LoadConfigReg = 0x60,
     LoadContextReg = 0x61,
@@ -71,7 +73,9 @@ enum class PM4ItOpcode : u32 {
     IncrementDeCounter = 0x85,
     WaitOnCeCounter = 0x86,
     WaitOnDeCounterDiff = 0x88,
+    SwitchBuffer = 0x8B,
     GetLodStats = 0x8E,
+    SetShRegIndex = 0x9B,
     DrawIndexIndirectCountMulti = 0x9d,
 };
 

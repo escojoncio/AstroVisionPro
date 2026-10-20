@@ -59,6 +59,10 @@ public:
     void MapMemory(VAddr addr, u64 size) override;
     void UnmapMemory(VAddr addr, u64 size) override;
 
+    bool ZPassDone(VAddr address, u32 pairs) override;
+    bool SyncGpuWrites(VAddr addr, u64 size, bool wait) override;
+    void OnCoherencePoint(VAddr base, u64 size, u32 coher_cntl) override;
+
     void CpSync() override {}
     u64 Flush() override;
     void Finish() override;
@@ -72,6 +76,8 @@ public:
 
 private:
     void Dispatch(VAddr indirect);
+    VAddr pendingCount = 0;  // the count buffer of the multi-draw being run (0 = none)
+    u32 pendingIndex = 0;    // which draw of it
     VAddr pendingIndirect = 0;  // set while DrawIndirect runs Draw for one set of arguments
     std::unique_ptr<Impl> impl;
 };
