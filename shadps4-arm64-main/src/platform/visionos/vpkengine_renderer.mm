@@ -27,6 +27,7 @@
 #include "common/logging/log.h"
 #include "common/path_util.h"
 #include "core/libraries/videoout/buffer.h"
+#include "core/memory.h"
 #include "vpkengine_mirror.h"
 #include "vpkengine_census.h"
 #include "vpkengine_xr.h"
@@ -47,6 +48,7 @@
 
 namespace VpkengineRenderer {
 namespace {
+void PrewarmCompose(void* nativeDevice);  // (defined with PresentState)
 
 // Guest addresses are host addresses. Buffers alias guest memory through windows of this size
 // (aligned), cut down to the mapped part around the address: one huge mapping as a single
@@ -195,6 +197,44 @@ u64 readable(u64 address, u64 want) {
     return std::min<u64>(want, end - address);
 }
 
+// One line on why the region hook has no span for `address`: whether the emulator's own map knows it
+// (a relocated fixed mapping would show here), the span and its mirror / watches, or the nearest regions.
+std::string ExplainAddress(u64 address) {
+    std::string out = fmt::format("addr {:#x}: emulator map {}", address,
+                                  Core::Memory::Instance()->IsValidMapping(address, 1) ? "valid" : "invalid");
+    const u64 from = address & ~(kWindow - 1);
+    u64 begin = 0, end = 0;
+    void* mirror = nullptr;
+    if (address >= 0x10000 && cachedSpan(address, from, from + kWindow, begin, end, mirror)) {
+        out += fmt::format("; host span [{:#x}, {:#x}) mirror={} watched={}", begin, end, mirror != nullptr,
+                           spanHasWatches(begin, end));
+        return out;
+    }
+    // Not mapped for the host: the nearest VM entries around it.
+    vm_address_t base = vm_address_t(address);
+    vm_size_t size = 0;
+    vm_region_basic_info_data_64_t info{};
+    mach_msg_type_number_t count = VM_REGION_BASIC_INFO_COUNT_64;
+    mach_port_t object = MACH_PORT_NULL;
+    if (vm_region_64(mach_task_self(), &base, &size, VM_REGION_BASIC_INFO_64, reinterpret_cast<vm_region_info_t>(&info),
+                     &count, &object) == KERN_SUCCESS)
+        out += fmt::format("; next host region [{:#x}, {:#x}) prot {}/{}", u64(base), u64(base) + u64(size), int(info.protection),
+                           int(info.max_protection));
+    else
+        out += "; no host region above";
+    if (address >= (1ull << 20)) {
+        // (the entry below: asked for from a bit lower; a hit at or above `address` means nothing is below nearby)
+        vm_address_t b2 = vm_address_t(address - std::min<u64>(address, 1ull << 30));
+        vm_size_t s2 = 0;
+        count = VM_REGION_BASIC_INFO_COUNT_64;
+        object = MACH_PORT_NULL;
+        if (vm_region_64(mach_task_self(), &b2, &s2, VM_REGION_BASIC_INFO_64, reinterpret_cast<vm_region_info_t>(&info),
+                         &count, &object) == KERN_SUCCESS && u64(b2) < address)
+            out += fmt::format("; a host region [{:#x}, {:#x}) within 1 GiB below", u64(b2), u64(b2) + u64(s2));
+    }
+    return out;
+}
+
 // MSL from the shader translator, as the Metal backend takes it (msl.h argument contract).
 vp4gpu::metal::MslShader toMetal(const vp4msl::MslShader& s) {
     vp4gpu::metal::MslShader m;
@@ -277,8 +317,13 @@ struct Engine {
             if (scheduler) syncForDma(0, ~u64(0));
             else renderer->syncToMemory(0, ~u64(0));
             renderer->invalidate(0, ~u64(0));
+            if (scheduler) scheduler->forgetLabelValues(0, ~u64(0));
         }
-        for (auto [a, n] : work) renderer->invalidate(a, n);
+        for (auto [a, n] : work) {
+            renderer->invalidate(a, n);
+            // (the CPU rewrote it: a queued label value no longer says what a wait finds there)
+            if (scheduler) scheduler->forgetLabelValues(a, n);
+        }
     }
     bool failed = false;
     u64 dmaUnsynced = 0, dmaSynced = 0;  // DMA packets done on the CPU without / after a GPU wait
@@ -338,11 +383,11 @@ struct Engine {
         LOG_INFO(Render_Vulkan,
                  "VPKENGINE_GPU cpu: draw_adapter {:.1f} ms/s, vpps4.draw {:.1f}, shader lookup {:.1f}, bind {:.1f}, "
                  "pipeline request {:.1f}, frame compile+submit {:.1f} ({:.0f} submits/s, {:.0f} empty/s), "
-                 "draws {:.0f}/s, per-draw {:.2f} us adapter / {:.2f} us vpps4, user data reused {:.0f}/s",
+                 "draws {:.0f}/s, per-draw {:.2f} us adapter / {:.2f} us vpps4, user data reused {:.0f}/s, aligned copies reused {:.0f}/s",
                  msps(adapter), t.drawMs / s, t.shaderMs / s, t.bindMs / s, t.pipelineMs / s, t.submitMs / s,
                  double(t.submits) / s, double(t.emptySubmits) / s, double(calls) / s,
                  calls ? double(adapter) / 1e3 / double(calls) : 0.0, t.calls ? t.drawMs * 1e3 / double(t.calls) : 0.0,
-                 double(t.userDataReused) / s);
+                 double(t.userDataReused) / s, double(t.alignedCopyReused) / s);
         if (scheduler) LOG_INFO(Render_Vulkan, "VPKENGINE_GPU {}", scheduler->takeSummary());
     }
 
@@ -410,6 +455,7 @@ struct Engine {
             out = {begin, end - begin, mirror ? mirror : reinterpret_cast<void*>(begin), mirror != nullptr};
             return true;
         };
+        hooks.explainAddress = [](uint64_t address) { return ExplainAddress(address); };
         hooks.shader = [this](uint64_t id, vp4ir::Stage, const vp4msl::MslShader& s) { shaders.add(id, toMetal(s)); };
         hooks.log = [this](const std::string& l) { log(l); };
         hooks.watchWrites = [this](uint64_t a, uint64_t n) {
@@ -470,6 +516,8 @@ struct Engine {
         renderer->setCacheRoot(cacheDir / "vpps4");
         LOG_INFO(Render_Vulkan, "VPKENGINE_GPU persistent caches in {}", cacheDir.string());
         LOG_INFO(Render_Vulkan, "VPKENGINE_GPU renderer on (VPKEngine draws everything in Metal; no Vulkan device)");
+        // Off the first frame's path: the headset compositing shader is compiled meanwhile.
+        if (VpkengineXr::Available()) PrewarmCompose(backend->nativeDevice());
         return true;
     }
 
@@ -1240,6 +1288,7 @@ void Rasterizer::FillBuffer(VAddr address, u32 num_bytes, u32 value, bool is_gds
     for (; k + 4 <= num_bytes; k += 4) std::memcpy(p + k, &value, 4);
     for (; k < num_bytes; ++k) p[k] = u8(value >> (8 * (k & 3)));
     e.renderer->invalidate(address, num_bytes);  // (no page watches: tell the texture cache)
+    if (e.scheduler) e.scheduler->forgetLabelValues(address, num_bytes);
 }
 
 void Rasterizer::CopyBuffer(VAddr dst, VAddr src, u32 num_bytes, bool dst_gds, bool src_gds) {
@@ -1273,6 +1322,7 @@ void Rasterizer::CopyBuffer(VAddr dst, VAddr src, u32 num_bytes, bool dst_gds, b
     }
     std::memmove(reinterpret_cast<void*>(dst), reinterpret_cast<const void*>(src), num_bytes);
     e.renderer->invalidate(dst, num_bytes);
+    if (e.scheduler) e.scheduler->forgetLabelValues(dst, num_bytes);
 }
 
 u32 Rasterizer::ReadDataFromGds(u32 gds_offset) {
@@ -1514,14 +1564,59 @@ void Rasterizer::ScheduleLabelWrite(void* address, u64 value, u32 size, std::fun
                                [address, value, size, then = std::move(then)] {
                                    if (address) VideoCore::WriteGuestLabel(address, value, size);
                                    if (then) then();
-                               });
+                               },
+                               value, address != nullptr);
     e.watchCv.notify_one();  // (a label is waiting: the watchdog's deadline changed)
 }
 
-void Rasterizer::PrepareLabelWait(const void* address, u32 size) {
+// WAIT_REG_MEM function/ref/mask as PM4CmdWaitRegMem::Test applies them (1 <, 2 <=, 3 ==, 4 !=, 5 >=, 6 >).
+static bool WaitRegMemWants(u32 function, u32 ref, u32 mask, u32 value) {
+    value &= mask;
+    switch (function) {
+    case 0: return true;
+    case 1: return value < ref;
+    case 2: return value <= ref;
+    case 3: return value == ref;
+    case 4: return value != ref;
+    case 5: return value >= ref;
+    case 6: return value > ref;
+    default: return false;
+    }
+}
+
+bool Rasterizer::PrepareLabelWait(const void* address, u32 size, u32 function, u32 ref, u32 mask) {
     Engine& e = engine();
     std::scoped_lock g{e.lock};
-    if (e.scheduler) e.scheduler->prepareWait(reinterpret_cast<u64>(address), size);
+    if (!e.scheduler) return false;
+    // A label write already queued behind work recorded on this in-order queue (EOP / EOS / RELEASE_MEM,
+    // gfx or compute alike: one Metal queue) satisfies the wait in GPU order: the command processor
+    // goes on recording, what it records runs after that work. Anything else (guest CPU, recorded
+    // shader writes, unknown labels) is polled after the producer is put on the GPU.
+    const auto kind = e.scheduler->prepareWait(
+        reinterpret_cast<u64>(address), size,
+        [=](u32 word) { return WaitRegMemWants(function, ref, mask, word); });
+    return kind == vpps4::Scheduler::WaitKind::Ordered;
+}
+
+// A WAIT_REG_MEM poll found nothing: blocks on the frame that produces the value instead of spinning.
+bool Rasterizer::IdleLabelWait(const void* address, u32 size) {
+    Engine& e = engine();
+    uint64_t target = 0;
+    {
+        std::scoped_lock g{e.lock};
+        if (!e.scheduler) return false;
+        target = e.scheduler->idleTarget(reinterpret_cast<u64>(address), size);
+    }
+    if (!target) return false;
+    // The wait itself is outside the engine lock: the other queues, the compositor and the recording
+    // thread keep running meanwhile. Then a short sleep gives them the core.
+    e.scheduler->waitGpu(target, 2);
+    {
+        std::scoped_lock g{e.lock};
+        if (e.scheduler) e.scheduler->pumpLabels();
+    }
+    std::this_thread::sleep_for(std::chrono::microseconds{50});
+    return true;
 }
 
 void Rasterizer::WriteDataOrdered(void* address, const void* data, u32 size) {
@@ -1535,6 +1630,7 @@ void Rasterizer::WriteDataOrdered(void* address, const void* data, u32 size) {
             if (e.renderer) e.renderer->syncToMemory(reinterpret_cast<u64>(address), size);
             e.scheduler->syncCpu(reinterpret_cast<u64>(address), size, vp4gpu::SubmitReason::WriteData);
             std::memcpy(address, data, size);
+            e.scheduler->forgetLabelValues(reinterpret_cast<u64>(address), size);
             return;
         }
     }
@@ -1616,8 +1712,15 @@ struct PresentState {
             VpkengineXr::Start(e.backend->nativeDevice());
             started = true;
         }
+        return buildPipeline((__bridge id<MTLDevice>)e.backend->nativeDevice());
+    }
+
+    // The compositing pipeline (Metal source compiled at run time: ~100+ ms the first time). Built at start
+    // by prewarm() on a thread of its own; ensure() waits for it if it is still running.
+    std::mutex build_mutex;
+    bool buildPipeline(id<MTLDevice> dev) {
+        std::scoped_lock built{build_mutex};
         if (pipeline || pipelineFailed) return pipeline != nil;
-        id<MTLDevice> dev = (__bridge id<MTLDevice>)e.backend->nativeDevice();
         NSError* error = nil;
         id<MTLLibrary> lib = [dev newLibraryWithSource:@(kComposeSource) options:nil error:&error];
         MTLRenderPipelineDescriptor* pd = [MTLRenderPipelineDescriptor new];
@@ -1668,6 +1771,95 @@ struct PresentState {
     }
 
     // Draws `regions` into a new headset frame of width x height; -1 if the host has none free.
+    // ---- EYE_STATS: what each eye picture holds, every 2 s (a black picture shows as luma 0, 0 % lit).
+    // A compute kernel reduces each eye to 64x64 blocks (strided samples of each) in a small persistent
+    // shared buffer; the completion handler adds up 4096 entries. Nothing is copied, nothing big is read.
+    static constexpr u32 kStatsGrid = 64;
+    std::chrono::steady_clock::time_point stats_at{};
+    std::atomic<bool> stats_busy{false};
+    id<MTLComputePipelineState> stats_pso{nil};
+    std::array<id<MTLBuffer>, 2> stats_buf{};
+
+    // Under build_mutex (with the compose pipeline, off the first frame's path).
+    void buildStatsPipeline(id<MTLDevice> dev) {
+        static const char* kSource = R"MSL(
+#include <metal_stdlib>
+using namespace metal;
+kernel void vp_eye_stats(texture2d<float, access::read> t [[texture(0)]], device float2* out [[buffer(0)]],
+                         uint2 gid [[thread_position_in_grid]]) {
+    const uint w = t.get_width(), h = t.get_height();
+    const uint x0 = gid.x * w / 64, x1 = (gid.x + 1) * w / 64, y0 = gid.y * h / 64, y1 = (gid.y + 1) * h / 64;
+    const uint sx = max((x1 - x0) / 8, 1u), sy = max((y1 - y0) / 8, 1u);
+    float l = 0, nz = 0, n = 0;
+    for (uint y = y0; y < y1; y += sy)
+        for (uint x = x0; x < x1; x += sx) {
+            const float4 c = t.read(uint2(x, y));
+            l += (c.r + c.g + c.b) / 3.0;
+            nz += (c.r > 0 || c.g > 0 || c.b > 0) ? 1.0 : 0.0;
+            n += 1.0;
+        }
+    out[gid.y * 64 + gid.x] = float2(l / max(n, 1.0), nz / max(n, 1.0));
+}
+)MSL";
+        NSError* error = nil;
+        id<MTLLibrary> lib = [dev newLibraryWithSource:@(kSource) options:nil error:&error];
+        id<MTLFunction> fn = lib ? [lib newFunctionWithName:@"vp_eye_stats"] : nil;
+        if (fn) stats_pso = [dev newComputePipelineStateWithFunction:fn error:&error];
+        for (auto& b : stats_buf) b = [dev newBufferWithLength:kStatsGrid * kStatsGrid * sizeof(float) * 2
+                                                       options:MTLResourceStorageModeShared];
+        if (!stats_pso) LOG_WARNING(Render_Vulkan, "EYE_STATS kernel unavailable");
+    }
+
+    static void logEyeStats(u32 eye, u32 w, u32 h, u32 format, id<MTLBuffer> buf) {
+        const float* v = static_cast<const float*>(buf.contents);
+        double luma = 0, lit = 0;
+        for (u32 i = 0; i < kStatsGrid * kStatsGrid; ++i) luma += v[2 * i], lit += v[2 * i + 1];
+        const double n = kStatsGrid * kStatsGrid;
+        LOG_INFO(Render_Vulkan, "EYE_STATS eye {} {}x{} format {} avg_luma {:.4f} non_zero {:.1f}%", eye, w, h, format,
+                 luma / n, 100.0 * lit / n);
+    }
+
+    // Under the engine lock, after the eyes' drawing is submitted: reduces both eyes behind it on the queue.
+    void eyeStats(Engine& e, const std::array<id<MTLTexture>, 2>& eyes) {
+        const auto now = std::chrono::steady_clock::now();
+        if (now - stats_at < std::chrono::seconds{2}) return;
+        stats_at = now;
+        {
+            std::scoped_lock built{build_mutex};
+            if (!stats_pso && !stats_buf[0]) buildStatsPipeline((__bridge id<MTLDevice>)e.backend->nativeDevice());
+        }
+        if (!stats_pso) return;
+        std::array<id<MTLTexture>, 2> src{};
+        for (u32 k = 0; k < 2; ++k)
+            if (eyes[k] && eyes[k].textureType == MTLTextureType2D && eyes[k].sampleCount == 1) src[k] = eyes[k];
+        if (!src[0] && !src[1]) return;
+        if (stats_busy.exchange(true)) return;
+        const auto pso = stats_pso;
+        const auto bufs = stats_buf;
+        bool queued = false;
+        e.device->withBackend([&] { queued = e.backend->encodeInterop(
+            [&](void* cbp) {
+                id<MTLCommandBuffer> cb = (__bridge id<MTLCommandBuffer>)cbp;
+                id<MTLComputeCommandEncoder> enc = [cb computeCommandEncoder];
+                enc.label = @"eye stats";
+                [enc setComputePipelineState:pso];
+                for (u32 k = 0; k < 2; ++k) {
+                    if (!src[k]) continue;
+                    [enc setTexture:src[k] atIndex:0];
+                    [enc setBuffer:bufs[k] offset:0 atIndex:0];
+                    [enc dispatchThreads:MTLSizeMake(kStatsGrid, kStatsGrid, 1) threadsPerThreadgroup:MTLSizeMake(8, 8, 1)];
+                }
+                [enc endEncoding];
+            },
+            "vp.eyestats",
+            [this, src, bufs] {
+                for (u32 k = 0; k < 2; ++k)
+                    if (src[k]) logEyeStats(k, u32(src[k].width), u32(src[k].height), u32(src[k].pixelFormat), bufs[k]);
+                stats_busy = false;
+            }); });
+        if (!queued) stats_busy = false;
+    }
+
     int compose(Engine& e, u32 width, u32 height, std::span<const Region> regions) {
         u32 target_index = 0;
         void* target_texture = nullptr;
@@ -1725,6 +1917,12 @@ struct PresentState {
 PresentState& present() {
     static PresentState& p = *new PresentState;
     return p;
+}
+
+void PrewarmCompose(void* nativeDevice) {
+    if (!nativeDevice) return;
+    id<MTLDevice> dev = (__bridge id<MTLDevice>)nativeDevice;
+    std::thread([dev] { present().buildPipeline(dev); }).detach();
 }
 
 } // namespace
@@ -1791,6 +1989,7 @@ int ComposeEyes(std::span<const AmdGpu::Image, 2> eye_textures, const Core::Vr::
             LOG_WARNING(Render_Vulkan, "VPKENGINE_PRESENT eye pictures missing (left {}, right {}): black frame",
                         eyes[0] != nil, eyes[1] != nil);
     }
+    impl->eyeStats(e, eyes);
     impl->last_fov = fov;
     impl->last_eye_width = eye_width;
     impl->last_eye_height = eye_height;

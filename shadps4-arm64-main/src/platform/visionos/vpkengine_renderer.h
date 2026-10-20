@@ -68,7 +68,8 @@ public:
     void Finish() override;
     void SyncGds() override;
     void ScheduleLabelWrite(void* address, u64 value, u32 size, std::function<void()> then) override;
-    void PrepareLabelWait(const void* address, u32 size) override;
+    bool PrepareLabelWait(const void* address, u32 size, u32 function, u32 ref, u32 mask) override;
+    bool IdleLabelWait(const void* address, u32 size) override;
     void WriteDataOrdered(void* address, const void* data, u32 size) override;
     void OnSubmit() override {}
 
