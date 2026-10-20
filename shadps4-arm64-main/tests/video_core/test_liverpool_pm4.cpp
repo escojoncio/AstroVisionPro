@@ -11,6 +11,7 @@
 #include <cstring>
 #include <deque>
 #include <exception>
+#include <functional>
 #include <mutex>
 #include <queue>
 #include <semaphore>
@@ -108,6 +109,32 @@ struct Mock final : VideoCore::RasterizerInterface {
         return results_final;
     }
     void OnCoherencePoint(VAddr b, u64 n, u32 c) override { coherence.push_back({b, n, c}); }
+    // Labels the way the real renderer takes them: queued, written when the test says the GPU is done.
+    bool defer_labels = false;
+    struct Label {
+        void* address;
+        u64 value;
+        u32 size;
+        bool has_then;
+        std::function<void()> then;
+    };
+    std::vector<Label> labels;
+    int label_calls = 0;
+    void ScheduleLabelWrite(void* address, u64 value, u32 size, std::function<void()> then) override {
+        ++label_calls;
+        if (!defer_labels) {
+            VideoCore::RasterizerInterface::ScheduleLabelWrite(address, value, size, std::move(then));
+            return;
+        }
+        labels.push_back({address, value, size, bool(then), std::move(then)});
+    }
+    void gpuDone() {
+        for (auto& l : labels) {
+            if (l.address) VideoCore::WriteGuestLabel(l.address, l.value, l.size);
+            if (l.then) l.then();
+        }
+        labels.clear();
+    }
 };
 
 // A type-3 packet: header + body.
@@ -298,6 +325,69 @@ void releaseMemAndEvents() {
     CHECK(f.mem[6] == 0x11 && f.mem[7] == 0x22);
 }
 
+void releaseMemIsScheduledOnTheGfxRing() {
+    Fixture f;
+    f.mock.defer_labels = true;
+    f.mem[5] = 0;
+    f.mem[6] = 0;
+    // Two labels in order, plus interrupt-only (IrqOnly) and no-data/no-interrupt forms: none of them
+    // may abort, and the data is not written until the GPU is done with the work before it.
+    f.exec(pkt(0x49, {0x5, (2u << 24) | (1u << 29), lo(f.addr(5)), hi(f.addr(5)), 0xABCD, 0}));
+    f.exec(pkt(0x49, {0x5, (1u << 24), 0, 0, 0, 0}));       // IrqOnly, no data
+    f.exec(pkt(0x49, {0x5, 0, 0, 0, 0, 0}));                 // nothing at all
+    f.exec(pkt(0x49, {0x5, (3u << 24) | (1u << 29), lo(f.addr(6)), hi(f.addr(6)), 0x77, 0}));
+    CHECK(f.mem[5] == 0 && f.mem[6] == 0);
+    CHECK(f.mock.labels.size() == 3);
+    CHECK(f.mock.labels[0].address == &f.mem[5] && f.mock.labels[0].size == 4);
+    CHECK(f.mock.labels[1].address == nullptr && f.mock.labels[1].has_then);
+    f.mock.gpuDone();
+    CHECK(f.mem[5] == 0xABCD && f.mem[6] == 0x77);
+    // Census gets the unknown selectors instead of an abort.
+    Census::SetPeriodSeconds(0);
+    Census::ResetForTests();
+    f.exec(pkt(0x49, {0x5, (6u << 29), lo(f.addr(8)), hi(f.addr(8)), 1, 0}));
+    bool seen = false;
+    for (const auto& e : Census::Snapshot()) seen |= e.key == "RELEASE_MEM data_sel unsupported";
+    CHECK(seen);
+}
+
+void writeDataShortBody() {
+    Fixture f;
+    f.mem[30] = 0x1234;
+    // count = 0 and 1 (no address / no data): used to wrap `count - 2` and write ~4G dwords.
+    f.exec(pkt(0x37, {0}));
+    f.exec(pkt(0x37, {(2u << 8), lo(f.addr(30))}));
+    f.gfx({pkt(0x37, {(2u << 8) | (1u << 16)})});
+    f.gfx({pkt(0x37, {(2u << 8)})});
+    f.exec(pkt(0x37, {(2u << 8), lo(f.addr(30)), hi(f.addr(30))}));  // zero data dwords
+    CHECK(f.mem[30] == 0x1234);
+}
+
+void cpReadsSyncWithTheGpu() {
+    Fixture f;
+    // A label the GPU has not written yet: every packet that reads guest memory asks first.
+    const auto synced = [&](u64 a) {
+        for (const auto& s : f.mock.syncs)
+            if (s.addr == a && s.wait) return true;
+        return false;
+    };
+    f.exec(pkt(0x40, {5 | (5u << 8) | (0u << 16), 0, 0, 0, 0}));  // immediate: no read
+    CHECK(f.mock.syncs.empty());
+    f.exec(pkt(0x40, {5 | (0u << 8) | (0u << 16), 0, 0, 0, 0}));
+    f.mock.syncs.clear();
+    f.exec(pkt(0x40, {1 | (0u << 8), lo(f.addr(66)), hi(f.addr(66)), 0xA0A1, 0}));  // memory -> register
+    CHECK(synced(f.addr(66)));
+    f.mock.syncs.clear();
+    f.exec(pkt(0x45, {3 | (1u << 4) | (1u << 8), lo(f.addr(50)), hi(f.addr(50)), 7, 0xFF, lo(f.addr(51)), hi(f.addr(51)), 99}));
+    CHECK(synced(f.addr(50)));
+    f.mock.syncs.clear();
+    f.exec(pkt(0x1E, {9, lo(f.addr(4)), hi(f.addr(4)), 3, 0, 0, 0, 0}));
+    CHECK(synced(f.addr(4)));
+    f.mock.syncs.clear();
+    f.exec(pkt(0x61, {lo(f.addr(16)), hi(f.addr(16)), 0x20, 3}));
+    CHECK(synced(f.addr(16)));
+}
+
 void unknownOpcodes() {
     Census::SetPeriodSeconds(0);
     Census::ResetForTests();
@@ -421,6 +511,9 @@ int main() {
     condWriteAndCopyData();
     dmaAndSync();
     releaseMemAndEvents();
+    releaseMemIsScheduledOnTheGfxRing();
+    writeDataShortBody();
+    cpReadsSyncWithTheGpu();
     strmout();
     occlusionAndPredication();
     multiAutoAndMisc();

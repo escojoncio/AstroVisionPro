@@ -140,6 +140,15 @@ SpanCache& spanCache() {
     return c;
 }
 
+// Whether any page of [begin, end) is protected for the renderer (owned or watched ranges): set by the
+// rasterizer, which keeps those tables.
+std::atomic<bool (*)(void*, u64, u64)> gWatchProbe{nullptr};
+std::atomic<void*> gWatchProbeContext{nullptr};
+bool spanHasWatches(u64 begin, u64 end) {
+    auto* probe = gWatchProbe.load(std::memory_order_acquire);
+    return probe && probe(gWatchProbeContext.load(std::memory_order_acquire), begin, end);
+}
+
 bool cachedSpan(u64 address, u64 from, u64 to, u64& begin, u64& end, void*& mirror) {
     SpanCache& c = spanCache();
     u64 gen0 = 0;
@@ -168,6 +177,7 @@ bool cachedSpan(u64 address, u64 from, u64 to, u64& begin, u64& end, void*& mirr
     // The span's mirror (made once per span, checked again whenever the span is looked up afresh:
     // every ~8 ms at most, see Engine::submit).
     mirror = GuestMirror(begin, end);
+    if (!mirror && spanHasWatches(begin, end)) return true;  // (looked up again next time: the mirror may come)
     std::scoped_lock l{c.m};
     if (c.gen != gen0) return true;  // the map changed meanwhile: use it this once, keep it out
     const unsigned k = c.used < c.entries.size() ? c.used++ : (c.next++ % unsigned(c.entries.size()));
@@ -234,18 +244,33 @@ struct Engine {
     // held for long, or by the faulting thread itself) and applied before the next command.
     std::atomic_flag pendingLock = ATOMIC_FLAG_INIT;
     std::vector<std::pair<u64, u64>> pending;
+    // Too many ranges queued (the engine lock was held for long): they are not kept one by one, the
+    // whole address space is invalidated when they are applied. Dropping them would leave stale
+    // textures and owners.
+    bool pendingAll = false;
     void queueInvalidate(u64 a, u64 n) {
         while (pendingLock.test_and_set(std::memory_order_acquire)) {}
-        if (pending.size() < 65536) pending.push_back({a, n});
+        if (pendingAll) {
+            // (already everything)
+        } else if (pending.size() < 65536) {
+            pending.push_back({a, n});
+        } else {
+            pendingAll = true;
+            pending.clear();
+            pending.shrink_to_fit();
+        }
         pendingLock.clear(std::memory_order_release);
     }
     void applyPending() {
         while (pendingLock.test_and_set(std::memory_order_acquire)) {}
         std::vector<std::pair<u64, u64>> work;
         work.swap(pending);
+        const bool all = pendingAll;
+        pendingAll = false;
         pendingLock.clear(std::memory_order_release);
-        if (renderer)
-            for (auto [a, n] : work) renderer->invalidate(a, n);
+        if (!renderer) return;
+        if (all) renderer->invalidate(0, ~u64(0));
+        for (auto [a, n] : work) renderer->invalidate(a, n);
     }
     bool failed = false;
     u64 dmaUnsynced = 0, dmaSynced = 0;  // DMA packets done on the CPU without / after a GPU wait
@@ -359,6 +384,11 @@ struct Engine {
             u64 begin, end;
             void* mirror = nullptr;
             if (!cachedSpan(address, from, to, begin, end, mirror) || address + size > end) return false;
+            // No mirror: the buffers would alias the guest addresses, which are page-protected where
+            // an image is ahead of memory or a texture source is watched. A buffer over protected
+            // pages faults or reads garbage: the span is not offered at all (draws using it are
+            // skipped and counted) until a mirror exists.
+            if (!mirror && spanHasWatches(begin, end)) return false;
             // With a mirror the GPU buffers alias it and the guest addresses may be page-protected
             // (CPU write / read detection); without one they alias the guest addresses and nothing
             // is protected (the renderer then finds CPU writes by content).
@@ -581,6 +611,20 @@ struct Rasterizer::Impl {
     // Ranges textures were filled from, watched for CPU writes (start -> size).
     std::mutex watch_mutex;
     std::map<VAddr, u64> watched;
+    // Whether [a, b) overlaps a range this rasterizer protects (texture sources, memory an image is ahead of).
+    bool anyWatchIn(VAddr a, VAddr b) {
+        {
+            std::scoped_lock l{owned_mutex};
+            auto it = owned.lower_bound({a > (1ull << 30) ? a - (1ull << 30) : 0, 0});
+            for (; it != owned.end() && it->first.first < b; ++it)
+                if (it->first.first + it->first.second > a) return true;
+        }
+        std::scoped_lock l{watch_mutex};
+        auto it = watched.lower_bound(a > (1ull << 30) ? a - (1ull << 30) : 0);
+        for (; it != watched.end() && it->first < b; ++it)
+            if (it->first + it->second > a) return true;
+        return false;
+    }
     // Ranges let go of lately: a second thread faulting on the same page finds the watch gone
     // already, and its access must still count as handled.
     std::array<std::pair<VAddr, u64>, 64> released{};
@@ -652,6 +696,28 @@ struct Rasterizer::Impl {
     std::map<std::pair<VAddr, u64>, u32> owned;
     bool ownedWatchEnabled = std::getenv("VPK_NO_OWNED_WATCH") == nullptr;
 
+    // Owned ranges let go of lately (resolveOwned, setOwned off): two threads that fault on the same
+    // protected page both end up here, and the second finds the range gone. Its access is handled
+    // (the first one unprotected the page): retried, not escalated to a crash. Kept for a short time
+    // only, so an access that really faults for another reason cannot be retried for ever.
+    struct ReleasedOwned {
+        VAddr start = 0;
+        u64 size = 0;
+        std::chrono::steady_clock::time_point at{};
+    };
+    std::array<ReleasedOwned, 32> releasedOwned{};
+    u32 releasedOwnedNext = 0;
+    void noteReleasedOwned(VAddr a, u64 n) {  // owned_mutex held
+        releasedOwned[releasedOwnedNext++ % releasedOwned.size()] = {a, n, std::chrono::steady_clock::now()};
+    }
+    bool recentlyReleasedOwned(VAddr addr) {
+        std::scoped_lock l{owned_mutex};
+        const auto now = std::chrono::steady_clock::now();
+        for (const auto& r : releasedOwned)
+            if (r.size && addr >= r.start && addr < r.start + r.size && now - r.at < std::chrono::milliseconds(200)) return true;
+        return false;
+    }
+
     void setOwned(VAddr a, u64 n, bool on) {
         if (!ownedWatchEnabled || n == 0) return;
         if (on && !isMapped(a, n)) return;
@@ -665,6 +731,7 @@ struct Rasterizer::Impl {
             if (it == owned.end()) return;
             if (--it->second != 0) return;
             owned.erase(it);
+            noteReleasedOwned(a, n);
             page_manager.UpdateReadWatchers<false>(a, n);
             page_manager.UpdatePageWatchers<false>(a, n);
         }
@@ -689,6 +756,7 @@ struct Rasterizer::Impl {
                     page_manager.UpdateReadWatchers<false>(it->first.first, it->first.second);
                     page_manager.UpdatePageWatchers<false>(it->first.first, it->first.second);
                 }
+                noteReleasedOwned(it->first.first, it->first.second);
                 it = owned.erase(it);
             } else {
                 ++it;
@@ -715,6 +783,9 @@ Rasterizer::Rasterizer(AmdGpu::Liverpool* liverpool) : impl{std::make_unique<Imp
     Impl* const raw = impl.get();
     e.watchWrites = [raw](u64 a, u64 n) { raw->watch(a, n); };
     e.watchOwned = [raw](u64 a, u64 n, bool on) { raw->setOwned(a, n, on); };
+    gWatchProbeContext.store(raw, std::memory_order_release);
+    gWatchProbe.store([](void* ctx, u64 a, u64 b) { return static_cast<Impl*>(ctx)->anyWatchIn(a, b); },
+                      std::memory_order_release);
     e.start();
 }
 
@@ -723,6 +794,8 @@ Rasterizer::~Rasterizer() {
     std::scoped_lock g{e.lock};
     e.watchWrites = nullptr;
     e.watchOwned = nullptr;
+    gWatchProbe.store(nullptr, std::memory_order_release);
+    gWatchProbeContext.store(nullptr, std::memory_order_release);
 }
 
 void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
@@ -1150,29 +1223,41 @@ bool Rasterizer::ReadMemory(VAddr addr, u64 size) {
 
 bool Rasterizer::Impl::resolveOwned(VAddr addr, bool write) {
     const auto hit = ownedAt(addr);
-    if (hit.empty()) return false;
+    // (another thread resolved this page between the fault and here: the access is retried)
+    if (hit.empty()) return recentlyReleasedOwned(addr);
     Engine& e = engine();
+    bool stillAhead = false;
     {
+        // One critical section from the write back to the release (engine lock, then owned_mutex: the
+        // order setOwned takes them in): the renderer records under the engine lock, so an image cannot
+        // take the range over again between the write back and the page release, which would leave an
+        // image ahead of memory on pages the CPU can touch.
         std::scoped_lock g{e.lock};
         e.applyPending();
         if (e.renderer) {
             // (writes the images back and waits only for the frames that touch those ranges)
             for (auto [s, z] : hit) e.syncForDma(s, z);
         }
-    }
-    // (the renderer let go of the watches of what it wrote back; anything left on these ranges goes)
-    std::scoped_lock l{owned_mutex};
-    for (auto [s, z] : hit) {
-        auto it = owned.find({s, z});
-        if (it == owned.end()) continue;
-        for (u32 k = 0; k < it->second; ++k) {
-            page_manager.UpdateReadWatchers<false>(s, z);
-            page_manager.UpdatePageWatchers<false>(s, z);
+        std::scoped_lock l{owned_mutex};
+        for (auto [s, z] : hit) {
+            auto it = owned.find({s, z});
+            if (it == owned.end()) continue;
+            // An image that could not be written back yet (its kernel is still compiling) is still ahead
+            // of the memory: the pages stay protected and the access is retried.
+            if (e.renderer && e.renderer->tracker().ownerImage(s, z) != 0) {
+                stillAhead = true;
+                continue;
+            }
+            for (u32 k = 0; k < it->second; ++k) {
+                page_manager.UpdateReadWatchers<false>(s, z);
+                page_manager.UpdatePageWatchers<false>(s, z);
+            }
+            owned.erase(it);
+            noteReleasedOwned(s, z);
+            if (write) e.queueInvalidate(s, z);
         }
-        owned.erase(it);
     }
-    if (write)
-        for (auto [s, z] : hit) e.queueInvalidate(s, z);
+    if (stillAhead) std::this_thread::sleep_for(std::chrono::milliseconds(1));  // (outside the lock)
     return true;
 }
 
@@ -1206,6 +1291,9 @@ void Rasterizer::MapMemory(VAddr addr, u64 size) {
 
 void Rasterizer::UnmapMemory(VAddr addr, u64 size) {
     impl->invalidate(addr, size);
+    // The memory is gone whatever was watched there: the tracker forgets what it knew (stale owners
+    // included) and textures made from it are refilled if the range is mapped again.
+    engine().queueInvalidate(addr, size);
     impl->dropOwned(addr, size);
     impl->page_manager.OnGpuUnmap(addr, size);
     std::scoped_lock l{impl->mapped_mutex};
@@ -1242,14 +1330,30 @@ bool Rasterizer::SyncGpuWrites(VAddr addr, u64 size, bool wait) {
     std::scoped_lock g{e.lock};
     if (!e.renderer) return true;
     e.applyPending();
-    if (!e.renderer->occlusionPending(addr, size)) return true;
-    if (!wait) {
-        e.renderer->drainOcclusion(false);
-        return !e.renderer->occlusionPending(addr, size);
+    bool final = true;
+    if (e.renderer->occlusionPending(addr, size)) {
+        if (!wait) {
+            e.renderer->drainOcclusion(false);
+            final = !e.renderer->occlusionPending(addr, size);
+        } else {
+            if (e.scheduler) e.scheduler->finish();  // (submits what is recorded and waits for the GPU)
+            e.renderer->drainOcclusion(true);
+        }
     }
-    if (e.scheduler) e.scheduler->finish();  // (submits what is recorded and waits for the GPU)
-    e.renderer->drainOcclusion(true);
-    return true;
+    // The command processor reads guest memory that a label write (EOP / EOS / RELEASE_MEM) or GPU work
+    // queued earlier may still change: the same wait as a DMA read (images ahead of the memory are
+    // written back, only the frames that touch the range are waited for). Without `wait` the work that
+    // produces it is put on the GPU and the call only reports.
+    if (e.scheduler) {
+        const u64 a = addr, n = std::max<u64>(size, 1);
+        if (wait) {
+            e.syncForDma(a, n);
+        } else {
+            e.scheduler->prepareWait(a, n);
+            final = final && !e.renderer->labelPending(a, static_cast<u32>(std::min<u64>(n, ~0u)));
+        }
+    }
+    return final;
 }
 
 // ACQUIRE_MEM / SURFACE_SYNC. Metal orders GPU work itself and guest memory is unified, so a flush of
@@ -1321,6 +1425,9 @@ void Rasterizer::WriteDataOrdered(void* address, const void* data, u32 size) {
         std::scoped_lock g{e.lock};
         // After the GPU work that reads or writes this memory, and after label writes pending for it.
         if (e.scheduler) {
+            // Images ahead of this memory are written back first (and their pages released once the GPU
+            // has run that): a protected page would fault in the middle of the copy.
+            if (e.renderer) e.renderer->syncToMemory(reinterpret_cast<u64>(address), size);
             e.scheduler->syncCpu(reinterpret_cast<u64>(address), size, vp4gpu::SubmitReason::WriteData);
             std::memcpy(address, data, size);
             return;

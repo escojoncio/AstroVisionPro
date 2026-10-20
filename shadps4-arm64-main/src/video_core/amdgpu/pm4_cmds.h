@@ -1017,20 +1017,28 @@ struct PM4CmdReleaseMem {
         case DataSelect::GdsMemStore:
             gds_to_mem(Address<VAddr>(), gds_index, num_dw);
             break;
+        case DataSelect::None:
+            // Interrupt only (or nothing at all).
+            break;
         default:
-            UNREACHABLE();
+            Census::Note("pm4", "RELEASE_MEM data_sel unsupported",
+                         std::to_string(u32(data_sel.Value())));
+            break;
         }
         bool irq = false;
         switch (int_sel.Value()) {
         case InterruptSelect::None:
             break;
+        case InterruptSelect::IrqOnly:
+            [[fallthrough]];
         case InterruptSelect::IrqUndocumented:
             [[fallthrough]];
         case InterruptSelect::IrqWhenWriteConfirm:
             irq = true;
             break;
         default:
-            UNREACHABLE();
+            Census::Note("pm4", "RELEASE_MEM int_sel unsupported", std::to_string(u32(int_sel.Value())));
+            break;
         }
         if (address != nullptr || irq) {
             schedule(address, value, size, irq ? std::function<void()>(signal_irq) : std::function<void()>{});
