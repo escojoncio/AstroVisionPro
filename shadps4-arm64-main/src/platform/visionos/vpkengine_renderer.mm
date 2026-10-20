@@ -661,10 +661,21 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
     default: break;
     }
     if (regs.primitive_type == AmdGpu::PrimitiveType::None) return;
-    if (regs.stage_enable.es_en || regs.stage_enable.ls_en || regs.stage_enable.gs_en || regs.stage_enable.hs_en)
-    {
+    // Pipeline kinds: VS only, ES+GS+copy VS (run by VPKEngine as compute + a normal draw). LS/HS
+    // (tessellation), an on-chip GS and stream out are not supported: those draws are left out.
+    const bool geometry = regs.stage_enable.es_en || regs.stage_enable.gs_en;
+    if (regs.stage_enable.ls_en || regs.stage_enable.hs_en) {
         describeGeometryDraw(regs);
-        return leftOut("geometry / tessellation pipeline (ES/LS stages)");
+        return leftOut("tessellation pipeline (LS/HS stages)");
+    }
+    if (geometry) {
+        describeGeometryDraw(regs);  // (logs the first few distinct ones)
+        if (!regs.stage_enable.es_en || !regs.stage_enable.gs_en)
+            return leftOut("ES/GS stage enable combination (one of the two missing)");
+        if (regs.vgt_gs_mode.onchip) return leftOut("on-chip geometry shader");
+        if (regs.vgt_strmout_config.raw) return leftOut("geometry shader with stream out");
+        if (!regs.es_program.Address<VAddr>() || !regs.gs_program.Address<VAddr>())
+            return leftOut("geometry pipeline without an ES or GS program");
     }
 
     Engine& e = engine();
@@ -836,14 +847,34 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
     d.firstVertex = regs.index_offset;
 
     // Stages.
+    // The fetch subroutine a vertex-fetching stage (VS, or the ES of a geometry pipeline) calls.
+    auto attachFetch = [](vpps4::Stage& st) {
+        if (const u64 fa = vpps4::fetchAddress(st.code, st.userData, st.userSgprs)) {
+            const u64 bytes = readable(fa, 2048);
+            const auto* p = reinterpret_cast<const uint32_t*>(fa);
+            const size_t n = bytes >= 4 ? vpps4::fetchLength(std::span<const uint32_t>(p, bytes / 4)) : 0;
+            if (n) st.fetch = std::span<const uint32_t>(p, n);
+        }
+    };
     fillStage(d.vs, regs.vs_program);
     d.vs.vgprCompCnt = uint8_t(regs.vs_program.settings.vgpr_comp_cnt);
     d.vs.instanceStepRate = {regs.vgt_instance_step_rate_0, regs.vgt_instance_step_rate_1};
-    if (const u64 fa = vpps4::fetchAddress(d.vs.code, d.vs.userData, d.vs.userSgprs)) {
-        const u64 bytes = readable(fa, 2048);
-        const auto* p = reinterpret_cast<const uint32_t*>(fa);
-        const size_t n = bytes >= 4 ? vpps4::fetchLength(std::span<const uint32_t>(p, bytes / 4)) : 0;
-        if (n) d.vs.fetch = std::span<const uint32_t>(p, n);
+    std::memcpy(&d.vs.vsOutCntl, &regs.vs_output_control, sizeof(u32));  // PA_CL_VS_OUT_CNTL: pos1-pos3
+    if (geometry) {
+        // The program in the VS registers is the GS's copy shader (it has no fetch subroutine).
+        fillStage(d.es, regs.es_program);
+        d.es.vgprCompCnt = uint8_t(regs.es_program.settings.vgpr_comp_cnt);
+        d.es.instanceStepRate = {regs.vgt_instance_step_rate_0, regs.vgt_instance_step_rate_1};
+        attachFetch(d.es);
+        fillStage(d.gs, regs.gs_program);
+        d.geom.enabled = true;
+        d.geom.esgsItemDwords = regs.vgt_esgs_ring_itemsize;
+        d.geom.gsvsVertDwords = regs.vgt_gs_vert_itemsize[0];
+        d.geom.maxVertOut = regs.vgt_gs_max_vert_out;
+        d.geom.outPrim = u32(regs.vgt_gs_out_prim_type.GetPrimitiveType(0));
+        d.geom.gsInstances = regs.vgt_gs_instance_cnt.IsEnabled() ? u32(regs.vgt_gs_instance_cnt.count) : 1u;
+    } else {
+        attachFetch(d.vs);
     }
     if (regs.ps_program.Address<VAddr>() != 0) {
         fillStage(d.ps, regs.ps_program);

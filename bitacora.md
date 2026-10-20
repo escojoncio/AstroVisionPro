@@ -338,3 +338,6 @@ Datos de los logs del visor (Vision Pro M2), ASTRO BOT, KosmicKrisp salvo donde 
 - `AstroSettings.swift`: `msaaSamples` (clave `msaa_samples`, 4; solo acepta 1/2/4) -> `SHADPS4_MAX_MSAA`; `gameFoveation` (clave `game_foveation`, apagado) -> `SHADPS4_GAME_FOVEATION` (distinto de `foveation`, que es del compositor). `defaultFile` actualizado. `SettingsView.swift`: selector "Antialiasing del juego (MSAA)" y conmutador "Renderizado foveado (experimental)".
 - No compilado ni probado aquí (Linux): .mm y Swift sin verificar en macOS/visionOS.
 - Pendiente: `alphaToMask` queda sin cablear (el registro DB_ALPHA_TO_MASK es del área de estado); probar en visor 4x/2x/1x y foveado; el foveado y MSAA son excluyentes por pase.
+## gs: conversion de registros geometria
+- Cambio: shadps4-arm64-main/src/platform/visionos/vpkengine_renderer.mm (Rasterizer::Draw): ES/GS/copy VS -> DrawState.es/gs/vs + geom; vsOutCntl; attachFetch para ES.
+- Sin compilar (Linux). Pendiente de prueba en dispositivo.
