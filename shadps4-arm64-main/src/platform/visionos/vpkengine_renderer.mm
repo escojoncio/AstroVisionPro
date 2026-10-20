@@ -375,6 +375,13 @@ struct Engine {
             LOG_CRITICAL(Render_Vulkan, "VPKENGINE_GPU no Metal device: nothing can be drawn");
             return false;
         }
+        // What the host can sample natively decides the texture plans (BC is absent on visionOS): set before
+        // the first draw builds one.
+        {
+            vpps4::FormatCaps fc;
+            fc.bc = backend->caps().bc;
+            vpps4::setFormatCaps(fc);
+        }
         device = std::make_unique<vp4gpu::Device>(*backend, 2, [this](const std::string& l) { log(l); });
         vpps4::Hooks hooks;
         hooks.region = [](uint64_t address, uint64_t size, vpps4::GuestRegion& out) {
@@ -419,8 +426,8 @@ struct Engine {
         // backend was written for one thread that creates resources and submits.
         if (const char* t = std::getenv("VPK_SUBMIT_THREAD"); t && *t && *t != '0') device->startSubmitThread(2);
         // What vpps4 skips / approximates / cannot translate goes to the census.
-        vpps4::setReportSink([](void*, const char* cat, const char* key, const char* detail) {
-            Census::Note(cat ? cat : "vpps4", key ? key : "", detail ? detail : "");
+        vpps4::setReportSink([](void*, const char* cat, const char* key, const char* detail, u64 count) {
+            Census::NoteN(cat ? cat : "vpps4", key ? key : "", detail ? detail : "", count);
         });
         renderer = std::make_unique<vpps4::Renderer>(*device, std::move(hooks));
         renderer->setSummaryEvery(kEvery);
@@ -438,6 +445,7 @@ struct Engine {
                 LOG_INFO(Render_Vulkan, "VPKENGINE_GPU dma: {} packets without a GPU wait, {} after one (so far)",
                          dmaUnsynced, dmaSynced);
             renderer->drainOcclusion(false);  // ZPASS_DONE results of frames that finished
+            flushLeftOut();
             report();
         });
         watchdog = std::thread([this] { watchdogLoop(); });
@@ -498,16 +506,54 @@ vpps4::ColorTarget colorTarget(const AmdGpu::Regs& regs, unsigned i) {
     return c;
 }
 
-// Counts of draws left out before the renderer, by reason (logged the first time each).
+// Counts of draws left out before the renderer, by reason (logged the first time each). Reasons are
+// literals: a small table keyed by the literal's address, lock-free counters; the census gets the
+// counts once per submit (flushLeftOut).
+struct LeftOut {
+    std::atomic<const char*> why{nullptr};
+    std::atomic<u64> total{0}, reported{0};
+};
+constexpr size_t kLeftOut = 64;
+LeftOut gLeftOut[kLeftOut];
+std::atomic<size_t> gLeftOutUsed{0};
+
 void leftOut(const char* why) {
-    Census::Note("draw-skip", why);
+    size_t n = gLeftOutUsed.load(std::memory_order_acquire);
+    for (size_t i = 0; i < n; ++i)
+        if (gLeftOut[i].why.load(std::memory_order_acquire) == why) {
+            const u64 c = gLeftOut[i].total.fetch_add(1, std::memory_order_relaxed) + 1;
+            if (c == 1000 || c == 10000 || c == 100000 || c % 1000000 == 0)
+                LOG_INFO(Render_Vulkan, "VPKENGINE_GPU draws left out: {} x{}", why, c);
+            return;
+        }
+    // A reason not seen yet (or the table raced): claim a slot under a lock, once per reason.
     static std::mutex m;
-    static std::map<std::string, u64> counts;
     std::scoped_lock l{m};
-    const u64 n = ++counts[why];
-    if (n == 1) LOG_INFO(Render_Vulkan, "VPKENGINE_GPU first draw left out: {}", why);
-    else if (n == 1000 || n == 10000 || n == 100000 || n % 1000000 == 0)
-        LOG_INFO(Render_Vulkan, "VPKENGINE_GPU draws left out: {} x{}", why, n);
+    n = gLeftOutUsed.load(std::memory_order_acquire);
+    for (size_t i = 0; i < n; ++i)
+        if (gLeftOut[i].why.load(std::memory_order_acquire) == why) {
+            gLeftOut[i].total.fetch_add(1, std::memory_order_relaxed);
+            return;
+        }
+    if (n == kLeftOut) {  // (full: counted the slow way, straight to the census)
+        Census::Note("draw-skip", why);
+        return;
+    }
+    gLeftOut[n].total.store(1, std::memory_order_relaxed);
+    gLeftOut[n].why.store(why, std::memory_order_release);
+    gLeftOutUsed.store(n + 1, std::memory_order_release);
+    LOG_INFO(Render_Vulkan, "VPKENGINE_GPU first draw left out: {}", why);
+}
+
+// The reasons counted since the last call, to the census in one add each.
+void flushLeftOut() {
+    const size_t n = gLeftOutUsed.load(std::memory_order_acquire);
+    for (size_t i = 0; i < n; ++i) {
+        LeftOut& e = gLeftOut[i];
+        const u64 t = e.total.load(std::memory_order_relaxed);
+        const u64 r = e.reported.exchange(t, std::memory_order_relaxed);
+        if (t > r) Census::NoteN("draw-skip", e.why.load(std::memory_order_acquire), {}, t - r);
+    }
 }
 
 // Context registers the draw path reads (everything else that is set away from its reset value is
@@ -794,6 +840,8 @@ Rasterizer::~Rasterizer() {
     std::scoped_lock g{e.lock};
     e.watchWrites = nullptr;
     e.watchOwned = nullptr;
+    if (e.renderer) e.renderer->flushReports();
+    flushLeftOut();
     gWatchProbe.store(nullptr, std::memory_order_release);
     gWatchProbeContext.store(nullptr, std::memory_order_release);
 }
@@ -940,11 +988,15 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
 
     // Rasterizer state.
     const auto& vp = regs.viewports[0];
-    // PA_CL_VTE_CNTL: a transform that is switched off is the identity (scale 1, offset 0).
+    // PA_CL_VTE_CNTL: a transform that is switched off is the identity (scale 1, offset 0). With the x / y
+    // scale off the vertices are already screen coordinates: the renderer then maps the whole target
+    // (vpps4::Viewport::xScreen / yScreen), not a 2x2 viewport.
     const auto& vte = regs.viewport_control;
     d.viewport = {vte.xscale_enable ? vp.xscale : 1.0f, vte.xoffset_enable ? vp.xoffset : 0.0f,
                   vte.yscale_enable ? vp.yscale : 1.0f, vte.yoffset_enable ? vp.yoffset : 0.0f,
                   vte.zscale_enable ? vp.zscale : 1.0f, vte.zoffset_enable ? vp.zoffset : 0.0f};
+    d.viewport.xScreen = !vte.xscale_enable;
+    d.viewport.yScreen = !vte.yscale_enable;
     // Scissors: screen, window and generic (the last two shifted by the window offset), and the
     // viewport scissor when enabled; combined by the renderer.
     {
@@ -963,6 +1015,7 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
         sr.windowOffsetX = regs.window_offset.window_x_offset;
         sr.windowOffsetY = regs.window_offset.window_y_offset;
         sr.windowOffsetDisable = regs.window_scissor.window_offset_disable;
+        sr.genericOffsetDisable = regs.generic_scissor.window_offset_disable;
         sr.viewportScissorEnable = regs.mode_control.vport_scissor_enable;
     }
     vpps4::Raster& ra = d.raster;
@@ -974,6 +1027,14 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
     ra.offsetBack = regs.polygon_control.enable_polygon_offset_back;
     ra.offsetPara = regs.polygon_control.enable_polygon_offset_para;
     ra.offsetClamp = regs.poly_offset.depth_bias;
+    // DB_FMT_CNTL: NEG_NUM_DB_BITS (signed byte, minus the depth bits) and DB_IS_FLOAT_FMT. A zero register
+    // (never written) leaves the unit to the depth target's format.
+    if (const u32 fmt = regs.poly_offset.db_fmt_cntl) {
+        const int bits = -int(int8_t(fmt & 0xFF));
+        ra.dbFmtValid = bits > 0 && bits <= 32;
+        ra.dbBits = uint8_t(ra.dbFmtValid ? bits : 24);
+        ra.dbIsFloat = (fmt >> 8) & 1;
+    }
     ra.frontScale = regs.poly_offset.front_scale;
     ra.frontOffset = regs.poly_offset.front_offset;
     ra.backScale = regs.poly_offset.back_scale;

@@ -35,6 +35,7 @@ struct Table {
     std::atomic<Sink> sink{nullptr};
     std::atomic<unsigned> period{10};
     std::atomic<bool> started{false};
+    std::atomic<bool> closed{false}; // Shutdown() ran: no more summaries
     std::mutex flushLock;
     uint64_t printedOverflow = 0; // under flushLock
 };
@@ -69,7 +70,9 @@ void emit(std::string_view text) {
 }
 
 void startBackground() {
-    std::atexit([] { Flush(true); });
+    std::atexit([] {
+        if (!table().closed.load(std::memory_order_acquire)) Flush(true);
+    });
     std::thread([] {
         unsigned waited = 0;
         for (;;) {
@@ -79,6 +82,7 @@ void startBackground() {
                 waited = 0;
                 continue;
             }
+            if (table().closed.load(std::memory_order_acquire)) return;
             if (++waited >= period) {
                 waited = 0;
                 Flush(false);
@@ -98,6 +102,11 @@ void SetPeriodSeconds(unsigned seconds) {
 }
 
 void Note(std::string_view category, std::string_view key, std::string_view detail) {
+    NoteN(category, key, detail, 1);
+}
+
+void NoteN(std::string_view category, std::string_view key, std::string_view detail, uint64_t count) {
+    if (count == 0) return;
     Table& t = table();
     if (category.size() >= kCategoryBytes) category = category.substr(0, kCategoryBytes - 1);
     if (key.size() >= kKeyBytes) key = key.substr(0, kKeyBytes - 1);
@@ -116,7 +125,7 @@ void Note(std::string_view category, std::string_view key, std::string_view deta
                 copyCut(s.key, kKeyBytes, key);
                 copyCut(s.detail, kDetailBytes, detail);
                 s.state.store(2, std::memory_order_release);
-                s.count.fetch_add(1, std::memory_order_relaxed);
+                s.count.fetch_add(count, std::memory_order_relaxed);
                 return;
             }
             st = expected;
@@ -126,11 +135,17 @@ void Note(std::string_view category, std::string_view key, std::string_view deta
             st = s.state.load(std::memory_order_acquire);
         }
         if (s.hash == h && category == s.category && key == s.key) {
-            s.count.fetch_add(1, std::memory_order_relaxed);
+            s.count.fetch_add(count, std::memory_order_relaxed);
             return;
         }
     }
-    t.overflow.fetch_add(1, std::memory_order_relaxed);
+    t.overflow.fetch_add(count, std::memory_order_relaxed);
+}
+
+void Shutdown() {
+    Table& t = table();
+    if (t.closed.exchange(true, std::memory_order_acq_rel)) return;
+    Flush(true);
 }
 
 std::vector<Entry> Snapshot() {
@@ -155,6 +170,7 @@ uint64_t Overflowed() {
 void Flush(bool all) {
     Table& t = table();
     std::scoped_lock lock{t.flushLock};
+    if (!all && t.closed.load(std::memory_order_acquire)) return;
     struct Row {
         Slot* slot;
         uint64_t count, delta;
@@ -208,6 +224,7 @@ void ResetForTests() {
     }
     t.overflow.store(0);
     t.printedOverflow = 0;
+    t.closed.store(false);
 }
 
 } // namespace Census
