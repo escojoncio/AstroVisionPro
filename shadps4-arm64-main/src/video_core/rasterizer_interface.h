@@ -85,11 +85,24 @@ public:
             then();
         }
     }
-    /// A WAIT_REG_MEM is about to poll `address`: whatever produces its value (recorded work, a
-    /// pending label write) is put on the GPU now. Never waits.
-    virtual void PrepareLabelWait(const void* address, u32 size) {
+    /// A WAIT_REG_MEM (function/ref/mask as in PM4) is about to poll `address`: whatever produces its
+    /// value (recorded work, a pending label write) is put on the GPU now. Never waits. Returns true
+    /// when the wait is already satisfied in GPU order (a label write queued behind work recorded on the
+    /// same in-order queue gives the value): the command processor must not poll, it just goes on.
+    virtual bool PrepareLabelWait(const void* address, u32 size, u32 function, u32 ref, u32 mask) {
         (void)address;
         (void)size;
+        (void)function;
+        (void)ref;
+        (void)mask;
+        return false;
+    }
+    /// A WAIT_REG_MEM poll found nothing yet: blocks briefly on the GPU frame that produces the value
+    /// (true), or returns false when no GPU work is involved (the caller sleeps a little itself).
+    virtual bool IdleLabelWait(const void* address, u32 size) {
+        (void)address;
+        (void)size;
+        return false;
     }
     /// IT_WRITE_DATA to memory: ordered with the GPU work that reads or writes that memory (and
     /// with label writes pending for it).

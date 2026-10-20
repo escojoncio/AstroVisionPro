@@ -2,8 +2,10 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <algorithm>
+#include <chrono>
 #include <cstring>
 #include <mutex>
+#include <thread>
 
 #include <boost/preprocessor/stringize.hpp>
 #include <magic_enum/magic_enum.hpp>
@@ -62,6 +64,20 @@ static void ScheduleLabel(VideoCore::RasterizerInterface* rasterizer, void* addr
     if (then) {
         then();
     }
+}
+
+/// A WAIT_REG_MEM keeps failing: after a short spin the thread blocks on the GPU frame that makes
+/// the value (or sleeps briefly when nothing on the GPU does) instead of burning the core; the
+/// other queues still run between looks (the caller yields).
+static void WaitRegMemIdle(VideoCore::RasterizerInterface* rasterizer,
+                           const PM4CmdWaitRegMem* wait, u64 looks) {
+    if (looks < 64 || wait->mem_space.Value() != PM4CmdWaitRegMem::MemSpace::Memory) {
+        return;
+    }
+    if (rasterizer && rasterizer->IdleLabelWait(wait->Address<const void*>(), 4)) {
+        return;
+    }
+    std::this_thread::sleep_for(std::chrono::microseconds{looks < 4096 ? 20 : 200});
 }
 
 /// The command processor is about to read guest memory [address, +size): a label write that the
@@ -1695,12 +1711,16 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                     vo_port->WaitVoLabel([&] { return wait_reg_mem->Test(regs.reg_array); });
                     break;
                 }
+                bool gpu_order_met = false;
                 if (wait_reg_mem->mem_space.Value() == PM4CmdWaitRegMem::MemSpace::Memory &&
                     !wait_reg_mem->Test(regs.reg_array)) {
                     // What produces the value (recorded work, a label write waiting for it) must be
                     // on the GPU before polling, or this waits for work nobody has started.
                     if (rasterizer) {
-                        rasterizer->PrepareLabelWait(wait_reg_mem->Address<const void*>(), 4);
+                        gpu_order_met = rasterizer->PrepareLabelWait(
+                            wait_reg_mem->Address<const void*>(), 4,
+                            static_cast<u32>(wait_reg_mem->function.Value()), wait_reg_mem->ref,
+                            wait_reg_mem->mask);
                     }
                     Libraries::Hmd::SatisfyReprojectionLabelWait(
                         wait_reg_mem->Address<u32*>(),
@@ -1709,9 +1729,10 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                 }
                 u64 wait_iterations = 0;
                 u64 label_looks = 0;
-                while (!wait_reg_mem->Test(regs.reg_array)) {
+                while (!gpu_order_met && !wait_reg_mem->Test(regs.reg_array)) {
+                    WaitRegMemIdle(rasterizer, wait_reg_mem, label_looks);
                     // The frame the label belongs to may be handed over after the wait began.
-                    if ((++label_looks & 0x3ff) == 0 &&
+                    if ((++label_looks & 0x3f) == 0 &&
                         wait_reg_mem->mem_space.Value() == PM4CmdWaitRegMem::MemSpace::Memory) {
                         Libraries::Hmd::SatisfyReprojectionLabelWait(
                             wait_reg_mem->Address<u32*>(),
@@ -2137,10 +2158,14 @@ Liverpool::Task Liverpool::ProcessCompute(std::span<const u32> acb, u32 vqid) {
                 LOG_ERROR(Lib_GnmDriver, "ASC IT_WAIT_REG_MEM null address — skipping");
                 break;
             }
+            bool gpu_order_met = false;
             if (wait_reg_mem->mem_space.Value() == PM4CmdWaitRegMem::MemSpace::Memory &&
                 !wait_reg_mem->Test(regs.reg_array)) {
                 if (rasterizer) {
-                    rasterizer->PrepareLabelWait(wait_reg_mem->Address<const void*>(), 4);
+                    gpu_order_met = rasterizer->PrepareLabelWait(
+                        wait_reg_mem->Address<const void*>(), 4,
+                        static_cast<u32>(wait_reg_mem->function.Value()), wait_reg_mem->ref,
+                        wait_reg_mem->mask);
                 }
                 Libraries::Hmd::SatisfyReprojectionLabelWait(
                     wait_reg_mem->Address<u32*>(), static_cast<u32>(wait_reg_mem->function.Value()),
@@ -2148,8 +2173,9 @@ Liverpool::Task Liverpool::ProcessCompute(std::span<const u32> acb, u32 vqid) {
             }
             u64 wait_iterations = 0;
             u64 label_looks = 0;
-            while (!wait_reg_mem->Test(regs.reg_array)) {
-                if ((++label_looks & 0x3ff) == 0 &&
+            while (!gpu_order_met && !wait_reg_mem->Test(regs.reg_array)) {
+                WaitRegMemIdle(rasterizer, wait_reg_mem, label_looks);
+                if ((++label_looks & 0x3f) == 0 &&
                     wait_reg_mem->mem_space.Value() == PM4CmdWaitRegMem::MemSpace::Memory) {
                     Libraries::Hmd::SatisfyReprojectionLabelWait(
                         wait_reg_mem->Address<u32*>(),
