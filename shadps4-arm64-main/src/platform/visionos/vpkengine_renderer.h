@@ -12,6 +12,7 @@
 
 #include <array>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <span>
 #include <string_view>
@@ -61,6 +62,10 @@ public:
     void CpSync() override {}
     u64 Flush() override;
     void Finish() override;
+    void SyncGds() override;
+    void ScheduleLabelWrite(void* address, u64 value, u32 size, std::function<void()> then) override;
+    void PrepareLabelWait(const void* address, u32 size) override;
+    void WriteDataOrdered(void* address, const void* data, u32 size) override;
     void OnSubmit() override {}
 
     struct Impl;

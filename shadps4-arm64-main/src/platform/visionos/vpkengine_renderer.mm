@@ -19,6 +19,7 @@
 #include <set>
 #include <span>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include <fmt/ranges.h>
@@ -37,6 +38,8 @@
 #include "vpps4/fetch.h"
 #include "vpps4/formats.h"
 #include "vpps4/renderer.h"
+#include "vpps4/scheduler.h"
+#include "vp4gpu/core/submit_policy.h"
 
 namespace VpkengineRenderer {
 namespace {
@@ -201,6 +204,12 @@ struct Engine {
     std::unique_ptr<vp4gpu::metal::MetalBackend> backend;
     std::unique_ptr<vp4gpu::Device> device;
     std::unique_ptr<vpps4::Renderer> renderer;
+    // When recorded work goes to the GPU, and how DMA / GDS / labels stay ordered with it.
+    std::unique_ptr<vpps4::Scheduler> scheduler;
+    // Watchdog: submits recorded work that nothing else asked for once the policy says so (a label
+    // waiting too long, a frame open too long). Takes `lock`, sleeps on watchCv.
+    std::thread watchdog;
+    std::condition_variable watchCv;
     std::atomic<u64> submits{0};
     std::atomic<unsigned> errorLines{0};
     // Set by the rasterizer: page watches (renderer hooks watchWrites / watchOwned).
@@ -240,9 +249,7 @@ struct Engine {
     // CPU time of the GPU thread, in ns, printed every ~2 s (VPKENGINE_GPU cpu:). Atomics: the
     // presenter submits too, and draw timers stop after the engine lock is released.
     using Clock = std::chrono::steady_clock;
-    enum Wait : unsigned { WaitDma, WaitGds, WaitFinish, WaitKinds };
-    std::atomic<u64> adapterNs{0}, adapterCalls{0}, submitNs{0}, dmaSubmits{0};
-    std::array<std::atomic<u64>, WaitKinds> waitNs{}, waits{};
+    std::atomic<u64> adapterNs{0}, adapterCalls{0};
     Clock::time_point lastReport = Clock::now();
     Clock::time_point lastSpanClear = Clock::now();
     static u64 nsSince(Clock::time_point t) {
@@ -253,34 +260,34 @@ struct Engine {
         Clock::time_point t0 = Clock::now();
         ~Timer() { to.fetch_add(nsSince(t0), std::memory_order_relaxed); }
     };
-    // Waits for every submitted frame (the caller submitted first when it needs recorded work too).
-    void waitGpu(Wait why) {
-        const auto t0 = Clock::now();
-        backend->waitIdle();
-        waitNs[why].fetch_add(nsSince(t0), std::memory_order_relaxed);
-        waits[why].fetch_add(1, std::memory_order_relaxed);
+    static double msNow() {
+        return std::chrono::duration<double, std::milli>(Clock::now().time_since_epoch()).count();
     }
-    // CPU-side DMA over guest [a, +n) (and [b, +m)): waits only when GPU work may touch it, and
-    // submits first only when the overlap is in work not submitted yet.
+    // Work was recorded: the watchdog learns when the frame opened.
+    void noteWork() {
+        if (scheduler && scheduler->noteWork()) watchCv.notify_one();
+    }
+    // CPU-side DMA over guest [a, +n) (and [b, +m)): waits only for the frames that touch it (a partial
+    // fence), submitting the recorded frame first only when the overlap is in it.
     void syncForDma(u64 a, u64 n, u64 b = 0, u64 m = 0) {
         // Images ahead of the memory the CPU is about to read or write are written back first (the
         // copies it records count as queued GPU work on those ranges: submitted and waited for below).
         const bool written = renderer->syncToMemory(a, n);
         const bool writtenB = m && renderer->syncToMemory(b, m);
-        const bool any = written || writtenB || renderer->gpuMayAccess(a, n) || (m && renderer->gpuMayAccess(b, m));
-        if (!any) {
-            ++dmaUnsynced;
-            return;
-        }
-        ++dmaSynced;
-        if (renderer->recordedMayAccess(a, n) || (m && renderer->recordedMayAccess(b, m))) {
-            ++dmaSubmits;
-            submit();
-            waitGpu(WaitDma);
-            renderer->gpuIdle();
-        } else {
-            waitGpu(WaitDma);
-            renderer->submittedIdle();  // (work recorded since keeps its ranges)
+        if (scheduler->syncCpu(a, n, vp4gpu::SubmitReason::Dma, b, m) || written || writtenB) ++dmaSynced;
+        else ++dmaUnsynced;
+    }
+    void watchdogLoop() {
+        std::unique_lock l{lock};
+        for (;;) {
+            const double next = scheduler ? scheduler->nextCheckMs() : -1.0;
+            if (next < 0) {
+                watchCv.wait(l);
+            } else if (next > 0) {
+                watchCv.wait_for(l, std::chrono::microseconds(u64(next * 1000.0) + 100));
+            } else if (!scheduler->tick()) {
+                watchCv.wait_for(l, std::chrono::milliseconds(1));
+            }
         }
     }
     void report() {
@@ -290,19 +297,16 @@ struct Engine {
         const vpps4::CpuTimes t = renderer->takeCpuTimes();
         auto msps = [&](u64 ns) { return double(ns) / 1e6 / s; };
         auto take = [](std::atomic<u64>& a) { return a.exchange(0, std::memory_order_relaxed); };
-        const u64 calls = take(adapterCalls), adapter = take(adapterNs), sub = take(submitNs);
-        const u64 wd = take(waitNs[WaitDma]), wg = take(waitNs[WaitGds]), wf = take(waitNs[WaitFinish]);
-        const u64 nd = take(waits[WaitDma]), ng = take(waits[WaitGds]), nf = take(waits[WaitFinish]);
+        const u64 calls = take(adapterCalls), adapter = take(adapterNs);
         LOG_INFO(Render_Vulkan,
                  "VPKENGINE_GPU cpu: draw_adapter {:.1f} ms/s, vpps4.draw {:.1f}, shader lookup {:.1f}, bind {:.1f}, "
-                 "pipeline request {:.1f}, frame compile+submit {:.1f} (vpps4 {:.1f}; {:.0f} submits/s, {:.0f} empty/s), "
-                 "dma_wait {:.1f} ({:.0f}/s, {:.0f} with submit/s), gds_wait {:.1f} ({:.0f}/s), finish_wait {:.1f} ({:.0f}/s), "
+                 "pipeline request {:.1f}, frame compile+submit {:.1f} ({:.0f} submits/s, {:.0f} empty/s), "
                  "draws {:.0f}/s, per-draw {:.2f} us adapter / {:.2f} us vpps4, user data reused {:.0f}/s",
-                 msps(adapter), t.drawMs / s, t.shaderMs / s, t.bindMs / s, t.pipelineMs / s, msps(sub),
-                 t.submitMs / s, double(t.submits) / s, double(t.emptySubmits) / s, msps(wd), double(nd) / s,
-                 double(take(dmaSubmits)) / s, msps(wg), double(ng) / s, msps(wf), double(nf) / s, double(calls) / s,
+                 msps(adapter), t.drawMs / s, t.shaderMs / s, t.bindMs / s, t.pipelineMs / s, t.submitMs / s,
+                 double(t.submits) / s, double(t.emptySubmits) / s, double(calls) / s,
                  calls ? double(adapter) / 1e3 / double(calls) : 0.0, t.calls ? t.drawMs * 1e3 / double(t.calls) : 0.0,
                  double(t.userDataReused) / s);
+        if (scheduler) LOG_INFO(Render_Vulkan, "VPKENGINE_GPU {}", scheduler->takeSummary());
     }
 
     static constexpr u64 kEvery = 120;  // per-frame lines of the core every kEvery submits
@@ -319,10 +323,11 @@ struct Engine {
 
     bool start() {
         if (renderer || failed) return renderer != nullptr;
-        // Liverpool submits ~15 command buffers per presented frame: with only 3 in flight the CPU
-        // blocked on the GPU's latency every few submits. vpps4's upload rings (8) cover 6 + 1.
+        // One GPU frame per presented picture (vpps4::Scheduler accumulates the ~15 Liverpool command
+        // buffers of a picture), so two frames in flight (the headset's compose included) are enough and
+        // bound the latency; vpps4's upload rings (8) cover them.
         vp4gpu::metal::MetalOptions options;
-        options.framesInFlight = 6;
+        options.framesInFlight = 2;
         // What the engine keeps between runs, in the cache folder the app points the emulator at
         // (the VPS4 folder's Cachés), one folder per game: the Metal pipeline archive, the
         // translated shaders and the list of pipelines built (compiled ahead at the next start).
@@ -376,8 +381,28 @@ struct Engine {
             return backend->createView(r.base, d);
         };
         hooks.destroyView = [this](vp4gpu::TextureId v) { backend->destroyView(v); };
+        // Opt-in (VPK_SUBMIT_THREAD=1): frame encoding on its own thread. Not on by default: the Metal
+        // backend was written for one thread that creates resources and submits.
+        if (const char* t = std::getenv("VPK_SUBMIT_THREAD"); t && *t && *t != '0') device->startSubmitThread(2);
         renderer = std::make_unique<vpps4::Renderer>(*device, std::move(hooks));
         renderer->setSummaryEvery(kEvery);
+        scheduler = std::make_unique<vpps4::Scheduler>(*renderer, *device, vp4gpu::SubmitPolicy{}, [] { return msNow(); });
+        scheduler->setSubmitHook([this] {
+            ++submits;
+            // Guest mappings can change without Map/UnmapMemory (a munmap or protection change of
+            // the title's): spans are looked up again (vm_region syscalls, tens per span). Once per
+            // ~8 ms rather than at each submit.
+            if (nsSince(lastSpanClear) > 8'000'000) {
+                spanCache().clear();
+                lastSpanClear = Clock::now();
+            }
+            if (submits % kEvery == 1)
+                LOG_INFO(Render_Vulkan, "VPKENGINE_GPU dma: {} packets without a GPU wait, {} after one (so far)",
+                         dmaUnsynced, dmaSynced);
+            report();
+        });
+        watchdog = std::thread([this] { watchdogLoop(); });
+        watchdog.detach();
         // MSAA: the game's targets keep their sample count up to the app's limit (SHADPS4_MAX_MSAA,
         // 1/2/4, default 4; Apple GPUs stop at 4). 1 turns it off: the targets become single-sample
         // and the game's resolves become copies. Foveation (SHADPS4_GAME_FOVEATION=1, default off)
@@ -393,25 +418,9 @@ struct Engine {
         return true;
     }
 
-    // Ends the frame recorded so far (one Liverpool submit).
-    void submit() {
-        if (!renderer) return;
-        ++submits;
-        // Guest mappings can change without Map/UnmapMemory (a munmap or protection change of
-        // the title's): spans are looked up again (vm_region syscalls, tens per span). Once per
-        // ~8 ms rather than at each of the ~15 Liverpool submits of a frame.
-        if (nsSince(lastSpanClear) > 8'000'000) {
-            spanCache().clear();
-            lastSpanClear = Clock::now();
-        }
-        if (submits % kEvery == 1)
-            LOG_INFO(Render_Vulkan, "VPKENGINE_GPU dma: {} packets without a GPU wait, {} after one (so far)", dmaUnsynced,
-                     dmaSynced);
-        {
-            Timer t{submitNs};
-            renderer->submit();
-        }
-        report();
+    // Hands the recorded work to the GPU now (the picture is presented).
+    void present() {
+        if (scheduler) scheduler->present();
     }
 };
 
@@ -687,6 +696,7 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
         if (!e.start()) return;
         e.applyPending();
         e.renderer->resolve(colorTarget(regs, 0), colorTarget(regs, 1));
+        e.noteWork();
         return;
     }
     default: break;
@@ -937,6 +947,7 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
         else d.count = 1;
     }
     e.renderer->draw(d);
+    e.noteWork();
 }
 
 void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u32 size, u32 max_count,
@@ -993,6 +1004,7 @@ void Rasterizer::Dispatch(VAddr indirect) {
     d.groups = {cs.dim_x, cs.dim_y, cs.dim_z};
     d.indirectAddress = indirect;
     e.renderer->dispatch(d);
+    e.noteWork();
 }
 
 void Rasterizer::FillBuffer(VAddr address, u32 num_bytes, u32 value, bool is_gds) {
@@ -1001,10 +1013,8 @@ void Rasterizer::FillBuffer(VAddr address, u32 num_bytes, u32 value, bool is_gds
     if (!e.start()) return;
     e.applyPending();
     if (is_gds) {
-        // GDS is ours and CPU-visible: the GPU's earlier work is finished first.
-        e.submit();
-        e.waitGpu(Engine::WaitGds);
-        e.renderer->gpuIdle();
+        // GDS is ours and CPU-visible: the GPU work that uses it is finished first (and only that).
+        e.scheduler->syncGds();
         if (u32* gds = e.renderer->gds(); gds && address < 0x10000) {
             const u32 n = std::min<u32>(num_bytes, 0x10000 - u32(address)) / 4;
             std::fill_n(gds + address / 4, n, value);
@@ -1021,6 +1031,7 @@ void Rasterizer::FillBuffer(VAddr address, u32 num_bytes, u32 value, bool is_gds
     // (a range the probe cannot vouch for, e.g. across its window, keeps the GPU blit)
     if (readable(address, num_bytes) < num_bytes) {
         e.renderer->fill(address, num_bytes, value);
+        e.noteWork();
         return;
     }
     auto* p = reinterpret_cast<u8*>(address);
@@ -1036,9 +1047,7 @@ void Rasterizer::CopyBuffer(VAddr dst, VAddr src, u32 num_bytes, bool dst_gds, b
     if (!e.start()) return;
     e.applyPending();
     if (dst_gds || src_gds) {
-        e.submit();
-        e.waitGpu(Engine::WaitGds);
-        e.renderer->gpuIdle();
+        e.scheduler->syncGds();
         u32* gds = e.renderer->gds();
         if (!gds) return;
         auto* gb = reinterpret_cast<u8*>(gds);
@@ -1058,6 +1067,7 @@ void Rasterizer::CopyBuffer(VAddr dst, VAddr src, u32 num_bytes, bool dst_gds, b
     e.syncForDma(src, num_bytes, dst, num_bytes);
     if (readable(src, num_bytes) < num_bytes || readable(dst, num_bytes) < num_bytes) {
         e.renderer->copy(dst, src, num_bytes);
+        e.noteWork();
         return;
     }
     std::memmove(reinterpret_cast<void*>(dst), reinterpret_cast<const void*>(src), num_bytes);
@@ -1094,10 +1104,8 @@ bool Rasterizer::Impl::resolveOwned(VAddr addr, bool write) {
         std::scoped_lock g{e.lock};
         e.applyPending();
         if (e.renderer) {
-            for (auto [s, z] : hit) e.renderer->syncToMemory(s, z);
-            e.submit();
-            e.waitGpu(Engine::WaitDma);
-            e.renderer->submittedIdle();
+            // (writes the images back and waits only for the frames that touch those ranges)
+            for (auto [s, z] : hit) e.syncForDma(s, z);
         }
     }
     // (the renderer let go of the watches of what it wrote back; anything left on these ranges goes)
@@ -1170,7 +1178,10 @@ u64 Rasterizer::Flush() {
     Engine& e = engine();
     std::scoped_lock g{e.lock};
     e.applyPending();
-    e.submit();
+    // A Liverpool command buffer batch ended (SubmitDone, ~15 a picture): the work stays recorded
+    // and joins the picture's frame, which goes to the GPU when it is presented, when the CPU needs
+    // it (DMA, GDS, a label wait) or when the policy says it has waited long enough (labels).
+    if (e.scheduler) e.scheduler->flush();
     return e.submits.load();
 }
 
@@ -1178,9 +1189,52 @@ void Rasterizer::Finish() {
     Engine& e = engine();
     std::scoped_lock g{e.lock};
     e.applyPending();
-    e.submit();
-    if (e.backend) e.waitGpu(Engine::WaitFinish);
-    if (e.renderer) e.renderer->gpuIdle();
+    if (e.scheduler) e.scheduler->finish();
+}
+
+void Rasterizer::SyncGds() {
+    Engine& e = engine();
+    std::scoped_lock g{e.lock};
+    e.applyPending();
+    if (e.scheduler) e.scheduler->syncGds();
+}
+
+void Rasterizer::ScheduleLabelWrite(void* address, u64 value, u32 size, std::function<void()> then) {
+    Engine& e = engine();
+    std::scoped_lock g{e.lock};
+    if (!e.scheduler) {  // no GPU work can exist
+        if (address) VideoCore::WriteGuestLabel(address, value, size);
+        if (then) then();
+        return;
+    }
+    // Written (and the interrupt raised) once the GPU has finished the work recorded so far: on
+    // Metal's completion thread, or at once if there is none outstanding.
+    e.scheduler->scheduleLabel(reinterpret_cast<u64>(address), address ? size : 0, bool(then),
+                               [address, value, size, then = std::move(then)] {
+                                   if (address) VideoCore::WriteGuestLabel(address, value, size);
+                                   if (then) then();
+                               });
+    e.watchCv.notify_one();  // (a label is waiting: the watchdog's deadline changed)
+}
+
+void Rasterizer::PrepareLabelWait(const void* address, u32 size) {
+    Engine& e = engine();
+    std::scoped_lock g{e.lock};
+    if (e.scheduler) e.scheduler->prepareWait(reinterpret_cast<u64>(address), size);
+}
+
+void Rasterizer::WriteDataOrdered(void* address, const void* data, u32 size) {
+    Engine& e = engine();
+    {
+        std::scoped_lock g{e.lock};
+        // After the GPU work that reads or writes this memory, and after label writes pending for it.
+        if (e.scheduler) {
+            e.scheduler->syncCpu(reinterpret_cast<u64>(address), size, vp4gpu::SubmitReason::WriteData);
+            std::memcpy(address, data, size);
+            return;
+        }
+    }
+    std::memcpy(address, data, size);
 }
 
 // ---- Presenter ----------------------------------------------------------------------------------
@@ -1299,7 +1353,14 @@ struct PresentState {
     static id<MTLTexture> textureOf(Engine& e, const vpps4::ImageDesc& d) {
         const vp4gpu::TextureId tid = e.renderer->textureFor(d);
         if (!tid) return nil;
-        return (__bridge id<MTLTexture>)e.backend->nativeTexture(tid);
+        return nativeTexture(e, tid);
+    }
+
+    // The Metal texture of `tid` (with the submit thread, if there is one, kept out of the backend meanwhile).
+    static id<MTLTexture> nativeTexture(Engine& e, vp4gpu::TextureId tid) {
+        void* native = nullptr;
+        e.device->withBackend([&] { native = e.backend->nativeTexture(tid); });
+        return (__bridge id<MTLTexture>)native;
     }
 
     // Draws `regions` into a new headset frame of width x height; -1 if the host has none free.
@@ -1315,7 +1376,11 @@ struct PresentState {
         id<MTLTexture> out = (__bridge id<MTLTexture>)target_texture;
         id<MTLRenderPipelineState> pso = pipeline;
         std::vector<Region> list(regions.begin(), regions.end());
-        const bool queued = e.backend->encodeInterop(
+        // The compose command buffer goes after the frames submitted before it: with the submit thread,
+        // they must have reached the backend.
+        e.device->drain();
+        bool queued = false;
+        e.device->withBackend([&] { queued = e.backend->encodeInterop(
             [&](void* cbp) {
                 id<MTLCommandBuffer> cb = (__bridge id<MTLCommandBuffer>)cbp;
                 MTLRenderPassDescriptor* rp = [MTLRenderPassDescriptor renderPassDescriptor];
@@ -1344,7 +1409,7 @@ struct PresentState {
                 std::scoped_lock l{done_mutex};
                 done[slot] = true;
                 done_cv.notify_all();
-            });
+            }); });
         if (!queued) {
             VpkengineXr::Drop(target_index);
             return -1;
@@ -1386,7 +1451,7 @@ int ComposeEyes(std::span<const AmdGpu::Image, 2> eye_textures, const Core::Vr::
                                                  ? vp4gpu::TextureId{}
                                                  : e.renderer->colorTargetSlice(d.address, d.width, d.height, slice);
         if (arrayTarget) {
-            id<MTLTexture> t = (__bridge id<MTLTexture>)e.backend->nativeTexture(arrayTarget);
+            id<MTLTexture> t = nativeTexture(e, arrayTarget);
             eyes[k] = t && t.textureType == MTLTextureType2DArray && slice < t.arrayLength
                           ? [t newTextureViewWithPixelFormat:t.pixelFormat
                                                  textureType:MTLTextureType2D
@@ -1415,7 +1480,7 @@ int ComposeEyes(std::span<const AmdGpu::Image, 2> eye_textures, const Core::Vr::
                      e.renderer->describeAt(d.address, u64(std::max(d.pitch, d.width)) * d.height * 4));
     }
     // The eyes' drawing is submitted first: the composition runs after it on the same queue.
-    e.submit();
+    e.present();
     if (!eyes[0] || !eyes[1]) {
         static std::atomic<u32> told{0};
         if (told++ < 4)
@@ -1491,7 +1556,7 @@ int ComposeScreen(const Libraries::VideoOut::BufferAttributeGroup& group, VAddr 
     d.tilingIndex = tiled ? 10 : 8;
     d.type = 9;
     id<MTLTexture> t = PresentState::plain(PresentState::textureOf(e, d));
-    e.submit();
+    e.present();
     fov = impl->last_fov;
     eye_width = impl->last_eye_width ? impl->last_eye_width : 1440;
     eye_height = impl->last_eye_height ? impl->last_eye_height : 1536;
@@ -1514,7 +1579,7 @@ int ComposeTexture(const AmdGpu::Image& texture, Core::Vr::Fov& fov, u32& eye_wi
     std::memcpy(words.data(), &texture, std::min(sizeof words, sizeof(AmdGpu::Image)));
     const vpps4::ImageDesc d = vpps4::decodeImage(words);
     id<MTLTexture> t = PresentState::plain(PresentState::textureOf(e, d));
-    e.submit();
+    e.present();
     fov = impl->last_fov;
     eye_width = impl->last_eye_width ? impl->last_eye_width : 1440;
     eye_height = impl->last_eye_height ? impl->last_eye_height : 1536;

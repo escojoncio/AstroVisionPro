@@ -17,8 +17,9 @@ struct AstroSettings {
     /// The emulator's dynamic resolution is never used: the GPU's time goes to draws and passes,
     /// not to pixels, so drawing smaller only blurs the picture.
     let dynamic = false
-    /// The most frames a second.
-    var fps = 60
+    /// The most frames a second: 45 by default, every second refresh of a 90 Hz display, held even when
+    /// the system lowers the display's rate (GameRenderer keeps the game's clock at the nominal rate).
+    var fps = 45
     /// How much of the headset's field of view the game draws, in percent.
     var fov = 100
     /// What fov is a percent of: "headset" or "psvr".
@@ -254,8 +255,9 @@ struct AstroSettings {
     resolution=1440
 
     # Imágenes por segundo como máximo. Una imagen dura un número entero de refrescos de la
-    # pantalla del visor (90 Hz: 45 o 30; 120 Hz: 60).
-    fps=60
+    # pantalla del visor (90 Hz: 45 o 30; 120 Hz: 60). 45 es fijo: se mantiene aunque el sistema
+    # baje el refresco de la pantalla por calor (el visor reproyecta las imágenes).
+    fps=45
 
     # Qué parte del campo de visión del visor dibuja el juego, en porcentaje (70 a 100).
     fov=100

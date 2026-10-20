@@ -51,8 +51,8 @@ struct SettingsView: View {
                     }
                     Toggle(L("Renderizado foveado (experimental)", "Foveated rendering (experimental)"), isOn: flag("game_foveation", \.gameFoveation))
                     Picker(L("Imágenes por segundo", "Frames per second"), selection: number("fps", \.fps)) {
+                        Text(L("45 · fijo, recomendado", "45 · locked, recommended")).tag(45)
                         Text("60").tag(60)
-                        Text("45").tag(45)
                         Text("30").tag(30)
                     }
                     LabeledContent(L("Campo de visión", "Field of view")) {
