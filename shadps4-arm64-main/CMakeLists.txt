@@ -1433,6 +1433,18 @@ if (SHADPS4_VISIONOS)
         # (bit-exact format conversions: no fused multiply-adds, as VPKEngine's own CMake builds them)
         set_source_files_properties(${VPKENGINE_ENGINE_DIR}/gcn/src/formats.cpp ${VPKENGINE_ENGINE_DIR}/gcn/src/format_emit.cpp
             PROPERTIES COMPILE_OPTIONS -ffp-contract=off)
+        # The MSL text of the soft-float f64 library, embedded as bytes: made here like VPKEngine's own
+        # CMake does (gpu/ps4/engine/ir/CMakeLists.txt).
+        set(_f64_hex "")
+        foreach(_f64_part_file ${VPKENGINE_ENGINE_DIR}/ir/src/f64_msl_prelude.inc ${VPKENGINE_ENGINE_DIR}/ir/src/f64_table.inc
+                               ${VPKENGINE_ENGINE_DIR}/ir/src/f64_core.inc)
+            file(READ ${_f64_part_file} _f64_part HEX)
+            string(APPEND _f64_hex "${_f64_part}")
+            set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${_f64_part_file})
+        endforeach()
+        string(REGEX REPLACE "([0-9a-f][0-9a-f])" "0x\\1," _f64_bytes "${_f64_hex}")
+        file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/f64_msl_data.inc "${_f64_bytes}\n")
+        target_include_directories(shadps4 PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
         target_sources(shadps4 PRIVATE ${VPKENGINE_SHADER_SOURCES}
             src/platform/visionos/vpkengine_shader_check.h
             src/platform/visionos/vpkengine_shader_check.mm)

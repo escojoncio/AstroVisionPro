@@ -208,6 +208,8 @@ vp4gpu::metal::MslShader toMetal(const vp4msl::MslShader& s) {
     return m;
 }
 
+void flushLeftOut();  // defined below, with the counters it drains
+
 // The engine: VPKEngine's Metal backend, device and PS4 renderer, shared by the rasterizer (GPU
 // thread) and the presenter. Everything that records goes under `lock`.
 struct Engine {
@@ -1711,7 +1713,7 @@ int ComposeEyes(std::span<const AmdGpu::Image, 2> eye_textures, const Core::Vr::
                                                  ? vp4gpu::TextureId{}
                                                  : e.renderer->colorTargetSlice(d.address, d.width, d.height, slice);
         if (arrayTarget) {
-            id<MTLTexture> t = nativeTexture(e, arrayTarget);
+            id<MTLTexture> t = PresentState::nativeTexture(e, arrayTarget);
             eyes[k] = t && t.textureType == MTLTextureType2DArray && slice < t.arrayLength
                           ? [t newTextureViewWithPixelFormat:t.pixelFormat
                                                  textureType:MTLTextureType2D
