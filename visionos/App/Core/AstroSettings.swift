@@ -234,6 +234,11 @@ struct AstroSettings {
         if let saves = GameFolder.saves {
             env.append("SHADPS4_HOME_DIR=\(saves.path)")
         }
+        // What the engine keeps between runs (translated shaders, Metal pipelines), in the VPS4
+        // folder's Cachés: it outlives the app and a new start finds it.
+        if let caches = GameFolder.caches {
+            env.append("SHADPS4_CACHE_DIR=\(caches.path)")
+        }
         env.append(contentsOf: extraEnvironment)
         return env
     }

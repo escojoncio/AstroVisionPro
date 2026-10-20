@@ -12,6 +12,7 @@
 #include <condition_variable>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -21,7 +22,9 @@
 #include <vector>
 
 #include <fmt/ranges.h>
+#include "common/elf_info.h"
 #include "common/logging/log.h"
+#include "common/path_util.h"
 #include "core/libraries/videoout/buffer.h"
 #include "vpkengine_mirror.h"
 #include "vpkengine_xr.h"
@@ -115,10 +118,14 @@ struct SpanCache {
     std::array<Entry, 128> entries{};
     unsigned used = 0, next = 0, last = 0;
     u64 gen = 0;  // bumped by clear(): a span looked up before it is not inserted after it
+    // The same count readable without the lock: what was checked readable at one value of it is
+    // still mapped at the same value (the draw adapter keeps fetch subroutines by it).
+    std::atomic<u64> mapGen{0};
     void clear() {
         std::scoped_lock l{m};
         used = next = last = 0;
         ++gen;
+        mapGen.store(gen, std::memory_order_release);
     }
 };
 SpanCache& spanCache() {
@@ -199,6 +206,17 @@ struct Engine {
     // Set by the rasterizer: page watches (renderer hooks watchWrites / watchOwned).
     std::function<void(u64, u64)> watchWrites;
     std::function<void(u64, u64, bool)> watchOwned;
+    // The vertex shaders' fetch subroutines, kept so a draw does not walk the shader and its
+    // subroutine again: where the subroutine's address comes from (FetchAddressMemo), and its
+    // words with the mapping generation they were checked readable at (the content is compared
+    // each draw: the title may rewrite shader memory).
+    vpps4::FetchAddressMemo fetchAddresses;
+    struct FetchBody {
+        u64 address = 0, generation = ~u64(0);
+        u32 words = 0;
+        std::array<uint32_t, 512> code;
+    };
+    std::array<FetchBody, 32> fetchBodies{};
     // Invalidations come from the page-fault handler: queued without the engine lock (it may be
     // held for long, or by the faulting thread itself) and applied before the next command.
     std::atomic_flag pendingLock = ATOMIC_FLAG_INIT;
@@ -305,6 +323,17 @@ struct Engine {
         // blocked on the GPU's latency every few submits. vpps4's upload rings (8) cover 6 + 1.
         vp4gpu::metal::MetalOptions options;
         options.framesInFlight = 6;
+        // What the engine keeps between runs, in the cache folder the app points the emulator at
+        // (the VPS4 folder's Cachés), one folder per game: the Metal pipeline archive, the
+        // translated shaders and the list of pipelines built (compiled ahead at the next start).
+        const std::string serial{Common::ElfInfo::Instance().GameSerial()};
+        const std::filesystem::path cacheDir =
+            Common::FS::GetUserPath(Common::FS::PathType::CacheDir) / "vpkengine" / (serial.empty() ? "unknown" : serial);
+        {
+            std::error_code ec;
+            std::filesystem::create_directories(cacheDir / "metal", ec);
+            if (!ec) options.cacheRoot = cacheDir / "metal";
+        }
         backend = std::make_unique<vp4gpu::metal::MetalBackend>(shaders, [this](const std::string& l) { log(l); },
                                                                options);
         if (!backend->ok()) {
@@ -358,6 +387,8 @@ struct Engine {
         renderer->setMaxSamples(uint8_t(maxMsaa));
         const char* fov = std::getenv("SHADPS4_GAME_FOVEATION");
         renderer->setFoveation(fov && std::atoi(fov) != 0);
+        renderer->setCacheRoot(cacheDir / "vpps4");
+        LOG_INFO(Render_Vulkan, "VPKENGINE_GPU persistent caches in {}", cacheDir.string());
         LOG_INFO(Render_Vulkan, "VPKENGINE_GPU renderer on (VPKEngine draws everything in Metal; no Vulkan device)");
         return true;
     }
@@ -848,12 +879,27 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
 
     // Stages.
     // The fetch subroutine a vertex-fetching stage (VS, or the ES of a geometry pipeline) calls.
-    auto attachFetch = [](vpps4::Stage& st) {
-        if (const u64 fa = vpps4::fetchAddress(st.code, st.userData, st.userSgprs)) {
-            const u64 bytes = readable(fa, 2048);
+    auto attachFetch = [&e](vpps4::Stage& st) {
+        if (const u64 fa = e.fetchAddresses.address(st.code, st.userData, st.userSgprs)) {
+            Engine::FetchBody& body = e.fetchBodies[(fa >> 2) % e.fetchBodies.size()];
             const auto* p = reinterpret_cast<const uint32_t*>(fa);
-            const size_t n = bytes >= 4 ? vpps4::fetchLength(std::span<const uint32_t>(p, bytes / 4)) : 0;
-            if (n) st.fetch = std::span<const uint32_t>(p, n);
+            const u64 generation = spanCache().mapGen.load(std::memory_order_acquire);
+            if (body.address == fa && body.generation == generation && body.words &&
+                std::memcmp(p, body.code.data(), 4ull * body.words) == 0) {
+                st.fetch = std::span<const uint32_t>(p, body.words);
+            } else {
+                const u64 bytes = readable(fa, 2048);
+                const size_t n = bytes >= 4 ? vpps4::fetchLength(std::span<const uint32_t>(p, bytes / 4)) : 0;
+                if (n) {
+                    st.fetch = std::span<const uint32_t>(p, n);
+                    if (n <= body.code.size()) {
+                        body.address = fa;
+                        body.generation = generation;  // (read before readable(): a later clear() leaves it stale)
+                        body.words = u32(n);
+                        std::memcpy(body.code.data(), p, 4 * n);
+                    }
+                }
+            }
         }
     };
     fillStage(d.vs, regs.vs_program);
