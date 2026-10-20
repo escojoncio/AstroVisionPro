@@ -24,6 +24,7 @@
 #include "common/types.h"
 #include "common/unique_function.h"
 #include "video_core/amdgpu/cb_db_extent.h"
+#include "video_core/amdgpu/pm4_exec.h"
 #include "video_core/amdgpu/regs.h"
 
 namespace Vulkan {
@@ -38,6 +39,11 @@ struct VideoOutPort;
 }
 
 namespace AmdGpu {
+
+union PM4Header;
+struct PM4DmaData;
+struct PM4CmdCopyData;
+struct PM4CmdWriteData;
 
 struct Liverpool {
     static constexpr u32 GfxQueueId = 0u;
@@ -221,13 +227,38 @@ private:
 
     using CmdBuffer = std::pair<std::span<const u32>, std::span<const u32>>;
     CmdBuffer CopyCmdBuffers(std::span<const u32> dcb, std::span<const u32> ccb);
-    Task ProcessGraphics(std::span<const u32> dcb, std::span<const u32> ccb);
+    Task ProcessGraphics(std::span<const u32> dcb, std::span<const u32> ccb, bool nested = false);
     Task ProcessCeUpdate(std::span<const u32> ccb);
     template <bool is_indirect = false>
     Task ProcessCompute(std::span<const u32> acb, u32 vqid);
 
     void ProcessCommands();
     void Process(std::stop_token stoken);
+
+    // ---- PM4 packets executed by the command processor itself (liverpool.cpp, "PM4 executor") ----
+    enum class Pm4Engine : u8 { Gfx, Ce, Asc };
+    enum class Pm4Result : u8 { Done, Retry };
+    /// Executes a type-3 packet the queue loops do not handle inline: atomics, register RMW and
+    /// loads, COND_WRITE, COPY_DATA, DMA, coherence points, occlusion queries, predication, stream-out
+    /// bookkeeping, constant RAM loads, RELEASE_MEM on the gfx ring... Never aborts: what cannot be
+    /// executed is counted in the census. Retry: the packet waits (ATOMIC loop mode); the caller
+    /// yields to the other queues and calls again.
+    Pm4Result ExecPacket(const PM4Header* header, Pm4Engine engine, u32 mapped_queue);
+    /// The storage of register `mmio` (dword offset, as the PM4 register packets address them): the
+    /// register file, or the compute state of `mapped_queue` for the compute SH registers. Null
+    /// outside both.
+    u32* RegPtr(u32 mmio, u32 mapped_queue);
+    void ExecDmaData(const PM4DmaData* dma);
+    void ExecCopyData(const PM4CmdCopyData* copy, u32 mapped_queue);
+    void ExecWriteData(const PM4CmdWriteData* write, u32 mapped_queue);
+    void ExecLoadRegs(const u32* body, u32 body_dwords, u32 base, u32 mapped_queue);
+    void ExecSetPredication(const PM4Header* header);
+    void ExecStrmoutBufferUpdate(const PM4Header* header);
+    void CoherencePoint(const Pm4::CoherRange& range, u32 coher_cntl);
+    void NoteUnhandledPacket(Pm4Engine engine, const PM4Header* header, const char* why);
+    Pm4::Predication predication{}; ///< SET_PREDICATION state of the gfx ring
+    u64 last_atomic_return{};       ///< what COPY_DATA with the atomic source reads
+    std::array<u32, 4> strmout_offset{}, strmout_filled{}; ///< VGT_STRMOUT_BUFFER_OFFSET / FILLED_SIZE
 
     struct GpuQueue {
         std::mutex m_access{};

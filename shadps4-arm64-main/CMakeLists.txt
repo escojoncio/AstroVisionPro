@@ -1210,7 +1210,10 @@ set(VIDEO_CORE src/video_core/amdgpu/cb_db_extent.h
                src/video_core/amdgpu/pixel_format.cpp
                src/video_core/amdgpu/pixel_format.h
                src/video_core/amdgpu/pm4_cmds.h
+               src/video_core/amdgpu/pm4_exec.h
                src/video_core/amdgpu/pm4_opcodes.h
+               src/platform/visionos/vpkengine_census.cpp
+               src/platform/visionos/vpkengine_census.h
                src/video_core/amdgpu/regs_color.h
                src/video_core/amdgpu/regs_depth.h
                src/video_core/amdgpu/regs.cpp
@@ -1448,6 +1451,7 @@ if (SHADPS4_VISIONOS)
                 ${VPKENGINE_PS4_DIR}/src/renderer.cpp
                 ${VPKENGINE_PS4_DIR}/src/tiling.cpp
                 ${VPKENGINE_PS4_DIR}/src/fetch.cpp
+                ${VPKENGINE_PS4_DIR}/src/report.cpp
                 src/platform/visionos/vpkengine_renderer.h
                 src/platform/visionos/vpkengine_renderer.mm
                 src/platform/visionos/vpkengine_presenter.h

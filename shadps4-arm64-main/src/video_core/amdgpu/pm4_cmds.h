@@ -4,6 +4,7 @@
 #pragma once
 
 #include <cstring>
+#include <string>
 #include "common/assert.h"
 #include "common/bit_field.h"
 #include "common/types.h"
@@ -11,6 +12,7 @@
 #include "core/libraries/gnmdriver/gnmdriver.h"
 #include "core/libraries/kernel/time.h"
 #include "video_core/amdgpu/game_clock.h"
+#include "platform/visionos/vpkengine_census.h"
 #include "video_core/amdgpu/pm4_opcodes.h"
 
 namespace AmdGpu {
@@ -575,7 +577,7 @@ enum class CopyDataSrc : u32 {
     Memory = 1,
     TCL2 = 2,
     Gds = 3,
-    // Reserved = 4,
+    PerfCounters = 4,
     Immediate = 5,
     Atomic = 6,
     GdsAtomic0 = 7,
@@ -934,6 +936,10 @@ struct PM4CmdReleaseMem {
 
     void SignalFence(auto&& signal_irq, auto&& gds_to_mem) const {
         switch (data_sel.Value()) {
+        case DataSelect::None: {
+            // Interrupt only (or nothing at all).
+            break;
+        }
         case DataSelect::Data32Low: {
             *Address<u32*>() = DataDWord();
             break;
@@ -959,7 +965,9 @@ struct PM4CmdReleaseMem {
             break;
         }
         default: {
-            UNREACHABLE();
+            Census::Note("pm4", "RELEASE_MEM data_sel unsupported",
+                         std::to_string(u32(data_sel.Value())));
+            break;
         }
         }
 
@@ -968,6 +976,8 @@ struct PM4CmdReleaseMem {
             // No interrupt
             break;
         }
+        case InterruptSelect::IrqOnly:
+            [[fallthrough]];
         case InterruptSelect::IrqUndocumented:
             [[fallthrough]];
         case InterruptSelect::IrqWhenWriteConfirm: {
@@ -975,7 +985,8 @@ struct PM4CmdReleaseMem {
             break;
         }
         default: {
-            UNREACHABLE();
+            Census::Note("pm4", "RELEASE_MEM int_sel unsupported", std::to_string(u32(int_sel.Value())));
+            break;
         }
         }
     }
