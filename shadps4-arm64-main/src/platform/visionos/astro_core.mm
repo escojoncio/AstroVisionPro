@@ -96,6 +96,17 @@ int astro_core_start(const char* game_path, const char* const* environment, int 
         }
     }
 
+    // The engine's caches (translated shaders, Metal pipelines) where the app says (the VPS4 folder's
+    // Cachés), so they outlive the app.
+    if (const char* cache = std::getenv("SHADPS4_CACHE_DIR"); cache != nullptr && *cache != '\0') {
+        std::error_code error;
+        std::filesystem::create_directories(cache, error);
+        if (std::filesystem::is_directory(cache, error)) {
+            Common::FS::SetUserPath(Common::FS::PathType::CacheDir, cache);
+            std::fprintf(stderr, "Caches in %s\n", cache);
+        }
+    }
+
     g_log_path = (Common::FS::GetUserPath(Common::FS::PathType::LogDir) / "shad_log.txt").string();
 
     // What the game wants of the controller, for the app to pass on.

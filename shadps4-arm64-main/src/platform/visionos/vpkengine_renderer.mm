@@ -12,27 +12,38 @@
 #include <condition_variable>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <map>
 #include <memory>
 #include <mutex>
 #include <set>
 #include <span>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include <fmt/ranges.h>
+#include "common/elf_info.h"
 #include "common/logging/log.h"
+#include "common/path_util.h"
 #include "core/libraries/videoout/buffer.h"
+#include "vpkengine_mirror.h"
+#include "vpkengine_census.h"
 #include "vpkengine_xr.h"
 #include "video_core/amdgpu/liverpool.h"
+#include "video_core/amdgpu/pm4_exec.h"
+#include "video_core/amdgpu/reg_audit.h"
 #include "video_core/amdgpu/regs.h"
 #include "video_core/amdgpu/resource.h"
 #include "video_core/page_manager.h"
-#include "vpgpu/core/device.h"
-#include "vpgpu/metal/metal_backend.h"
+#include "vp4gpu/core/device.h"
+#include "vp4gpu/metal/metal_backend.h"
 #include "vpps4/fetch.h"
 #include "vpps4/formats.h"
 #include "vpps4/renderer.h"
+#include "vpps4/scheduler.h"
+#include "vp4gpu/core/submit_policy.h"
+#include "vpps4/report.h"
 
 namespace VpkengineRenderer {
 namespace {
@@ -108,15 +119,20 @@ bool mappedSpan(u64 address, u64 from, u64 to, u64& begin, u64& end) {
 struct SpanCache {
     struct Entry {
         u64 from = 0, to = 0, begin = 0, end = 0;
+        void* mirror = nullptr;  // the second mapping of [begin, end) the GPU buffers alias (null: none)
     };
     std::mutex m;
     std::array<Entry, 128> entries{};
     unsigned used = 0, next = 0, last = 0;
     u64 gen = 0;  // bumped by clear(): a span looked up before it is not inserted after it
+    // The same count readable without the lock: what was checked readable at one value of it is
+    // still mapped at the same value (the draw adapter keeps fetch subroutines by it).
+    std::atomic<u64> mapGen{0};
     void clear() {
         std::scoped_lock l{m};
         used = next = last = 0;
         ++gen;
+        mapGen.store(gen, std::memory_order_release);
     }
 };
 SpanCache& spanCache() {
@@ -124,7 +140,16 @@ SpanCache& spanCache() {
     return c;
 }
 
-bool cachedSpan(u64 address, u64 from, u64 to, u64& begin, u64& end) {
+// Whether any page of [begin, end) is protected for the renderer (owned or watched ranges): set by the
+// rasterizer, which keeps those tables.
+std::atomic<bool (*)(void*, u64, u64)> gWatchProbe{nullptr};
+std::atomic<void*> gWatchProbeContext{nullptr};
+bool spanHasWatches(u64 begin, u64 end) {
+    auto* probe = gWatchProbe.load(std::memory_order_acquire);
+    return probe && probe(gWatchProbeContext.load(std::memory_order_acquire), begin, end);
+}
+
+bool cachedSpan(u64 address, u64 from, u64 to, u64& begin, u64& end, void*& mirror) {
     SpanCache& c = spanCache();
     u64 gen0 = 0;
     {
@@ -136,6 +161,7 @@ bool cachedSpan(u64 address, u64 from, u64 to, u64& begin, u64& end) {
         if (c.used && hit(c.entries[c.last])) {
             begin = c.entries[c.last].begin;
             end = c.entries[c.last].end;
+            mirror = c.entries[c.last].mirror;
             return true;
         }
         for (unsigned k = 0; k < c.used; ++k)
@@ -143,14 +169,19 @@ bool cachedSpan(u64 address, u64 from, u64 to, u64& begin, u64& end) {
                 c.last = k;
                 begin = c.entries[k].begin;
                 end = c.entries[k].end;
+                mirror = c.entries[k].mirror;
                 return true;
             }
     }
     if (!mappedSpan(address, from, to, begin, end)) return false;  // (misses are not cached)
+    // The span's mirror (made once per span, checked again whenever the span is looked up afresh:
+    // every ~8 ms at most, see Engine::submit).
+    mirror = GuestMirror(begin, end);
+    if (!mirror && spanHasWatches(begin, end)) return true;  // (looked up again next time: the mirror may come)
     std::scoped_lock l{c.m};
     if (c.gen != gen0) return true;  // the map changed meanwhile: use it this once, keep it out
     const unsigned k = c.used < c.entries.size() ? c.used++ : (c.next++ % unsigned(c.entries.size()));
-    c.entries[k] = {from, to, begin, end};
+    c.entries[k] = {from, to, begin, end, mirror};
     c.last = k;
     return true;
 }
@@ -159,50 +190,95 @@ bool cachedSpan(u64 address, u64 from, u64 to, u64& begin, u64& end) {
 u64 readable(u64 address, u64 want) {
     const u64 from = address & ~(kWindow - 1);
     u64 begin, end;
-    if (!cachedSpan(address, from, from + kWindow, begin, end)) return 0;
+    void* mirror = nullptr;
+    if (!cachedSpan(address, from, from + kWindow, begin, end, mirror)) return 0;
     return std::min<u64>(want, end - address);
 }
 
 // MSL from the shader translator, as the Metal backend takes it (msl.h argument contract).
-vpgpu::metal::MslShader toMetal(const vpmsl::MslShader& s) {
-    vpgpu::metal::MslShader m;
+vp4gpu::metal::MslShader toMetal(const vp4msl::MslShader& s) {
+    vp4gpu::metal::MslShader m;
     m.source = s.source;
     m.entry = "vp_main";
     m.argumentBufferIndex = 0;
     m.threadsPerGroup = s.workgroupSize;
     m.colorOutputs = s.colorOutputs;
-    for (const vpmsl::Argument& a : s.arguments)
-        m.arguments.push_back({vpgpu::BindKind(uint8_t(a.kind) + 1), uint16_t(a.index), a.offset});
+    for (const vp4msl::Argument& a : s.arguments)
+        m.arguments.push_back({vp4gpu::BindKind(uint8_t(a.kind) + 1), uint16_t(a.index), a.offset});
     return m;
 }
+
+void flushLeftOut();  // defined below, with the counters it drains
 
 // The engine: VPKEngine's Metal backend, device and PS4 renderer, shared by the rasterizer (GPU
 // thread) and the presenter. Everything that records goes under `lock`.
 struct Engine {
-    std::mutex lock;
-    vpgpu::metal::ShaderTable shaders;
-    std::unique_ptr<vpgpu::metal::MetalBackend> backend;
-    std::unique_ptr<vpgpu::Device> device;
+    // Recursive: a CPU access to memory an image on the GPU is ahead of faults inside code that
+    // holds the lock already (a DMA done on the CPU); the fault handler writes the image back.
+    std::recursive_mutex lock;
+    vp4gpu::metal::ShaderTable shaders;
+    std::unique_ptr<vp4gpu::metal::MetalBackend> backend;
+    std::unique_ptr<vp4gpu::Device> device;
     std::unique_ptr<vpps4::Renderer> renderer;
+    // When recorded work goes to the GPU, and how DMA / GDS / labels stay ordered with it.
+    std::unique_ptr<vpps4::Scheduler> scheduler;
+    // Watchdog: submits recorded work that nothing else asked for once the policy says so (a label
+    // waiting too long, a frame open too long). Takes `lock`, sleeps on watchCv.
+    std::thread watchdog;
+    std::condition_variable_any watchCv;  // (the engine lock is recursive: condition_variable takes only std::mutex)
     std::atomic<u64> submits{0};
     std::atomic<unsigned> errorLines{0};
-    std::function<void(u64, u64)> uploaded;  // set by the rasterizer: watch these guest pages
+    // Set by the rasterizer: page watches (renderer hooks watchWrites / watchOwned).
+    std::function<void(u64, u64)> watchWrites;
+    std::function<void(u64, u64, bool)> watchOwned;
+    // The vertex shaders' fetch subroutines, kept so a draw does not walk the shader and its
+    // subroutine again: where the subroutine's address comes from (FetchAddressMemo), and its
+    // words with the mapping generation they were checked readable at (the content is compared
+    // each draw: the title may rewrite shader memory).
+    vpps4::FetchAddressMemo fetchAddresses;
+    struct FetchBody {
+        u64 address = 0, generation = ~u64(0);
+        u32 words = 0;
+        std::array<uint32_t, 512> code;
+    };
+    std::array<FetchBody, 32> fetchBodies{};
     // Invalidations come from the page-fault handler: queued without the engine lock (it may be
     // held for long, or by the faulting thread itself) and applied before the next command.
     std::atomic_flag pendingLock = ATOMIC_FLAG_INIT;
     std::vector<std::pair<u64, u64>> pending;
+    // Too many ranges queued (the engine lock was held for long): they are not kept one by one, the
+    // whole address space is invalidated when they are applied. Dropping them would leave stale
+    // textures and owners.
+    bool pendingAll = false;
     void queueInvalidate(u64 a, u64 n) {
         while (pendingLock.test_and_set(std::memory_order_acquire)) {}
-        if (pending.size() < 65536) pending.push_back({a, n});
+        if (pendingAll) {
+            // (already everything)
+        } else if (pending.size() < 65536) {
+            pending.push_back({a, n});
+        } else {
+            pendingAll = true;
+            pending.clear();
+            pending.shrink_to_fit();
+        }
         pendingLock.clear(std::memory_order_release);
     }
     void applyPending() {
         while (pendingLock.test_and_set(std::memory_order_acquire)) {}
         std::vector<std::pair<u64, u64>> work;
         work.swap(pending);
+        const bool all = pendingAll;
+        pendingAll = false;
         pendingLock.clear(std::memory_order_release);
-        if (renderer)
-            for (auto [a, n] : work) renderer->invalidate(a, n);
+        if (!renderer) return;
+        if (all) {
+            // Which ranges the CPU wrote is unknown: images ahead of memory are written back (and the GPU waited
+            // for) first, so marking everything CPU-written does not drop the content only they hold.
+            if (scheduler) syncForDma(0, ~u64(0));
+            else renderer->syncToMemory(0, ~u64(0));
+            renderer->invalidate(0, ~u64(0));
+        }
+        for (auto [a, n] : work) renderer->invalidate(a, n);
     }
     bool failed = false;
     u64 dmaUnsynced = 0, dmaSynced = 0;  // DMA packets done on the CPU without / after a GPU wait
@@ -210,9 +286,7 @@ struct Engine {
     // CPU time of the GPU thread, in ns, printed every ~2 s (VPKENGINE_GPU cpu:). Atomics: the
     // presenter submits too, and draw timers stop after the engine lock is released.
     using Clock = std::chrono::steady_clock;
-    enum Wait : unsigned { WaitDma, WaitGds, WaitFinish, WaitKinds };
-    std::atomic<u64> adapterNs{0}, adapterCalls{0}, submitNs{0}, dmaSubmits{0};
-    std::array<std::atomic<u64>, WaitKinds> waitNs{}, waits{};
+    std::atomic<u64> adapterNs{0}, adapterCalls{0};
     Clock::time_point lastReport = Clock::now();
     Clock::time_point lastSpanClear = Clock::now();
     static u64 nsSince(Clock::time_point t) {
@@ -223,30 +297,34 @@ struct Engine {
         Clock::time_point t0 = Clock::now();
         ~Timer() { to.fetch_add(nsSince(t0), std::memory_order_relaxed); }
     };
-    // Waits for every submitted frame (the caller submitted first when it needs recorded work too).
-    void waitGpu(Wait why) {
-        const auto t0 = Clock::now();
-        backend->waitIdle();
-        waitNs[why].fetch_add(nsSince(t0), std::memory_order_relaxed);
-        waits[why].fetch_add(1, std::memory_order_relaxed);
+    static double msNow() {
+        return std::chrono::duration<double, std::milli>(Clock::now().time_since_epoch()).count();
     }
-    // CPU-side DMA over guest [a, +n) (and [b, +m)): waits only when GPU work may touch it, and
-    // submits first only when the overlap is in work not submitted yet.
+    // Work was recorded: the watchdog learns when the frame opened.
+    void noteWork() {
+        if (scheduler && scheduler->noteWork()) watchCv.notify_one();
+    }
+    // CPU-side DMA over guest [a, +n) (and [b, +m)): waits only for the frames that touch it (a partial
+    // fence), submitting the recorded frame first only when the overlap is in it.
     void syncForDma(u64 a, u64 n, u64 b = 0, u64 m = 0) {
-        const bool any = renderer->gpuMayAccess(a, n) || (m && renderer->gpuMayAccess(b, m));
-        if (!any) {
-            ++dmaUnsynced;
-            return;
-        }
-        ++dmaSynced;
-        if (renderer->recordedMayAccess(a, n) || (m && renderer->recordedMayAccess(b, m))) {
-            ++dmaSubmits;
-            submit();
-            waitGpu(WaitDma);
-            renderer->gpuIdle();
-        } else {
-            waitGpu(WaitDma);
-            renderer->submittedIdle();  // (work recorded since keeps its ranges)
+        // Images ahead of the memory the CPU is about to read or write are written back first (the
+        // copies it records count as queued GPU work on those ranges: submitted and waited for below).
+        const bool written = renderer->syncToMemory(a, n);
+        const bool writtenB = m && renderer->syncToMemory(b, m);
+        if (scheduler->syncCpu(a, n, vp4gpu::SubmitReason::Dma, b, m) || written || writtenB) ++dmaSynced;
+        else ++dmaUnsynced;
+    }
+    void watchdogLoop() {
+        std::unique_lock l{lock};
+        for (;;) {
+            const double next = scheduler ? scheduler->nextCheckMs() : -1.0;
+            if (next < 0) {
+                watchCv.wait(l);
+            } else if (next > 0) {
+                watchCv.wait_for(l, std::chrono::microseconds(u64(next * 1000.0) + 100));
+            } else if (!scheduler->tick()) {
+                watchCv.wait_for(l, std::chrono::milliseconds(1));
+            }
         }
     }
     void report() {
@@ -256,19 +334,16 @@ struct Engine {
         const vpps4::CpuTimes t = renderer->takeCpuTimes();
         auto msps = [&](u64 ns) { return double(ns) / 1e6 / s; };
         auto take = [](std::atomic<u64>& a) { return a.exchange(0, std::memory_order_relaxed); };
-        const u64 calls = take(adapterCalls), adapter = take(adapterNs), sub = take(submitNs);
-        const u64 wd = take(waitNs[WaitDma]), wg = take(waitNs[WaitGds]), wf = take(waitNs[WaitFinish]);
-        const u64 nd = take(waits[WaitDma]), ng = take(waits[WaitGds]), nf = take(waits[WaitFinish]);
+        const u64 calls = take(adapterCalls), adapter = take(adapterNs);
         LOG_INFO(Render_Vulkan,
                  "VPKENGINE_GPU cpu: draw_adapter {:.1f} ms/s, vpps4.draw {:.1f}, shader lookup {:.1f}, bind {:.1f}, "
-                 "pipeline request {:.1f}, frame compile+submit {:.1f} (vpps4 {:.1f}; {:.0f} submits/s, {:.0f} empty/s), "
-                 "dma_wait {:.1f} ({:.0f}/s, {:.0f} with submit/s), gds_wait {:.1f} ({:.0f}/s), finish_wait {:.1f} ({:.0f}/s), "
+                 "pipeline request {:.1f}, frame compile+submit {:.1f} ({:.0f} submits/s, {:.0f} empty/s), "
                  "draws {:.0f}/s, per-draw {:.2f} us adapter / {:.2f} us vpps4, user data reused {:.0f}/s",
-                 msps(adapter), t.drawMs / s, t.shaderMs / s, t.bindMs / s, t.pipelineMs / s, msps(sub),
-                 t.submitMs / s, double(t.submits) / s, double(t.emptySubmits) / s, msps(wd), double(nd) / s,
-                 double(take(dmaSubmits)) / s, msps(wg), double(ng) / s, msps(wf), double(nf) / s, double(calls) / s,
+                 msps(adapter), t.drawMs / s, t.shaderMs / s, t.bindMs / s, t.pipelineMs / s, t.submitMs / s,
+                 double(t.submits) / s, double(t.emptySubmits) / s, double(calls) / s,
                  calls ? double(adapter) / 1e3 / double(calls) : 0.0, t.calls ? t.drawMs * 1e3 / double(t.calls) : 0.0,
                  double(t.userDataReused) / s);
+        if (scheduler) LOG_INFO(Render_Vulkan, "VPKENGINE_GPU {}", scheduler->takeSummary());
     }
 
     static constexpr u64 kEvery = 120;  // per-frame lines of the core every kEvery submits
@@ -285,61 +360,122 @@ struct Engine {
 
     bool start() {
         if (renderer || failed) return renderer != nullptr;
-        // Liverpool submits ~15 command buffers per presented frame: with only 3 in flight the CPU
-        // blocked on the GPU's latency every few submits. vpps4's upload rings (8) cover 6 + 1.
-        vpgpu::metal::MetalOptions options;
-        options.framesInFlight = 6;
-        backend = std::make_unique<vpgpu::metal::MetalBackend>(shaders, [this](const std::string& l) { log(l); },
+        // One GPU frame per presented picture (vpps4::Scheduler accumulates the ~15 Liverpool command
+        // buffers of a picture), so two frames in flight (the headset's compose included) are enough and
+        // bound the latency; vpps4's upload rings (8) cover them.
+        vp4gpu::metal::MetalOptions options;
+        options.framesInFlight = 2;
+        // What the engine keeps between runs, in the cache folder the app points the emulator at
+        // (the VPS4 folder's Cachés), one folder per game: the Metal pipeline archive, the
+        // translated shaders and the list of pipelines built (compiled ahead at the next start).
+        const std::string serial{Common::ElfInfo::Instance().GameSerial()};
+        const std::filesystem::path cacheDir =
+            Common::FS::GetUserPath(Common::FS::PathType::CacheDir) / "vpkengine" / (serial.empty() ? "unknown" : serial);
+        {
+            std::error_code ec;
+            std::filesystem::create_directories(cacheDir / "metal", ec);
+            if (!ec) options.cacheRoot = cacheDir / "metal";
+        }
+        backend = std::make_unique<vp4gpu::metal::MetalBackend>(shaders, [this](const std::string& l) { log(l); },
                                                                options);
         if (!backend->ok()) {
             failed = true;
             LOG_CRITICAL(Render_Vulkan, "VPKENGINE_GPU no Metal device: nothing can be drawn");
             return false;
         }
-        device = std::make_unique<vpgpu::Device>(*backend, 2, [this](const std::string& l) { log(l); });
+        // What the host can sample natively decides the texture plans (BC is absent on visionOS): set before
+        // the first draw builds one.
+        {
+            vpps4::FormatCaps fc;
+            fc.bc = backend->caps().bc;
+            vpps4::setFormatCaps(fc);
+        }
+        device = std::make_unique<vp4gpu::Device>(*backend, 2, [this](const std::string& l) { log(l); });
         vpps4::Hooks hooks;
         hooks.region = [](uint64_t address, uint64_t size, vpps4::GuestRegion& out) {
             if (address < 0x10000) return false;
             const u64 from = address & ~(kWindow - 1);
             const u64 to = std::max(from + kWindow, (address + size + kWindow - 1) & ~(kWindow - 1));
             u64 begin, end;
-            if (!cachedSpan(address, from, to, begin, end) || address + size > end) return false;
-            out = {begin, end - begin, reinterpret_cast<void*>(begin)};
+            void* mirror = nullptr;
+            if (!cachedSpan(address, from, to, begin, end, mirror) || address + size > end) return false;
+            // No mirror: the buffers would alias the guest addresses, which are page-protected where
+            // an image is ahead of memory or a texture source is watched. A buffer over protected
+            // pages faults or reads garbage: the span is not offered at all (draws using it are
+            // skipped and counted) until a mirror exists.
+            if (!mirror && spanHasWatches(begin, end)) return false;
+            // With a mirror the GPU buffers alias it and the guest addresses may be page-protected
+            // (CPU write / read detection); without one they alias the guest addresses and nothing
+            // is protected (the renderer then finds CPU writes by content).
+            out = {begin, end - begin, mirror ? mirror : reinterpret_cast<void*>(begin), mirror != nullptr};
             return true;
         };
-        hooks.shader = [this](uint64_t id, vpir::Stage, const vpmsl::MslShader& s) { shaders.add(id, toMetal(s)); };
+        hooks.shader = [this](uint64_t id, vp4ir::Stage, const vp4msl::MslShader& s) { shaders.add(id, toMetal(s)); };
         hooks.log = [this](const std::string& l) { log(l); };
-        hooks.uploaded = [this](uint64_t a, uint64_t n) {
-            if (uploaded) uploaded(a, n);
+        hooks.watchWrites = [this](uint64_t a, uint64_t n) {
+            if (watchWrites) watchWrites(a, n);
         };
+        hooks.watchOwned = [this](uint64_t a, uint64_t n, bool on) {
+            if (watchOwned) watchOwned(a, n, on);
+        };
+        // Views of images (another format of the same texel size, a layer range, a cube / array):
+        // lazily resolved handles of the Metal backend.
+        hooks.view = [this](const vpps4::ViewRequest& r) -> vp4gpu::TextureId {
+            vp4gpu::metal::MetalBackend::ViewDesc d;
+            d.type = r.type;
+            d.array = r.array;
+            d.format = r.format;
+            d.baseLayer = r.baseLayer;
+            d.layers = r.layers;
+            return backend->createView(r.base, d);
+        };
+        hooks.destroyView = [this](vp4gpu::TextureId v) { backend->destroyView(v); };
+        // Opt-in (VPK_SUBMIT_THREAD=1): frame encoding on its own thread. Not on by default: the Metal
+        // backend was written for one thread that creates resources and submits.
+        if (const char* t = std::getenv("VPK_SUBMIT_THREAD"); t && *t && *t != '0') device->startSubmitThread(2);
+        // What vpps4 skips / approximates / cannot translate goes to the census.
+        vpps4::setReportSink([](void*, const char* cat, const char* key, const char* detail, u64 count) {
+            Census::NoteN(cat ? cat : "vpps4", key ? key : "", detail ? detail : "", count);
+        });
         renderer = std::make_unique<vpps4::Renderer>(*device, std::move(hooks));
         renderer->setSummaryEvery(kEvery);
-        // No MSAA: antialiasing is temporal (VPKTAA), 1 sample per pixel. The game's MSAA targets
-        // become single-sample; its resolves become copies.
-        renderer->setMaxSamples(1);
+        scheduler = std::make_unique<vpps4::Scheduler>(*renderer, *device, vp4gpu::SubmitPolicy{}, [] { return msNow(); });
+        scheduler->setSubmitHook([this] {
+            ++submits;
+            // Guest mappings can change without Map/UnmapMemory (a munmap or protection change of
+            // the title's): spans are looked up again (vm_region syscalls, tens per span). Once per
+            // ~8 ms rather than at each submit.
+            if (nsSince(lastSpanClear) > 8'000'000) {
+                spanCache().clear();
+                lastSpanClear = Clock::now();
+            }
+            if (submits % kEvery == 1)
+                LOG_INFO(Render_Vulkan, "VPKENGINE_GPU dma: {} packets without a GPU wait, {} after one (so far)",
+                         dmaUnsynced, dmaSynced);
+            renderer->drainOcclusion(false);  // ZPASS_DONE results of frames that finished
+            flushLeftOut();
+            report();
+        });
+        watchdog = std::thread([this] { watchdogLoop(); });
+        watchdog.detach();
+        // MSAA: the game's targets keep their sample count up to the app's limit (SHADPS4_MAX_MSAA,
+        // 1/2/4, default 4; Apple GPUs stop at 4). 1 turns it off: the targets become single-sample
+        // and the game's resolves become copies. Foveation (SHADPS4_GAME_FOVEATION=1, default off)
+        // is exclusive with MSAA: a pass that has both draws without foveation.
+        int maxMsaa = 4;
+        if (const char* v = std::getenv("SHADPS4_MAX_MSAA")) maxMsaa = std::clamp(std::atoi(v), 1, 4);
+        renderer->setMaxSamples(uint8_t(maxMsaa));
+        const char* fov = std::getenv("SHADPS4_GAME_FOVEATION");
+        renderer->setFoveation(fov && std::atoi(fov) != 0);
+        renderer->setCacheRoot(cacheDir / "vpps4");
+        LOG_INFO(Render_Vulkan, "VPKENGINE_GPU persistent caches in {}", cacheDir.string());
         LOG_INFO(Render_Vulkan, "VPKENGINE_GPU renderer on (VPKEngine draws everything in Metal; no Vulkan device)");
         return true;
     }
 
-    // Ends the frame recorded so far (one Liverpool submit).
-    void submit() {
-        if (!renderer) return;
-        ++submits;
-        // Guest mappings can change without Map/UnmapMemory (a munmap or protection change of
-        // the title's): spans are looked up again (vm_region syscalls, tens per span). Once per
-        // ~8 ms rather than at each of the ~15 Liverpool submits of a frame.
-        if (nsSince(lastSpanClear) > 8'000'000) {
-            spanCache().clear();
-            lastSpanClear = Clock::now();
-        }
-        if (submits % kEvery == 1)
-            LOG_INFO(Render_Vulkan, "VPKENGINE_GPU dma: {} packets without a GPU wait, {} after one (so far)", dmaUnsynced,
-                     dmaSynced);
-        {
-            Timer t{submitNs};
-            renderer->submit();
-        }
-        report();
+    // Hands the recorded work to the GPU now (the picture is presented).
+    void present() {
+        if (scheduler) scheduler->present();
     }
 };
 
@@ -371,19 +507,97 @@ vpps4::ColorTarget colorTarget(const AmdGpu::Regs& regs, unsigned i) {
     c.tileMode = cb.info.linear_general ? 31 : uint8_t(cb.attrib.tile_mode_index);
     c.sliceStart = uint16_t(cb.BaseSlice());
     c.sliceCount = uint16_t(cb.NumSlices());
-    c.samples = uint8_t(cb.NumSamples());
+    c.samples = uint8_t(cb.NumSamples());  // colour fragments (EQAA: what the surface stores)
+    c.coverage = uint8_t(1u << cb.attrib.num_samples_log2);
+    c.fastClear = cb.info.fast_clear;
+    c.clearWord = {cb.clear_word0, cb.clear_word1};
     return c;
 }
 
-// Counts of draws left out before the renderer, by reason (logged the first time each).
+// Counts of draws left out before the renderer, by reason (logged the first time each). Reasons are
+// literals: a small table keyed by the literal's address, lock-free counters; the census gets the
+// counts once per submit (flushLeftOut).
+struct LeftOut {
+    std::atomic<const char*> why{nullptr};
+    std::atomic<u64> total{0}, reported{0};
+};
+constexpr size_t kLeftOut = 64;
+LeftOut gLeftOut[kLeftOut];
+std::atomic<size_t> gLeftOutUsed{0};
+
 void leftOut(const char* why) {
+    size_t n = gLeftOutUsed.load(std::memory_order_acquire);
+    for (size_t i = 0; i < n; ++i)
+        if (gLeftOut[i].why.load(std::memory_order_acquire) == why) {
+            const u64 c = gLeftOut[i].total.fetch_add(1, std::memory_order_relaxed) + 1;
+            if (c == 1000 || c == 10000 || c == 100000 || c % 1000000 == 0)
+                LOG_INFO(Render_Vulkan, "VPKENGINE_GPU draws left out: {} x{}", why, c);
+            return;
+        }
+    // A reason not seen yet (or the table raced): claim a slot under a lock, once per reason.
     static std::mutex m;
-    static std::map<std::string, u64> counts;
     std::scoped_lock l{m};
-    const u64 n = ++counts[why];
-    if (n == 1) LOG_INFO(Render_Vulkan, "VPKENGINE_GPU first draw left out: {}", why);
-    else if (n == 1000 || n == 10000 || n == 100000 || n % 1000000 == 0)
-        LOG_INFO(Render_Vulkan, "VPKENGINE_GPU draws left out: {} x{}", why, n);
+    n = gLeftOutUsed.load(std::memory_order_acquire);
+    for (size_t i = 0; i < n; ++i)
+        if (gLeftOut[i].why.load(std::memory_order_acquire) == why) {
+            gLeftOut[i].total.fetch_add(1, std::memory_order_relaxed);
+            return;
+        }
+    if (n == kLeftOut) {  // (full: counted the slow way, straight to the census)
+        Census::Note("draw-skip", why);
+        return;
+    }
+    gLeftOut[n].total.store(1, std::memory_order_relaxed);
+    gLeftOut[n].why.store(why, std::memory_order_release);
+    gLeftOutUsed.store(n + 1, std::memory_order_release);
+    LOG_INFO(Render_Vulkan, "VPKENGINE_GPU first draw left out: {}", why);
+}
+
+// The reasons counted since the last call, to the census in one add each.
+void flushLeftOut() {
+    const size_t n = gLeftOutUsed.load(std::memory_order_acquire);
+    for (size_t i = 0; i < n; ++i) {
+        LeftOut& e = gLeftOut[i];
+        const u64 t = e.total.load(std::memory_order_relaxed);
+        const u64 r = e.reported.exchange(t, std::memory_order_relaxed);
+        if (t > r) Census::NoteN("draw-skip", e.why.load(std::memory_order_acquire), {}, t - r);
+    }
+}
+
+// Context registers the draw path reads (everything else that is set away from its reset value is
+// reported once per value to the census, category "reg": a register the title uses and nothing here
+// honours). Whole registers: a partly read one (e.g. PA_SU_SC_MODE_CNTL) counts as read.
+void auditContextRegs(const AmdGpu::Regs& regs) {
+    static std::mutex m;
+    std::unique_lock l{m, std::try_to_lock};
+    if (!l.owns_lock()) return;
+    static AmdGpu::RegAudit::Auditor* auditor = [] {
+        auto defaults = std::make_unique<AmdGpu::Regs>();
+        defaults->SetDefaults();
+        auto* a = new AmdGpu::RegAudit::Auditor(&defaults->reg_array[AmdGpu::RegAudit::kContextBase]);
+        const auto base = reinterpret_cast<const u8*>(defaults->reg_array.data());
+        auto consume = [&](const void* field, size_t bytes) {
+            a->Consume(u32((reinterpret_cast<const u8*>(field) - base) / sizeof(u32)), u32((bytes + 3) / sizeof(u32)));
+        };
+#define VPK_READ(f) consume(&defaults->f, sizeof(defaults->f))
+        VPK_READ(stage_enable); VPK_READ(color_buffers); VPK_READ(color_control); VPK_READ(color_target_mask);
+        VPK_READ(color_shader_mask); VPK_READ(blend_control); VPK_READ(blend_constants); VPK_READ(depth_buffer);
+        VPK_READ(depth_view); VPK_READ(depth_render_control); VPK_READ(depth_clear); VPK_READ(stencil_clear);
+        VPK_READ(depth_control); VPK_READ(stencil_control); VPK_READ(stencil_ref_front); VPK_READ(stencil_ref_back);
+        VPK_READ(viewports[0]); VPK_READ(screen_scissor); VPK_READ(polygon_control); VPK_READ(primitive_type);
+        VPK_READ(num_indices); VPK_READ(num_instances); VPK_READ(index_buffer_type); VPK_READ(index_base_address);
+        VPK_READ(index_offset); VPK_READ(max_index_size); VPK_READ(vgt_instance_step_rate_0);
+        VPK_READ(vgt_instance_step_rate_1); VPK_READ(ps_input_addr); VPK_READ(color_export_format);
+        VPK_READ(ps_inputs);
+        // num_interp is a bit-field: the word after ps_input_addr and its padding word.
+        consume(reinterpret_cast<const u8*>(&defaults->ps_input_addr) + sizeof(defaults->ps_input_addr) + 4, 4);
+#undef VPK_READ
+        return a;
+    }();
+    auditor->Check(&regs.reg_array[AmdGpu::RegAudit::kContextBase], [](u32 reg, u32 value) {
+        if (reg == 0) return Census::Note("reg", "audit table full");
+        Census::Note("reg", fmt::format("{:#06x}={:#010x}", reg, value), "context register set, not read by the renderer");
+    });
 }
 
 // ES/LS (geometry / tessellation) draws are left out: log what they are, so the path can be
@@ -451,6 +665,20 @@ struct Rasterizer::Impl {
     // Ranges textures were filled from, watched for CPU writes (start -> size).
     std::mutex watch_mutex;
     std::map<VAddr, u64> watched;
+    // Whether [a, b) overlaps a range this rasterizer protects (texture sources, memory an image is ahead of).
+    bool anyWatchIn(VAddr a, VAddr b) {
+        {
+            std::scoped_lock l{owned_mutex};
+            auto it = owned.lower_bound({a > (1ull << 30) ? a - (1ull << 30) : 0, 0});
+            for (; it != owned.end() && it->first.first < b; ++it)
+                if (it->first.first + it->first.second > a) return true;
+        }
+        std::scoped_lock l{watch_mutex};
+        auto it = watched.lower_bound(a > (1ull << 30) ? a - (1ull << 30) : 0);
+        for (; it != watched.end() && it->first < b; ++it)
+            if (it->first + it->second > a) return true;
+        return false;
+    }
     // Ranges let go of lately: a second thread faulting on the same page finds the watch gone
     // already, and its access must still count as handled.
     std::array<std::pair<VAddr, u64>, 64> released{};
@@ -512,24 +740,125 @@ struct Rasterizer::Impl {
         std::scoped_lock l{watch_mutex};
         return recentlyReleased(a, n);
     }
+
+    // ---- Memory an image on the GPU is ahead of --------------------------------------------------
+    // Ranges whose newest bytes live in a GPU image (render target, depth buffer, storage image):
+    // the pages are inaccessible to the CPU (a write watcher plus a read watcher) until the renderer
+    // has written the image back (re-tiled it into the guest memory). The first access faults here.
+    // Keyed by (start, size) with a count: two images may share a range.
+    std::mutex owned_mutex;
+    std::map<std::pair<VAddr, u64>, u32> owned;
+    // When each owned range was first found ahead of memory after a write back (engine lock): past kAheadLimit
+    // the owner is dropped instead of retrying the fault for ever.
+    std::map<std::pair<VAddr, u64>, std::chrono::steady_clock::time_point> aheadSince;
+    static constexpr std::chrono::milliseconds kAheadLimit{200};
+    bool ownedWatchEnabled = std::getenv("VPK_NO_OWNED_WATCH") == nullptr;
+
+    // Owned ranges let go of lately (resolveOwned, setOwned off): two threads that fault on the same
+    // protected page both end up here, and the second finds the range gone. Its access is handled
+    // (the first one unprotected the page): retried, not escalated to a crash. Kept for a short time
+    // only, so an access that really faults for another reason cannot be retried for ever.
+    struct ReleasedOwned {
+        VAddr start = 0;
+        u64 size = 0;
+        std::chrono::steady_clock::time_point at{};
+    };
+    std::array<ReleasedOwned, 32> releasedOwned{};
+    u32 releasedOwnedNext = 0;
+    void noteReleasedOwned(VAddr a, u64 n) {  // owned_mutex held
+        releasedOwned[releasedOwnedNext++ % releasedOwned.size()] = {a, n, std::chrono::steady_clock::now()};
+    }
+    bool recentlyReleasedOwned(VAddr addr) {
+        std::scoped_lock l{owned_mutex};
+        const auto now = std::chrono::steady_clock::now();
+        for (const auto& r : releasedOwned)
+            if (r.size && addr >= r.start && addr < r.start + r.size && now - r.at < std::chrono::milliseconds(200)) return true;
+        return false;
+    }
+
+    void setOwned(VAddr a, u64 n, bool on) {
+        if (!ownedWatchEnabled || n == 0) return;
+        if (on && !isMapped(a, n)) return;
+        std::scoped_lock l{owned_mutex};
+        if (on) {
+            if (owned[{a, n}]++ != 0) return;
+            // (re-protected: a fault here is a fresh one, not the late arrival of the access that released it)
+            for (auto& r : releasedOwned)
+                if (r.size && r.start < a + n && r.start + r.size > a) r.size = 0;
+            page_manager.UpdatePageWatchers<true>(a, n);
+            page_manager.UpdateReadWatchers<true>(a, n);
+        } else {
+            auto it = owned.find({a, n});
+            if (it == owned.end()) return;
+            if (--it->second != 0) return;
+            owned.erase(it);
+            noteReleasedOwned(a, n);
+            page_manager.UpdateReadWatchers<false>(a, n);
+            page_manager.UpdatePageWatchers<false>(a, n);
+        }
+    }
+
+    // The owned ranges that contain `addr`.
+    std::vector<std::pair<VAddr, u64>> ownedAt(VAddr addr) {
+        std::vector<std::pair<VAddr, u64>> hit;
+        std::scoped_lock l{owned_mutex};
+        auto it = owned.lower_bound({addr > (1ull << 30) ? addr - (1ull << 30) : 0, 0});
+        for (; it != owned.end() && it->first.first <= addr; ++it)
+            if (addr < it->first.first + it->first.second) hit.push_back(it->first);
+        return hit;
+    }
+
+    // Takes every watch off the owned ranges that overlap [a, a + n) (they are being unmapped).
+    void dropOwned(VAddr a, u64 n) {
+        std::scoped_lock l{owned_mutex};
+        for (auto it = owned.begin(); it != owned.end();) {
+            if (it->first.first < a + n && it->first.first + it->first.second > a) {
+                for (u32 k = 0; k < it->second; ++k) {
+                    page_manager.UpdateReadWatchers<false>(it->first.first, it->first.second);
+                    page_manager.UpdatePageWatchers<false>(it->first.first, it->first.second);
+                }
+                noteReleasedOwned(it->first.first, it->first.second);
+                it = owned.erase(it);
+            } else {
+                ++it;
+            }
+        }
+    }
+
+    // The CPU touched memory an image is ahead of (`write`: it is about to write it). The renderer
+    // writes the images over it back, the GPU finishes that, and the pages are released; a CPU write
+    // then changes bytes the image does not have, so the images are told (they are filled again).
+    // True if the access belonged to an owned range (the access is retried).
+    bool resolveOwned(VAddr addr, bool write);
 };
 
 Rasterizer::Rasterizer(AmdGpu::Liverpool* liverpool) : impl{std::make_unique<Impl>(this, liverpool)} {
     liverpool->BindRasterizer(this);
     Engine& e = engine();
     std::scoped_lock g{e.lock};
-    // No page watches: VPKEngine finds CPU writes to texture sources by their content. A watched
-    // (read-only) page cannot be aliased by a no-copy Metal buffer (log 17:49: guest buffer of
-    // 0x706c000000 refused, 40 resources missing a frame, black picture) and a write to it from
-    // host code (an HLE strncpy) faulted in a loop.
-    e.uploaded = nullptr;
+    // Page watches only where the GPU buffers alias a mirror of guest memory (vpkengine_mirror.h):
+    // a watched (read-only) guest page cannot be aliased by a no-copy Metal buffer (log 17:49: guest
+    // buffer of 0x706c000000 refused, 40 resources missing a frame, black picture), but the mirror
+    // is another mapping of the same pages that stays writable. The renderer asks for watches only
+    // over mirrored regions; elsewhere it finds CPU writes by content.
+    Impl* const raw = impl.get();
+    e.watchWrites = [raw](u64 a, u64 n) { raw->watch(a, n); };
+    e.watchOwned = [raw](u64 a, u64 n, bool on) { raw->setOwned(a, n, on); };
+    gWatchProbeContext.store(raw, std::memory_order_release);
+    gWatchProbe.store([](void* ctx, u64 a, u64 b) { return static_cast<Impl*>(ctx)->anyWatchIn(a, b); },
+                      std::memory_order_release);
     e.start();
 }
 
 Rasterizer::~Rasterizer() {
     Engine& e = engine();
     std::scoped_lock g{e.lock};
-    e.uploaded = nullptr;
+    e.watchWrites = nullptr;
+    e.watchOwned = nullptr;
+    if (e.renderer) e.renderer->flushReports();
+    flushLeftOut();
+    gWatchProbe.store(nullptr, std::memory_order_release);
+    gWatchProbeContext.store(nullptr, std::memory_order_release);
 }
 
 void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
@@ -538,8 +867,10 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
     const auto& regs = impl->liverpool->regs;
     using Mode = AmdGpu::ColorControl::OperationMode;
     switch (regs.color_control.mode) {
-    case Mode::EliminateFastClear: return leftOut("fast clear elimination (no fast-clear metadata)");
-    case Mode::FmaskDecompress: return leftOut("FMask decompression (no MSAA on the host)");
+    // No-ops by design: the host keeps no CMASK/FMASK compression (a fast clear is a real clear, an FMask
+    // read is the identity map), so there is nothing to eliminate or decompress.
+    case Mode::EliminateFastClear:
+    case Mode::FmaskDecompress: return;
     case Mode::Resolve: {
         if (!regs.color_buffers[0] || !regs.color_buffers[1]) return;
         Engine& e = engine();
@@ -547,15 +878,28 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
         if (!e.start()) return;
         e.applyPending();
         e.renderer->resolve(colorTarget(regs, 0), colorTarget(regs, 1));
+        e.noteWork();
         return;
     }
     default: break;
     }
     if (regs.primitive_type == AmdGpu::PrimitiveType::None) return;
-    if (regs.stage_enable.es_en || regs.stage_enable.ls_en || regs.stage_enable.gs_en || regs.stage_enable.hs_en)
-    {
+    auditContextRegs(regs);
+    // Pipeline kinds: VS only, ES+GS+copy VS (run by VPKEngine as compute + a normal draw). LS/HS
+    // (tessellation), an on-chip GS and stream out are not supported: those draws are left out.
+    const bool geometry = regs.stage_enable.es_en || regs.stage_enable.gs_en;
+    if (regs.stage_enable.ls_en || regs.stage_enable.hs_en) {
         describeGeometryDraw(regs);
-        return leftOut("geometry / tessellation pipeline (ES/LS stages)");
+        return leftOut("tessellation pipeline (LS/HS stages)");
+    }
+    if (geometry) {
+        describeGeometryDraw(regs);  // (logs the first few distinct ones)
+        if (!regs.stage_enable.es_en || !regs.stage_enable.gs_en)
+            return leftOut("ES/GS stage enable combination (one of the two missing)");
+        if (regs.vgt_gs_mode.onchip) return leftOut("on-chip geometry shader");
+        if (regs.vgt_strmout_config.raw) return leftOut("geometry shader with stream out");
+        if (!regs.es_program.Address<VAddr>() || !regs.gs_program.Address<VAddr>())
+            return leftOut("geometry pipeline without an ES or GS program");
     }
 
     Engine& e = engine();
@@ -571,7 +915,16 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
             if (!cb) continue;
             vpps4::ColorTarget& c = d.color[i];
             c = colorTarget(regs, i);
+            // The size the title set the target up with (SetRenderTarget's extent), not the tile-aligned
+            // pitch and height: sizes, viewports and later reads of the target agree with the title's.
+            if (const auto& ext = impl->liverpool->last_cb_extent[i]; ext.Valid() && ext.width <= c.width && ext.height <= c.height) {
+                c.width = ext.width;
+                c.height = ext.height;
+            }
             c.writeMask = uint8_t(regs.color_target_mask.GetMask(i) & regs.color_shader_mask.GetMask(i));
+            c.forceDstAlpha1 = cb.attrib.force_dst_alpha_1;
+            c.blendClamp = cb.info.blend_clamp;
+            c.blendBypass = cb.info.blend_bypass;
             const auto& b = regs.blend_control[i];
             vpps4::Blend& bl = d.blend[i];
             bl.enable = b.enable;
@@ -582,7 +935,17 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
             bl.alphaSrc = uint8_t(b.alpha_src_factor);
             bl.alphaDst = uint8_t(b.alpha_dst_factor);
             bl.alphaFunc = uint8_t(b.alpha_func);
+            bl.disableRop3 = b.disable_rop3;
         }
+    d.rop3 = uint8_t(regs.color_control.rop3);
+    d.degamma = regs.color_control.degamma_enable;
+    // DB_ALPHA_TO_MASK.ALPHA_TO_MASK_ENABLE (0xA2DC), unless DB_SHADER_CONTROL turns it off.
+    d.alphaToMask = (regs.reg_array[0xA2DC] & 1u) != 0 && !regs.depth_shader_control.alpha_to_mask_disable;
+    d.psKill = regs.depth_shader_control.kill_enable;
+    d.psExportsZ = regs.depth_shader_control.z_export_enable;
+    d.psExportsStencil = regs.depth_shader_control.stencil_test_val_export_enable ||
+                         regs.depth_shader_control.stencil_op_val_export_enable;
+    d.psExportsMask = regs.depth_shader_control.mask_export_enable;
     d.blendColor = regs.blend_constants;
     const auto& db = regs.depth_buffer;
     if (db.DepthValid() || db.StencilValid()) {
@@ -600,6 +963,24 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
         d.depth.stencilClear = regs.depth_render_control.stencil_clear_enable;
         d.depth.clearDepth = regs.depth_clear;
         d.depth.clearStencil = uint8_t(regs.stencil_clear);
+        if (const auto& ext = impl->liverpool->last_db_extent; ext.Valid() && ext.width <= d.depth.width && ext.height <= d.depth.height) {
+            d.depth.width = ext.width;
+            d.depth.height = ext.height;
+        }
+        // Tested against the read base, written at the write base.
+        d.depth.zWriteAddress = db.DepthWriteValid() ? db.DepthWriteAddress() : 0;
+        d.depth.stencilWriteAddress = db.StencilWriteValid() ? db.StencilWriteAddress() : 0;
+        d.depth.zReadOnly = regs.depth_view.z_read_only;
+        d.depth.stencilReadOnly = regs.depth_view.stencil_read_only;
+        const auto& ov = regs.depth_render_override;
+        d.depth.forceZDirty = ov.force_z_dirty;
+        d.depth.forceZValid = ov.force_z_valid;
+        d.depth.forceStencilDirty = ov.force_stencil_dirty;
+        d.depth.forceStencilValid = ov.force_stencil_valid;
+        d.depth.boundsMin = regs.depth_bounds_min;
+        d.depth.boundsMax = regs.depth_bounds_max;
+        d.depth.depthCopy = regs.depth_render_control.depth_copy;
+        d.depth.copySample = uint8_t(regs.depth_render_control.copy_sample);
     }
     const auto& dc = regs.depth_control;
     d.depthStencil.depthTest = dc.depth_enable;
@@ -607,22 +988,89 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
     d.depthStencil.depthFunc = uint8_t(dc.depth_func);
     d.depthStencil.stencilTest = dc.stencil_enable;
     d.depthStencil.backfaceEnable = dc.backface_enable;
+    d.depthStencil.depthBounds = dc.depth_bounds_enable;
+    d.depthStencil.colorWritesOnDepthFail = dc.enable_color_writes_on_depth_fail;
+    d.depthStencil.noColorWritesOnDepthPass = dc.disable_color_writes_on_depth_pass;
     const auto& sc = regs.stencil_control;
     d.depthStencil.front = {uint8_t(dc.stencil_ref_func), uint8_t(sc.stencil_fail_front), uint8_t(sc.stencil_zpass_front),
                             uint8_t(sc.stencil_zfail_front), regs.stencil_ref_front.stencil_test_val,
-                            regs.stencil_ref_front.stencil_mask, regs.stencil_ref_front.stencil_write_mask};
+                            regs.stencil_ref_front.stencil_mask, regs.stencil_ref_front.stencil_write_mask,
+                            regs.stencil_ref_front.stencil_op_val};
     d.depthStencil.back = {uint8_t(dc.stencil_bf_func), uint8_t(sc.stencil_fail_back), uint8_t(sc.stencil_zpass_back),
                            uint8_t(sc.stencil_zfail_back), regs.stencil_ref_back.stencil_test_val,
-                           regs.stencil_ref_back.stencil_mask, regs.stencil_ref_back.stencil_write_mask};
+                           regs.stencil_ref_back.stencil_mask, regs.stencil_ref_back.stencil_write_mask,
+                           regs.stencil_ref_back.stencil_op_val};
 
     // Rasterizer state.
     const auto& vp = regs.viewports[0];
-    d.viewport = {vp.xscale, vp.xoffset, vp.yscale, vp.yoffset, vp.zscale, vp.zoffset};
-    const auto& ss = regs.screen_scissor;
-    d.scissor = {ss.top_left_x, ss.top_left_y, ss.bottom_right_x, ss.bottom_right_y};
-    d.raster.cullFront = regs.polygon_control.cull_front;
-    d.raster.cullBack = regs.polygon_control.cull_back;
-    d.raster.frontFaceClockwise = regs.polygon_control.front_face == AmdGpu::FrontFace::Clockwise;
+    // PA_CL_VTE_CNTL: a transform that is switched off is the identity (scale 1, offset 0). With the x / y
+    // scale off the vertices are already screen coordinates: the renderer then maps the whole target
+    // (vpps4::Viewport::xScreen / yScreen), not a 2x2 viewport.
+    const auto& vte = regs.viewport_control;
+    d.viewport = {vte.xscale_enable ? vp.xscale : 1.0f, vte.xoffset_enable ? vp.xoffset : 0.0f,
+                  vte.yscale_enable ? vp.yscale : 1.0f, vte.yoffset_enable ? vp.yoffset : 0.0f,
+                  vte.zscale_enable ? vp.zscale : 1.0f, vte.zoffset_enable ? vp.zoffset : 0.0f};
+    d.viewport.xScreen = !vte.xscale_enable;
+    d.viewport.yScreen = !vte.yscale_enable;
+    // Scissors: screen, window and generic (the last two shifted by the window offset), and the
+    // viewport scissor when enabled; combined by the renderer.
+    {
+        auto plain = [](const AmdGpu::Scissor& q) {
+            return vpps4::Scissor{q.top_left_x, q.top_left_y, q.bottom_right_x, q.bottom_right_y};
+        };
+        auto boxed = [](const AmdGpu::ViewportScissor& q) {
+            return vpps4::Scissor{int32_t(q.top_left_x), int32_t(q.top_left_y), int32_t(q.bottom_right_x), int32_t(q.bottom_right_y)};
+        };
+        vpps4::ScissorRegs& sr = d.scissorRegs;
+        sr.present = true;
+        sr.screen = plain(regs.screen_scissor);
+        sr.window = boxed(regs.window_scissor);
+        sr.generic = boxed(regs.generic_scissor);
+        sr.viewportScissor = boxed(regs.viewport_scissors[0]);
+        sr.windowOffsetX = regs.window_offset.window_x_offset;
+        sr.windowOffsetY = regs.window_offset.window_y_offset;
+        sr.windowOffsetDisable = regs.window_scissor.window_offset_disable;
+        sr.genericOffsetDisable = regs.generic_scissor.window_offset_disable;
+        sr.viewportScissorEnable = regs.mode_control.vport_scissor_enable;
+    }
+    vpps4::Raster& ra = d.raster;
+    ra.cullFront = regs.polygon_control.cull_front;
+    ra.cullBack = regs.polygon_control.cull_back;
+    ra.frontFaceClockwise = regs.polygon_control.front_face == AmdGpu::FrontFace::Clockwise;
+    // PA_SU_POLY_OFFSET_*: poly_offset.depth_bias is the clamp register (its first word, db_fmt_cntl, is read below).
+    ra.offsetFront = regs.polygon_control.enable_polygon_offset_front;
+    ra.offsetBack = regs.polygon_control.enable_polygon_offset_back;
+    ra.offsetPara = regs.polygon_control.enable_polygon_offset_para;
+    ra.offsetClamp = regs.poly_offset.depth_bias;
+    // DB_FMT_CNTL: NEG_NUM_DB_BITS (signed byte, minus the depth bits) and DB_IS_FLOAT_FMT. A zero register
+    // (never written) leaves the unit to the depth target's format.
+    if (const u32 fmt = regs.poly_offset.db_fmt_cntl) {
+        const int bits = -int(int8_t(fmt & 0xFF));
+        ra.dbFmtValid = bits > 0 && bits <= 32;
+        ra.dbBits = uint8_t(ra.dbFmtValid ? bits : 24);
+        ra.dbIsFloat = (fmt >> 8) & 1;
+    }
+    ra.frontScale = regs.poly_offset.front_scale;
+    ra.frontOffset = regs.poly_offset.front_offset;
+    ra.backScale = regs.poly_offset.back_scale;
+    ra.backOffset = regs.poly_offset.back_offset;
+    // PA_CL_CLIP_CNTL / PA_CL_VS_OUT_CNTL.
+    ra.clipDisable = regs.IsClipDisabled();
+    ra.zclipNearDisable = regs.clipper_control.zclip_near_disable;
+    ra.zclipFarDisable = regs.clipper_control.zclip_far_disable;
+    ra.clipSpaceZeroToW = regs.clipper_control.clip_space == AmdGpu::ClipSpace::ZeroToW;
+    ra.userClipPlanes = uint8_t(regs.clipper_control.user_clip_plane_enable);
+    ra.vsOutputsViewportIndex = regs.vs_output_control.use_vtx_viewport_idx;
+    ra.vsOutputsClipDistances = regs.vs_output_control.clip_distance_enable != 0;
+    ra.polygonModeEnable = regs.polygon_control.enable_polygon_mode != 0;
+    ra.polygonModeFront = uint8_t(regs.polygon_control.polygon_mode_front);
+    ra.polygonModeBack = uint8_t(regs.polygon_control.polygon_mode_back);
+    ra.provokingLast = regs.polygon_control.provoking_vtx_last == AmdGpu::ProvokingVtxLast::Last;
+    ra.lineWidth = regs.line_control.Width();
+    // VGT_MULTI_PRIM_IB_RESET_EN / _INDX.
+    ra.primitiveRestart = (regs.enable_primitive_restart & 1) != 0;
+    ra.restartIndex = regs.primitive_restart_index;
+    d.indexSwap = uint8_t(regs.index_buffer_type.swap_mode);
     d.primitive = vpps4::PrimitiveType(uint8_t(regs.primitive_type));
 
     // Geometry. (The fetch subroutine adds its own vertex offset SGPR: only VGT_INDX_OFFSET here.)
@@ -636,14 +1084,49 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
     d.firstVertex = regs.index_offset;
 
     // Stages.
+    // The fetch subroutine a vertex-fetching stage (VS, or the ES of a geometry pipeline) calls.
+    auto attachFetch = [&e](vpps4::Stage& st) {
+        if (const u64 fa = e.fetchAddresses.address(st.code, st.userData, st.userSgprs)) {
+            Engine::FetchBody& body = e.fetchBodies[(fa >> 2) % e.fetchBodies.size()];
+            const auto* p = reinterpret_cast<const uint32_t*>(fa);
+            const u64 generation = spanCache().mapGen.load(std::memory_order_acquire);
+            if (body.address == fa && body.generation == generation && body.words &&
+                std::memcmp(p, body.code.data(), 4ull * body.words) == 0) {
+                st.fetch = std::span<const uint32_t>(p, body.words);
+            } else {
+                const u64 bytes = readable(fa, 2048);
+                const size_t n = bytes >= 4 ? vpps4::fetchLength(std::span<const uint32_t>(p, bytes / 4)) : 0;
+                if (n) {
+                    st.fetch = std::span<const uint32_t>(p, n);
+                    if (n <= body.code.size()) {
+                        body.address = fa;
+                        body.generation = generation;  // (read before readable(): a later clear() leaves it stale)
+                        body.words = u32(n);
+                        std::memcpy(body.code.data(), p, 4 * n);
+                    }
+                }
+            }
+        }
+    };
     fillStage(d.vs, regs.vs_program);
     d.vs.vgprCompCnt = uint8_t(regs.vs_program.settings.vgpr_comp_cnt);
     d.vs.instanceStepRate = {regs.vgt_instance_step_rate_0, regs.vgt_instance_step_rate_1};
-    if (const u64 fa = vpps4::fetchAddress(d.vs.code, d.vs.userData, d.vs.userSgprs)) {
-        const u64 bytes = readable(fa, 2048);
-        const auto* p = reinterpret_cast<const uint32_t*>(fa);
-        const size_t n = bytes >= 4 ? vpps4::fetchLength(std::span<const uint32_t>(p, bytes / 4)) : 0;
-        if (n) d.vs.fetch = std::span<const uint32_t>(p, n);
+    std::memcpy(&d.vs.vsOutCntl, &regs.vs_output_control, sizeof(u32));  // PA_CL_VS_OUT_CNTL: pos1-pos3
+    if (geometry) {
+        // The program in the VS registers is the GS's copy shader (it has no fetch subroutine).
+        fillStage(d.es, regs.es_program);
+        d.es.vgprCompCnt = uint8_t(regs.es_program.settings.vgpr_comp_cnt);
+        d.es.instanceStepRate = {regs.vgt_instance_step_rate_0, regs.vgt_instance_step_rate_1};
+        attachFetch(d.es);
+        fillStage(d.gs, regs.gs_program);
+        d.geom.enabled = true;
+        d.geom.esgsItemDwords = regs.vgt_esgs_ring_itemsize;
+        d.geom.gsvsVertDwords = regs.vgt_gs_vert_itemsize[0];
+        d.geom.maxVertOut = regs.vgt_gs_max_vert_out;
+        d.geom.outPrim = u32(regs.vgt_gs_out_prim_type.GetPrimitiveType(0));
+        d.geom.gsInstances = regs.vgt_gs_instance_cnt.IsEnabled() ? u32(regs.vgt_gs_instance_cnt.count) : 1u;
+    } else {
+        attachFetch(d.vs);
     }
     if (regs.ps_program.Address<VAddr>() != 0) {
         fillStage(d.ps, regs.ps_program);
@@ -656,29 +1139,35 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
     }
     if (pendingIndirect != 0) {
         d.indirectAddress = pendingIndirect;
+        d.indirectCountAddress = pendingCount;
+        d.drawIndex = pendingIndex;
         if (is_indexed) d.count = std::max<u32>(regs.max_index_size, 1);
         else d.count = 1;
     }
     e.renderer->draw(d);
+    e.noteWork();
 }
 
 void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u32 size, u32 max_count,
                               VAddr count_address) {
+    // Every draw reads its arguments on the GPU; with a count buffer the GPU also decides which of
+    // the max_count draws are live (the converter zeroes the rest): nothing is read on the CPU.
+    constexpr u32 kMaxMultiDraw = 1024;
     u32 count = std::max<u32>(max_count, 1);
-    if (count_address != 0) {
-        // The count the GPU would read, as the CPU sees it now (GPU work that writes it in this
-        // frame is not seen).
-        u32 n = 0;
-        if (readable(count_address, 4) >= 4) std::memcpy(&n, reinterpret_cast<const void*>(count_address), 4);
-        count = std::min(count, n);
-        leftOut("indirect draw count read from memory by the CPU (approximation)");
+    if (count > kMaxMultiDraw) {
+        Census::Note("draw-skip", "multi-draw indirect beyond 1024 draws truncated", fmt::format("max_count={}", max_count));
+        count = kMaxMultiDraw;
     }
     const u32 stride = size != 0 ? size : (is_indexed ? 20 : 16);
     for (u32 k = 0; k < count; ++k) {
         pendingIndirect = arg_address + offset + u64(k) * stride;
+        pendingCount = count_address;
+        pendingIndex = k;
         Draw(is_indexed, 0);
     }
     pendingIndirect = 0;
+    pendingCount = 0;
+    pendingIndex = 0;
 }
 
 void Rasterizer::DispatchDirect() {
@@ -716,6 +1205,7 @@ void Rasterizer::Dispatch(VAddr indirect) {
     d.groups = {cs.dim_x, cs.dim_y, cs.dim_z};
     d.indirectAddress = indirect;
     e.renderer->dispatch(d);
+    e.noteWork();
 }
 
 void Rasterizer::FillBuffer(VAddr address, u32 num_bytes, u32 value, bool is_gds) {
@@ -724,10 +1214,8 @@ void Rasterizer::FillBuffer(VAddr address, u32 num_bytes, u32 value, bool is_gds
     if (!e.start()) return;
     e.applyPending();
     if (is_gds) {
-        // GDS is ours and CPU-visible: the GPU's earlier work is finished first.
-        e.submit();
-        e.waitGpu(Engine::WaitGds);
-        e.renderer->gpuIdle();
+        // GDS is ours and CPU-visible: the GPU work that uses it is finished first (and only that).
+        e.scheduler->syncGds();
         if (u32* gds = e.renderer->gds(); gds && address < 0x10000) {
             const u32 n = std::min<u32>(num_bytes, 0x10000 - u32(address)) / 4;
             std::fill_n(gds + address / 4, n, value);
@@ -744,6 +1232,7 @@ void Rasterizer::FillBuffer(VAddr address, u32 num_bytes, u32 value, bool is_gds
     // (a range the probe cannot vouch for, e.g. across its window, keeps the GPU blit)
     if (readable(address, num_bytes) < num_bytes) {
         e.renderer->fill(address, num_bytes, value);
+        e.noteWork();
         return;
     }
     auto* p = reinterpret_cast<u8*>(address);
@@ -759,9 +1248,7 @@ void Rasterizer::CopyBuffer(VAddr dst, VAddr src, u32 num_bytes, bool dst_gds, b
     if (!e.start()) return;
     e.applyPending();
     if (dst_gds || src_gds) {
-        e.submit();
-        e.waitGpu(Engine::WaitGds);
-        e.renderer->gpuIdle();
+        e.scheduler->syncGds();
         u32* gds = e.renderer->gds();
         if (!gds) return;
         auto* gb = reinterpret_cast<u8*>(gds);
@@ -781,6 +1268,7 @@ void Rasterizer::CopyBuffer(VAddr dst, VAddr src, u32 num_bytes, bool dst_gds, b
     e.syncForDma(src, num_bytes, dst, num_bytes);
     if (readable(src, num_bytes) < num_bytes || readable(dst, num_bytes) < num_bytes) {
         e.renderer->copy(dst, src, num_bytes);
+        e.noteWork();
         return;
     }
     std::memmove(reinterpret_cast<void*>(dst), reinterpret_cast<const void*>(src), num_bytes);
@@ -797,12 +1285,85 @@ u32 Rasterizer::ReadDataFromGds(u32 gds_offset) {
 
 bool Rasterizer::InvalidateMemory(VAddr addr, u64 size) {
     if (!impl->isMapped(addr, std::max<u64>(size, 1))) return false;
-    return impl->invalidate(addr, std::max<u64>(size, 1));
+    const bool owned = impl->resolveOwned(addr, true);
+    return impl->invalidate(addr, std::max<u64>(size, 1)) || owned;
 }
 
-bool Rasterizer::ReadMemory(VAddr, u64) {
-    // Nothing sets read watches: GPU writes go to guest memory in place.
-    return false;
+// The CPU read memory that an image on the GPU is ahead of (render targets are not written back by
+// themselves): the renderer re-tiles the image into the guest memory, the GPU finishes it, and the
+// read is retried.
+bool Rasterizer::ReadMemory(VAddr addr, u64 size) {
+    if (!impl->isMapped(addr, std::max<u64>(size, 1))) return false;
+    return impl->resolveOwned(addr, false);
+}
+
+bool Rasterizer::Impl::resolveOwned(VAddr addr, bool write) {
+    const auto hit = ownedAt(addr);
+    // (another thread resolved this page between the fault and here: the access is retried)
+    if (hit.empty()) return recentlyReleasedOwned(addr);
+    Engine& e = engine();
+    bool stillAhead = false;
+    {
+        // One critical section from the write back to the release (engine lock, then owned_mutex: the
+        // order setOwned takes them in): the renderer records under the engine lock, so an image cannot
+        // take the range over again between the write back and the page release, which would leave an
+        // image ahead of memory on pages the CPU can touch.
+        std::scoped_lock g{e.lock};
+        e.applyPending();
+        if (e.renderer) {
+            // (writes the images back and waits only for the frames that touch those ranges)
+            for (auto [s, z] : hit) e.syncForDma(s, z);
+        }
+        std::vector<std::pair<VAddr, u64>> overdue;
+        {
+            std::scoped_lock l{owned_mutex};
+            const auto now = std::chrono::steady_clock::now();
+            for (auto [s, z] : hit) {
+                auto it = owned.find({s, z});
+                if (it == owned.end()) {
+                    aheadSince.erase({s, z});
+                    continue;
+                }
+                // An image that could not be written back yet (its kernel is still compiling) is still ahead
+                // of the memory: the pages stay protected and the access is retried, for a while.
+                if (e.renderer && e.renderer->tracker().ownerImage(s, z) != 0) {
+                    const auto since = aheadSince.try_emplace({s, z}, now).first->second;
+                    if (now - since < kAheadLimit) {
+                        stillAhead = true;
+                        continue;
+                    }
+                    overdue.push_back({s, z});  // never written back (layout the re-tiler refuses): give up below
+                    continue;
+                }
+                aheadSince.erase({s, z});
+                for (u32 k = 0; k < it->second; ++k) {
+                    page_manager.UpdateReadWatchers<false>(s, z);
+                    page_manager.UpdatePageWatchers<false>(s, z);
+                }
+                owned.erase(it);
+                noteReleasedOwned(s, z);
+                if (write) e.queueInvalidate(s, z);
+            }
+        }
+        // (outside owned_mutex: dropping the owner hands the host its page release, which takes it)
+        for (auto [s, z] : overdue) {
+            aheadSince.erase({s, z});
+            e.renderer->abandonOwners(s, z);
+            Census::Note("owned-abandoned", fmt::format("{:#x}+{:#x}", s, z),
+                         "image ahead of memory could not be written back for 200 ms: pages released, memory left as it is");
+            {
+                std::scoped_lock l{owned_mutex};
+                if (owned.erase({s, z})) {  // (abandonOwners releases through setOwned; this covers a count left over)
+                    page_manager.UpdateReadWatchers<false>(s, z);
+                    page_manager.UpdatePageWatchers<false>(s, z);
+                    noteReleasedOwned(s, z);
+                }
+            }
+            if (write) e.queueInvalidate(s, z);
+        }
+    }
+    if (stillAhead) std::this_thread::sleep_for(std::chrono::milliseconds(1));  // (outside the lock)
+    return true;
 }
 
 bool Rasterizer::IsMapped(VAddr addr, u64 size) {
@@ -835,6 +1396,10 @@ void Rasterizer::MapMemory(VAddr addr, u64 size) {
 
 void Rasterizer::UnmapMemory(VAddr addr, u64 size) {
     impl->invalidate(addr, size);
+    // The memory is gone whatever was watched there: the tracker forgets what it knew (stale owners
+    // included) and textures made from it are refilled if the range is mapped again.
+    engine().queueInvalidate(addr, size);
+    impl->dropOwned(addr, size);
     impl->page_manager.OnGpuUnmap(addr, size);
     std::scoped_lock l{impl->mapped_mutex};
     const VAddr end = addr + size;
@@ -854,11 +1419,69 @@ void Rasterizer::UnmapMemory(VAddr addr, u64 size) {
     spanCache().clear();
 }
 
+// ZPASS_DONE: the renderer counts the samples that pass and writes them when the GPU is done.
+bool Rasterizer::ZPassDone(VAddr address, u32 pairs) {
+    Engine& e = engine();
+    std::scoped_lock g{e.lock};
+    if (!e.start()) return false;
+    e.applyPending();
+    return e.renderer->zpassDone(address, pairs);
+}
+
+// The command processor reads occlusion results (SET_PREDICATION, OCCLUSION_QUERY): with `wait`
+// the GPU is finished first (submit + wait, then the results are written).
+bool Rasterizer::SyncGpuWrites(VAddr addr, u64 size, bool wait) {
+    Engine& e = engine();
+    std::scoped_lock g{e.lock};
+    if (!e.renderer) return true;
+    e.applyPending();
+    bool final = true;
+    if (e.renderer->occlusionPending(addr, size)) {
+        if (!wait) {
+            e.renderer->drainOcclusion(false);
+            final = !e.renderer->occlusionPending(addr, size);
+        } else {
+            if (e.scheduler) e.scheduler->finish();  // (submits what is recorded and waits for the GPU)
+            e.renderer->drainOcclusion(true);
+        }
+    }
+    // The command processor reads guest memory that a label write (EOP / EOS / RELEASE_MEM) or GPU work
+    // queued earlier may still change: the same wait as a DMA read (images ahead of the memory are
+    // written back, only the frames that touch the range are waited for). Without `wait` the work that
+    // produces it is put on the GPU and the call only reports.
+    if (e.scheduler) {
+        const u64 a = addr, n = std::max<u64>(size, 1);
+        if (wait) {
+            e.syncForDma(a, n);
+        } else {
+            e.scheduler->prepareWait(a, n);
+            final = final && !e.renderer->labelPending(a, static_cast<u32>(std::min<u64>(n, ~0u)));
+        }
+    }
+    return final;
+}
+
+// ACQUIRE_MEM / SURFACE_SYNC. Metal orders GPU work itself and guest memory is unified, so a flush of
+// the GPU's own caches needs nothing (the memory tracker orders the images; render targets reach
+// memory lazily, when the CPU or a raw access needs them). When the title invalidates the readers'
+// caches over a bounded range, whatever the host cannot watch there is looked at again (shader code,
+// textures without write watches): Renderer::coherencePoint.
+void Rasterizer::OnCoherencePoint(VAddr base, u64 size, u32 coher_cntl) {
+    Engine& e = engine();
+    std::scoped_lock g{e.lock};
+    e.applyPending();
+    if (e.renderer && size && AmdGpu::Pm4::CoherInvalidatesReaders(coher_cntl))
+        e.renderer->coherencePoint(base, size);
+}
+
 u64 Rasterizer::Flush() {
     Engine& e = engine();
     std::scoped_lock g{e.lock};
     e.applyPending();
-    e.submit();
+    // A Liverpool command buffer batch ended (SubmitDone, ~15 a picture): the work stays recorded
+    // and joins the picture's frame, which goes to the GPU when it is presented, when the CPU needs
+    // it (DMA, GDS, a label wait) or when the policy says it has waited long enough (labels).
+    if (e.scheduler) e.scheduler->flush();
     return e.submits.load();
 }
 
@@ -866,9 +1489,56 @@ void Rasterizer::Finish() {
     Engine& e = engine();
     std::scoped_lock g{e.lock};
     e.applyPending();
-    e.submit();
-    if (e.backend) e.waitGpu(Engine::WaitFinish);
-    if (e.renderer) e.renderer->gpuIdle();
+    if (e.scheduler) e.scheduler->finish();
+    if (e.renderer) e.renderer->drainOcclusion(true);  // ZPASS_DONE results: the GPU is idle
+}
+
+void Rasterizer::SyncGds() {
+    Engine& e = engine();
+    std::scoped_lock g{e.lock};
+    e.applyPending();
+    if (e.scheduler) e.scheduler->syncGds();
+}
+
+void Rasterizer::ScheduleLabelWrite(void* address, u64 value, u32 size, std::function<void()> then) {
+    Engine& e = engine();
+    std::scoped_lock g{e.lock};
+    if (!e.scheduler) {  // no GPU work can exist
+        if (address) VideoCore::WriteGuestLabel(address, value, size);
+        if (then) then();
+        return;
+    }
+    // Written (and the interrupt raised) once the GPU has finished the work recorded so far: on
+    // Metal's completion thread, or at once if there is none outstanding.
+    e.scheduler->scheduleLabel(reinterpret_cast<u64>(address), address ? size : 0, bool(then),
+                               [address, value, size, then = std::move(then)] {
+                                   if (address) VideoCore::WriteGuestLabel(address, value, size);
+                                   if (then) then();
+                               });
+    e.watchCv.notify_one();  // (a label is waiting: the watchdog's deadline changed)
+}
+
+void Rasterizer::PrepareLabelWait(const void* address, u32 size) {
+    Engine& e = engine();
+    std::scoped_lock g{e.lock};
+    if (e.scheduler) e.scheduler->prepareWait(reinterpret_cast<u64>(address), size);
+}
+
+void Rasterizer::WriteDataOrdered(void* address, const void* data, u32 size) {
+    Engine& e = engine();
+    {
+        std::scoped_lock g{e.lock};
+        // After the GPU work that reads or writes this memory, and after label writes pending for it.
+        if (e.scheduler) {
+            // Images ahead of this memory are written back first (and their pages released once the GPU
+            // has run that): a protected page would fault in the middle of the copy.
+            if (e.renderer) e.renderer->syncToMemory(reinterpret_cast<u64>(address), size);
+            e.scheduler->syncCpu(reinterpret_cast<u64>(address), size, vp4gpu::SubmitReason::WriteData);
+            std::memcpy(address, data, size);
+            return;
+        }
+    }
+    std::memcpy(address, data, size);
 }
 
 // ---- Presenter ----------------------------------------------------------------------------------
@@ -985,9 +1655,16 @@ struct PresentState {
 
     // The texture VPKEngine has for a T#, after recording whatever fills it.
     static id<MTLTexture> textureOf(Engine& e, const vpps4::ImageDesc& d) {
-        const vpgpu::TextureId tid = e.renderer->textureFor(d);
+        const vp4gpu::TextureId tid = e.renderer->textureFor(d);
         if (!tid) return nil;
-        return (__bridge id<MTLTexture>)e.backend->nativeTexture(tid);
+        return nativeTexture(e, tid);
+    }
+
+    // The Metal texture of `tid` (with the submit thread, if there is one, kept out of the backend meanwhile).
+    static id<MTLTexture> nativeTexture(Engine& e, vp4gpu::TextureId tid) {
+        void* native = nullptr;
+        e.device->withBackend([&] { native = e.backend->nativeTexture(tid); });
+        return (__bridge id<MTLTexture>)native;
     }
 
     // Draws `regions` into a new headset frame of width x height; -1 if the host has none free.
@@ -1003,7 +1680,11 @@ struct PresentState {
         id<MTLTexture> out = (__bridge id<MTLTexture>)target_texture;
         id<MTLRenderPipelineState> pso = pipeline;
         std::vector<Region> list(regions.begin(), regions.end());
-        const bool queued = e.backend->encodeInterop(
+        // The compose command buffer goes after the frames submitted before it: with the submit thread,
+        // they must have reached the backend.
+        e.device->drain();
+        bool queued = false;
+        e.device->withBackend([&] { queued = e.backend->encodeInterop(
             [&](void* cbp) {
                 id<MTLCommandBuffer> cb = (__bridge id<MTLCommandBuffer>)cbp;
                 MTLRenderPassDescriptor* rp = [MTLRenderPassDescriptor renderPassDescriptor];
@@ -1032,7 +1713,7 @@ struct PresentState {
                 std::scoped_lock l{done_mutex};
                 done[slot] = true;
                 done_cv.notify_all();
-            });
+            }); });
         if (!queued) {
             VpkengineXr::Drop(target_index);
             return -1;
@@ -1070,11 +1751,11 @@ int ComposeEyes(std::span<const AmdGpu::Image, 2> eye_textures, const Core::Vr::
         // A T# at slice k > 0 of an array colour target (stereo eyes as the two slices of one
         // target): that slice as a 2D view. Slice 0 is the target's own address (textureOf).
         u16 slice = 0;
-        const vpgpu::TextureId arrayTarget = e.renderer->colorTargetAt(d.address)
-                                                 ? vpgpu::TextureId{}
+        const vp4gpu::TextureId arrayTarget = e.renderer->colorTargetAt(d.address)
+                                                 ? vp4gpu::TextureId{}
                                                  : e.renderer->colorTargetSlice(d.address, d.width, d.height, slice);
         if (arrayTarget) {
-            id<MTLTexture> t = (__bridge id<MTLTexture>)e.backend->nativeTexture(arrayTarget);
+            id<MTLTexture> t = PresentState::nativeTexture(e, arrayTarget);
             eyes[k] = t && t.textureType == MTLTextureType2DArray && slice < t.arrayLength
                           ? [t newTextureViewWithPixelFormat:t.pixelFormat
                                                  textureType:MTLTextureType2D
@@ -1103,7 +1784,7 @@ int ComposeEyes(std::span<const AmdGpu::Image, 2> eye_textures, const Core::Vr::
                      e.renderer->describeAt(d.address, u64(std::max(d.pitch, d.width)) * d.height * 4));
     }
     // The eyes' drawing is submitted first: the composition runs after it on the same queue.
-    e.submit();
+    e.present();
     if (!eyes[0] || !eyes[1]) {
         static std::atomic<u32> told{0};
         if (told++ < 4)
@@ -1179,7 +1860,7 @@ int ComposeScreen(const Libraries::VideoOut::BufferAttributeGroup& group, VAddr 
     d.tilingIndex = tiled ? 10 : 8;
     d.type = 9;
     id<MTLTexture> t = PresentState::plain(PresentState::textureOf(e, d));
-    e.submit();
+    e.present();
     fov = impl->last_fov;
     eye_width = impl->last_eye_width ? impl->last_eye_width : 1440;
     eye_height = impl->last_eye_height ? impl->last_eye_height : 1536;
@@ -1202,7 +1883,7 @@ int ComposeTexture(const AmdGpu::Image& texture, Core::Vr::Fov& fov, u32& eye_wi
     std::memcpy(words.data(), &texture, std::min(sizeof words, sizeof(AmdGpu::Image)));
     const vpps4::ImageDesc d = vpps4::decodeImage(words);
     id<MTLTexture> t = PresentState::plain(PresentState::textureOf(e, d));
-    e.submit();
+    e.present();
     fov = impl->last_fov;
     eye_width = impl->last_eye_width ? impl->last_eye_width : 1440;
     eye_height = impl->last_eye_height ? impl->last_eye_height : 1536;

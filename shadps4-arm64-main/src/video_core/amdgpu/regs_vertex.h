@@ -67,6 +67,9 @@ struct VgtNumInstances {
 };
 
 struct PolygonOffset {
+    // PA_SU_POLY_OFFSET_DB_FMT_CNTL: NEG_NUM_DB_BITS[7:0] (signed: minus the depth bits) and
+    // DB_IS_FLOAT_FMT[8].
+    u32 db_fmt_cntl;
     float depth_bias;
     float front_scale;
     float front_offset;

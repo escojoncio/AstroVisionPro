@@ -1210,7 +1210,10 @@ set(VIDEO_CORE src/video_core/amdgpu/cb_db_extent.h
                src/video_core/amdgpu/pixel_format.cpp
                src/video_core/amdgpu/pixel_format.h
                src/video_core/amdgpu/pm4_cmds.h
+               src/video_core/amdgpu/pm4_exec.h
                src/video_core/amdgpu/pm4_opcodes.h
+               src/platform/visionos/vpkengine_census.cpp
+               src/platform/visionos/vpkengine_census.h
                src/video_core/amdgpu/regs_color.h
                src/video_core/amdgpu/regs_depth.h
                src/video_core/amdgpu/regs.cpp
@@ -1416,39 +1419,72 @@ if (SHADPS4_VISIONOS)
     # VPKEngine's shader translator (GCN -> VPIR -> MSL), checked against the headset's Metal
     # compiler in diagnostic mode (src/platform/visionos/vpkengine_shader_check.mm).
     if (VPKENGINE_GPU_DIR)
+        # The PS4 path uses VPKEngine's frozen copies in gpu/ps4/engine (namespaces vp4gpu, vp4ir, vp4msl;
+        # branch ps4/base): they evolve independently of gpu/core, gpu/metal2 and gpu/shader.
+        set(VPKENGINE_ENGINE_DIR ${VPKENGINE_GPU_DIR}/ps4/engine)
         file(GLOB VPKENGINE_SHADER_SOURCES
-            ${VPKENGINE_GPU_DIR}/shader/ir/src/*.cpp
-            ${VPKENGINE_GPU_DIR}/shader/msl/src/*.cpp)
+            ${VPKENGINE_ENGINE_DIR}/ir/src/*.cpp
+            ${VPKENGINE_ENGINE_DIR}/msl/src/*.cpp)
         list(APPEND VPKENGINE_SHADER_SOURCES
-            ${VPKENGINE_GPU_DIR}/shader/gcn/src/gcn.cpp
-            ${VPKENGINE_GPU_DIR}/shader/gcn/src/lift.cpp)
+            ${VPKENGINE_ENGINE_DIR}/gcn/src/gcn.cpp
+            ${VPKENGINE_ENGINE_DIR}/gcn/src/lift.cpp
+            ${VPKENGINE_ENGINE_DIR}/gcn/src/formats.cpp
+            ${VPKENGINE_ENGINE_DIR}/gcn/src/format_emit.cpp)
+        # (bit-exact format conversions: no fused multiply-adds, as VPKEngine's own CMake builds them)
+        set_source_files_properties(${VPKENGINE_ENGINE_DIR}/gcn/src/formats.cpp ${VPKENGINE_ENGINE_DIR}/gcn/src/format_emit.cpp
+            PROPERTIES COMPILE_OPTIONS -ffp-contract=off)
+        # The MSL text of the soft-float f64 library, embedded as bytes: made here like VPKEngine's own
+        # CMake does (gpu/ps4/engine/ir/CMakeLists.txt).
+        set(_f64_hex "")
+        foreach(_f64_part_file ${VPKENGINE_ENGINE_DIR}/ir/src/f64_msl_prelude.inc ${VPKENGINE_ENGINE_DIR}/ir/src/f64_table.inc
+                               ${VPKENGINE_ENGINE_DIR}/ir/src/f64_core.inc)
+            file(READ ${_f64_part_file} _f64_part HEX)
+            string(APPEND _f64_hex "${_f64_part}")
+            set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${_f64_part_file})
+        endforeach()
+        string(REGEX REPLACE "([0-9a-f][0-9a-f])" "0x\\1," _f64_bytes "${_f64_hex}")
+        file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/f64_msl_data.inc "${_f64_bytes}\n")
+        target_include_directories(shadps4 PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
         target_sources(shadps4 PRIVATE ${VPKENGINE_SHADER_SOURCES}
             src/platform/visionos/vpkengine_shader_check.h
             src/platform/visionos/vpkengine_shader_check.mm)
         target_include_directories(shadps4 PRIVATE
-            ${VPKENGINE_GPU_DIR}/shader/ir/include
-            ${VPKENGINE_GPU_DIR}/shader/msl/include
-            ${VPKENGINE_GPU_DIR}/shader/gcn/include)
+            ${VPKENGINE_ENGINE_DIR}/ir/include
+            ${VPKENGINE_ENGINE_DIR}/msl/include
+            ${VPKENGINE_ENGINE_DIR}/gcn/include)
         target_compile_definitions(shadps4 PRIVATE SHADPS4_VPKENGINE_SHADER_CHECK=1)
         set_source_files_properties(src/platform/visionos/vpkengine_shader_check.mm
             PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
-        # VPKEngine renderer (gpu/core + Metal backend + VPKEngine's PS4 renderer, gpu/ps4):
+        # VPKEngine renderer (vp4gpu core + Metal backend + VPKEngine's PS4 renderer, gpu/ps4):
         # the only renderer on visionOS (src/platform/visionos/vpkengine_renderer.h). The Vulkan
         # path is still compiled but never started.
-        # gpu/ps4 since VPKEngine dropped integrations/; a pinned older checkout still has the old place.
         set(VPKENGINE_PS4_DIR ${VPKENGINE_GPU_DIR}/ps4)
-        if (NOT EXISTS ${VPKENGINE_PS4_DIR}/src/renderer.cpp)
-            set(VPKENGINE_PS4_DIR ${VPKENGINE_GPU_DIR}/../integrations/shadps4/gpu)
-        endif()
-        if (EXISTS ${VPKENGINE_PS4_DIR}/src/renderer.cpp)
-            file(GLOB VPKENGINE_CORE_SOURCES ${VPKENGINE_GPU_DIR}/core/src/*.cpp)
+        if (EXISTS ${VPKENGINE_PS4_DIR}/src/renderer.cpp AND EXISTS ${VPKENGINE_ENGINE_DIR}/metal/src/metal_backend.mm)
+            file(GLOB VPKENGINE_CORE_SOURCES ${VPKENGINE_ENGINE_DIR}/core/src/*.cpp)
             list(FILTER VPKENGINE_CORE_SOURCES EXCLUDE REGEX "null_backend\\.cpp$")
+            # The GPU tiler's Metal kernels paste the addressing header in as text: made here like
+            # VPKEngine's own CMake does (gpu/ps4/CMakeLists.txt).
+            file(READ ${VPKENGINE_PS4_DIR}/include/vpps4/tiling_addr.h VPT_ADDR_TEXT)
+            set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${VPKENGINE_PS4_DIR}/include/vpps4/tiling_addr.h)
+            configure_file(${VPKENGINE_PS4_DIR}/src/tiling_addr_text.cpp.in ${CMAKE_CURRENT_BINARY_DIR}/vpps4_tiling_addr_text.cpp @ONLY)
             target_sources(shadps4 PRIVATE ${VPKENGINE_CORE_SOURCES}
-                ${VPKENGINE_GPU_DIR}/metal/src/metal_backend.mm
+                ${VPKENGINE_ENGINE_DIR}/metal/src/metal_backend.mm
+                ${VPKENGINE_PS4_DIR}/src/fixed_function.cpp
                 ${VPKENGINE_PS4_DIR}/src/formats.cpp
                 ${VPKENGINE_PS4_DIR}/src/renderer.cpp
+                ${VPKENGINE_PS4_DIR}/src/msaa.cpp
+                ${VPKENGINE_PS4_DIR}/src/lifetime.cpp
+                ${VPKENGINE_PS4_DIR}/src/foveation.cpp
+                ${VPKENGINE_PS4_DIR}/src/scheduler.cpp
+                ${VPKENGINE_PS4_DIR}/src/translation_cache.cpp
                 ${VPKENGINE_PS4_DIR}/src/tiling.cpp
+                ${VPKENGINE_PS4_DIR}/src/gpu_tiler.cpp
+                ${CMAKE_CURRENT_BINARY_DIR}/vpps4_tiling_addr_text.cpp
                 ${VPKENGINE_PS4_DIR}/src/fetch.cpp
+                ${VPKENGINE_PS4_DIR}/src/memory_tracker.cpp
+                src/platform/visionos/vpkengine_mirror.h
+                src/platform/visionos/vpkengine_mirror.cpp
+                ${VPKENGINE_PS4_DIR}/src/report.cpp
                 src/platform/visionos/vpkengine_renderer.h
                 src/platform/visionos/vpkengine_renderer.mm
                 src/platform/visionos/vpkengine_presenter.h
@@ -1456,16 +1492,53 @@ if (SHADPS4_VISIONOS)
                 src/platform/visionos/vpkengine_xr.h
                 src/platform/visionos/vpkengine_xr.cpp)
             target_include_directories(shadps4 PRIVATE
-                ${VPKENGINE_GPU_DIR}/core/include
-                ${VPKENGINE_GPU_DIR}/metal/include
+                ${VPKENGINE_ENGINE_DIR}/core/include
+                ${VPKENGINE_ENGINE_DIR}/metal/include
                 ${VPKENGINE_PS4_DIR}/include)
+            # Fingerprint of the translation chain for the persistent shader cache (as VPKEngine's own
+            # gpu/ps4/CMakeLists.txt computes it): a change in the lifter, the IR, the MSL emitter or the
+            # renderer's descriptor handling replaces the saved translations at the next start.
+            file(GLOB_RECURSE _vpps4_fp_sources CONFIGURE_DEPENDS
+                ${VPKENGINE_ENGINE_DIR}/gcn/src/* ${VPKENGINE_ENGINE_DIR}/gcn/include/*
+                ${VPKENGINE_ENGINE_DIR}/ir/src/* ${VPKENGINE_ENGINE_DIR}/ir/include/*
+                ${VPKENGINE_ENGINE_DIR}/msl/src/* ${VPKENGINE_ENGINE_DIR}/msl/include/*
+                ${VPKENGINE_PS4_DIR}/src/renderer.cpp ${VPKENGINE_PS4_DIR}/src/formats.cpp
+                ${VPKENGINE_PS4_DIR}/src/fetch.cpp ${VPKENGINE_PS4_DIR}/src/translation_cache.cpp)
+            list(SORT _vpps4_fp_sources)
+            # GLOB's CONFIGURE_DEPENDS only notices files added or removed: a content change must re-run
+            # configure too, or the fingerprint (and with it the saved translations) goes stale in an
+            # incremental build.
+            set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${_vpps4_fp_sources})
+            set(_vpps4_fp_text "")
+            set(_vpmsl_fp_text "")
+            foreach(f ${_vpps4_fp_sources})
+                file(READ ${f} _vpps4_fp_c)
+                file(RELATIVE_PATH _vpps4_fp_rel ${VPKENGINE_PS4_DIR} ${f})
+                string(APPEND _vpps4_fp_text "${_vpps4_fp_rel}\n${_vpps4_fp_c}\n")
+                # vp4msl's own fingerprint (vp4msl::translatorFingerprint, part of the cache key): the emitter
+                # and the IR it reads.
+                if(f MATCHES "/(msl|ir)/")
+                    string(APPEND _vpmsl_fp_text "${_vpps4_fp_rel}\n${_vpps4_fp_c}\n")
+                endif()
+            endforeach()
+            string(SHA256 _vpps4_fp_hash "${_vpps4_fp_text}")
+            string(SUBSTRING ${_vpps4_fp_hash} 0 16 _vpps4_fp_hash)
+            string(SHA256 _vpmsl_fp_hash "${_vpmsl_fp_text}")
+            string(SUBSTRING ${_vpmsl_fp_hash} 0 16 _vpmsl_fp_hash)
+            set_source_files_properties(${VPKENGINE_PS4_DIR}/src/translation_cache.cpp
+                PROPERTIES COMPILE_DEFINITIONS VPPS4_TRANSLATOR_HASH="${_vpps4_fp_hash}")
+            set_source_files_properties(${VPKENGINE_ENGINE_DIR}/msl/src/msl.cpp
+                PROPERTIES COMPILE_DEFINITIONS VPMSL_TRANSLATOR_HASH="${_vpmsl_fp_hash}")
+            if(_vpps4_fp_hash STREQUAL "" OR _vpmsl_fp_hash STREQUAL "")
+                message(FATAL_ERROR "VPKEngine translator fingerprint is empty: sources not found")
+            endif()
             target_compile_definitions(shadps4 PRIVATE SHADPS4_VPKENGINE_ONLY=1)
-            set_source_files_properties(${VPKENGINE_GPU_DIR}/metal/src/metal_backend.mm
+            set_source_files_properties(${VPKENGINE_ENGINE_DIR}/metal/src/metal_backend.mm
                 src/platform/visionos/vpkengine_renderer.mm
                 PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
-            message(STATUS "VPKEngine renderer: ${VPKENGINE_PS4_DIR}")
+            message(STATUS "VPKEngine renderer: ${VPKENGINE_PS4_DIR} (engine ${VPKENGINE_ENGINE_DIR})")
         else()
-            message(WARNING "VPKEngine renderer sources missing at ${VPKENGINE_PS4_DIR}: update visionos/vpkengine-gpu.ref")
+            message(WARNING "VPKEngine renderer sources missing at ${VPKENGINE_PS4_DIR} / ${VPKENGINE_ENGINE_DIR}: update visionos/vpkengine-gpu.ref (branch ps4/base)")
         endif()
         message(STATUS "VPKEngine shader check: ${VPKENGINE_GPU_DIR}")
     endif()
