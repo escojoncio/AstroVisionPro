@@ -1514,14 +1514,45 @@ void Rasterizer::ScheduleLabelWrite(void* address, u64 value, u32 size, std::fun
                                [address, value, size, then = std::move(then)] {
                                    if (address) VideoCore::WriteGuestLabel(address, value, size);
                                    if (then) then();
-                               });
+                               },
+                               value, address != nullptr);
     e.watchCv.notify_one();  // (a label is waiting: the watchdog's deadline changed)
 }
 
-void Rasterizer::PrepareLabelWait(const void* address, u32 size) {
+// WAIT_REG_MEM function/ref/mask as PM4CmdWaitRegMem::Test applies them (1 <, 2 <=, 3 ==, 4 !=, 5 >=, 6 >).
+static bool WaitRegMemWants(u32 function, u32 ref, u32 mask, u32 value) {
+    value &= mask;
+    switch (function) {
+    case 0: return true;
+    case 1: return value < ref;
+    case 2: return value <= ref;
+    case 3: return value == ref;
+    case 4: return value != ref;
+    case 5: return value >= ref;
+    case 6: return value > ref;
+    default: return false;
+    }
+}
+
+bool Rasterizer::PrepareLabelWait(const void* address, u32 size, u32 function, u32 ref, u32 mask) {
     Engine& e = engine();
     std::scoped_lock g{e.lock};
-    if (e.scheduler) e.scheduler->prepareWait(reinterpret_cast<u64>(address), size);
+    if (!e.scheduler) return false;
+    // A label write already queued behind work recorded on this in-order queue (EOP / EOS / RELEASE_MEM,
+    // gfx or compute alike: one Metal queue) satisfies the wait in GPU order: the command processor
+    // goes on recording, what it records runs after that work. Anything else (guest CPU, recorded
+    // shader writes, unknown labels) is polled after the producer is put on the GPU.
+    const auto kind = e.scheduler->prepareWait(
+        reinterpret_cast<u64>(address), size,
+        [=](u32 word) { return WaitRegMemWants(function, ref, mask, word); });
+    return kind == vpps4::Scheduler::WaitKind::Ordered;
+}
+
+// A WAIT_REG_MEM poll found nothing: blocks on the frame that produces the value instead of spinning.
+bool Rasterizer::IdleLabelWait(const void* address, u32 size) {
+    Engine& e = engine();
+    std::scoped_lock g{e.lock};
+    return e.scheduler && e.scheduler->idleWait(reinterpret_cast<u64>(address), size, 2);
 }
 
 void Rasterizer::WriteDataOrdered(void* address, const void* data, u32 size) {
