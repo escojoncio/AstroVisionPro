@@ -64,6 +64,15 @@ static void ScheduleLabel(VideoCore::RasterizerInterface* rasterizer, void* addr
     }
 }
 
+/// The command processor is about to read guest memory [address, +size): a label write that the
+/// GPU has not made yet (or occlusion results) must be final first, or the packet reads a value
+/// the real command processor would already see. Waits for exactly what touches the range.
+static void SyncCpRead(VideoCore::RasterizerInterface* rasterizer, u64 address, u64 size) {
+    if (rasterizer && address != 0) {
+        rasterizer->SyncGpuWrites(address, size, true);
+    }
+}
+
 /// IT_WRITE_DATA to memory, ordered with the GPU work that touches it.
 static void WriteDataToMemory(VideoCore::RasterizerInterface* rasterizer, void* address,
                               const void* data, u32 size) {
@@ -345,6 +354,12 @@ void Liverpool::ExecDmaData(const PM4DmaData* dma_data) {
 void Liverpool::ExecWriteData(const PM4CmdWriteData* write_data, u32 mapped_queue) {
     // WRITE_DATA beyond the common "dword(s) to memory" form: DST_SEL 0 = register(s), 3 = GDS,
     // WR_ONE_ADDR = every dword goes to the same address (the last one stays).
+    if (write_data->header.count.Value() < 2) {
+        // Body shorter than control + address: no data, and count - 2 would wrap around.
+        Census::Note("pm4", "WRITE_DATA malformed (body shorter than its header)",
+                     std::to_string(write_data->header.count.Value()));
+        return;
+    }
     const u32 data_dwords = (write_data->header.count.Value() - 2);
     const u32 dst_sel = write_data->dst_sel.Value();
     const bool one_addr = write_data->wr_one_addr.Value();
@@ -417,6 +432,7 @@ void Liverpool::ExecCopyData(const PM4CmdCopyData* copy, u32 mapped_queue) {
             have = false;
             break;
         }
+        SyncCpRead(rasterizer, address, wide ? 8 : 4);
         std::memcpy(&value, reinterpret_cast<const void*>(address), wide ? 8 : 4);
         break;
     }
@@ -478,6 +494,7 @@ void Liverpool::ExecCopyData(const PM4CmdCopyData* copy, u32 mapped_queue) {
     case CopyDataDst::TCL2: {
         const u64 address = copy->DstAddress<u64>() & ~3ull;
         if (CpReadable(address, wide ? 8 : 4)) {
+            SyncCpRead(rasterizer, address, wide ? 8 : 4);
             CpWriteMemory(reinterpret_cast<void*>(address), &value, wide ? 8 : 4);
         }
         break;
@@ -509,6 +526,7 @@ void Liverpool::ExecLoadRegs(const u32* body, u32 body_dwords, u32 base, u32 map
     if (!CpReadable(address, count * 4ull)) {
         return;
     }
+    SyncCpRead(rasterizer, address, count * 4ull);
     const auto* src = reinterpret_cast<const u32*>(address);
     for (u32 i = 0; i < count; ++i) {
         if (u32* slot = RegPtr(first + i, mapped_queue)) {
@@ -587,6 +605,7 @@ void Liverpool::ExecStrmoutBufferUpdate(const PM4Header* header) {
         break;
     case Pm4::StrmoutSource::Memory:
         if (CpReadable(u.src_address, 4)) {
+            SyncCpRead(rasterizer, u.src_address, 4);
             std::memcpy(&strmout_offset[u.buffer], reinterpret_cast<const void*>(u.src_address), 4);
         }
         break;
@@ -623,6 +642,7 @@ Liverpool::Pm4Result Liverpool::ExecPacket(const PM4Header* header, Pm4Engine en
         if (!CpReadable(address, op.wide ? 8 : 4)) {
             break;
         }
+        SyncCpRead(rasterizer, address, op.wide ? 8 : 4);
         const u64 src = u64(body[3]) | u64(body[4]) << 32;
         const u64 cmp = u64(body[5]) | u64(body[6]) << 32;
         bool swapped = true;
@@ -737,6 +757,7 @@ Liverpool::Pm4Result Liverpool::ExecPacket(const PM4Header* header, Pm4Engine en
             if (!CpReadable(address, 4)) {
                 break;
             }
+            SyncCpRead(rasterizer, address, 4);
             std::memcpy(&value, reinterpret_cast<const void*>(address), 4);
         } else if (const u32* reg = RegPtr(u32(c.poll_address & 0x3FFFF), mapped_queue)) {
             value = *reg;
@@ -747,6 +768,7 @@ Liverpool::Pm4Result Liverpool::ExecPacket(const PM4Header* header, Pm4Engine en
         if (c.write_memory) {
             const u64 address = c.write_address & ~3ull;
             if (CpReadable(address, 4)) {
+                SyncCpRead(rasterizer, address, 4);
                 CpWriteMemory(reinterpret_cast<void*>(address), &c.data, 4);
             }
         } else if (u32* reg = RegPtr(u32(c.write_address & 0x3FFFF), mapped_queue)) {
@@ -809,6 +831,7 @@ Liverpool::Pm4Result Liverpool::ExecPacket(const PM4Header* header, Pm4Engine en
             Census::Note("pm4", "LOAD_CONST_RAM outside the constant RAM", fmt::format("offset={:#x} bytes={:#x}", offset, bytes));
             break;
         }
+        SyncCpRead(rasterizer, address, bytes);
         std::memcpy(cblock.constants_heap.data() + offset, reinterpret_cast<const void*>(address), bytes);
         break;
     }
@@ -827,7 +850,12 @@ Liverpool::Pm4Result Liverpool::ExecPacket(const PM4Header* header, Pm4Engine en
     case PM4ItOpcode::ReleaseMem: {
         // The gfx ring's version of EVENT_WRITE_EOP (compute rings handle it inline).
         const auto* release_mem = reinterpret_cast<const PM4CmdReleaseMem*>(header);
-        release_mem->SignalFence(
+        // The data and the interrupt are the GPU's, in order with the labels queued before it
+        // (the same path as EVENT_WRITE_EOP and the compute ring's RELEASE_MEM).
+        release_mem->SignalFenceScheduled(
+            [this](void* address, u64 value, u32 size, std::function<void()> then) {
+                ScheduleLabel(rasterizer, address, value, size, std::move(then));
+            },
             [] { Platform::IrqC::Instance()->Signal(Platform::InterruptId::GfxEop); },
             [this](VAddr dst, u16 gds_index, u16 num_dwords) {
                 if (rasterizer) {
@@ -1578,7 +1606,7 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
             case PM4ItOpcode::WriteData: {
                 const auto* write_data = reinterpret_cast<const PM4CmdWriteData*>(header);
                 if ((write_data->dst_sel.Value() != 2 && write_data->dst_sel.Value() != 5) ||
-                    write_data->wr_one_addr.Value()) {
+                    write_data->wr_one_addr.Value() || header->type3.count.Value() < 2) {
                     // Registers, GDS, one address for all the data: the executor.
                     ExecWriteData(write_data, GfxQueueId);
                     break;
@@ -2067,7 +2095,7 @@ Liverpool::Task Liverpool::ProcessCompute(std::span<const u32> acb, u32 vqid) {
         case PM4ItOpcode::WriteData: {
             const auto* write_data = reinterpret_cast<const PM4CmdWriteData*>(header);
             if ((write_data->dst_sel.Value() != 2 && write_data->dst_sel.Value() != 5) ||
-                write_data->wr_one_addr.Value()) {
+                write_data->wr_one_addr.Value() || header->type3.count.Value() < 2) {
                 ExecWriteData(write_data, vqid + 1);
                 break;
             }
