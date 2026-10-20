@@ -23,6 +23,7 @@
 #include <fmt/ranges.h>
 #include "common/logging/log.h"
 #include "core/libraries/videoout/buffer.h"
+#include "vpkengine_mirror.h"
 #include "vpkengine_xr.h"
 #include "video_core/amdgpu/liverpool.h"
 #include "video_core/amdgpu/regs.h"
@@ -108,6 +109,7 @@ bool mappedSpan(u64 address, u64 from, u64 to, u64& begin, u64& end) {
 struct SpanCache {
     struct Entry {
         u64 from = 0, to = 0, begin = 0, end = 0;
+        void* mirror = nullptr;  // the second mapping of [begin, end) the GPU buffers alias (null: none)
     };
     std::mutex m;
     std::array<Entry, 128> entries{};
@@ -124,7 +126,7 @@ SpanCache& spanCache() {
     return c;
 }
 
-bool cachedSpan(u64 address, u64 from, u64 to, u64& begin, u64& end) {
+bool cachedSpan(u64 address, u64 from, u64 to, u64& begin, u64& end, void*& mirror) {
     SpanCache& c = spanCache();
     u64 gen0 = 0;
     {
@@ -136,6 +138,7 @@ bool cachedSpan(u64 address, u64 from, u64 to, u64& begin, u64& end) {
         if (c.used && hit(c.entries[c.last])) {
             begin = c.entries[c.last].begin;
             end = c.entries[c.last].end;
+            mirror = c.entries[c.last].mirror;
             return true;
         }
         for (unsigned k = 0; k < c.used; ++k)
@@ -143,14 +146,18 @@ bool cachedSpan(u64 address, u64 from, u64 to, u64& begin, u64& end) {
                 c.last = k;
                 begin = c.entries[k].begin;
                 end = c.entries[k].end;
+                mirror = c.entries[k].mirror;
                 return true;
             }
     }
     if (!mappedSpan(address, from, to, begin, end)) return false;  // (misses are not cached)
+    // The span's mirror (made once per span, checked again whenever the span is looked up afresh:
+    // every ~8 ms at most, see Engine::submit).
+    mirror = GuestMirror(begin, end);
     std::scoped_lock l{c.m};
     if (c.gen != gen0) return true;  // the map changed meanwhile: use it this once, keep it out
     const unsigned k = c.used < c.entries.size() ? c.used++ : (c.next++ % unsigned(c.entries.size()));
-    c.entries[k] = {from, to, begin, end};
+    c.entries[k] = {from, to, begin, end, mirror};
     c.last = k;
     return true;
 }
@@ -159,7 +166,8 @@ bool cachedSpan(u64 address, u64 from, u64 to, u64& begin, u64& end) {
 u64 readable(u64 address, u64 want) {
     const u64 from = address & ~(kWindow - 1);
     u64 begin, end;
-    if (!cachedSpan(address, from, from + kWindow, begin, end)) return 0;
+    void* mirror = nullptr;
+    if (!cachedSpan(address, from, from + kWindow, begin, end, mirror)) return 0;
     return std::min<u64>(want, end - address);
 }
 
@@ -179,14 +187,18 @@ vp4gpu::metal::MslShader toMetal(const vp4msl::MslShader& s) {
 // The engine: VPKEngine's Metal backend, device and PS4 renderer, shared by the rasterizer (GPU
 // thread) and the presenter. Everything that records goes under `lock`.
 struct Engine {
-    std::mutex lock;
+    // Recursive: a CPU access to memory an image on the GPU is ahead of faults inside code that
+    // holds the lock already (a DMA done on the CPU); the fault handler writes the image back.
+    std::recursive_mutex lock;
     vp4gpu::metal::ShaderTable shaders;
     std::unique_ptr<vp4gpu::metal::MetalBackend> backend;
     std::unique_ptr<vp4gpu::Device> device;
     std::unique_ptr<vpps4::Renderer> renderer;
     std::atomic<u64> submits{0};
     std::atomic<unsigned> errorLines{0};
-    std::function<void(u64, u64)> uploaded;  // set by the rasterizer: watch these guest pages
+    // Set by the rasterizer: page watches (renderer hooks watchWrites / watchOwned).
+    std::function<void(u64, u64)> watchWrites;
+    std::function<void(u64, u64, bool)> watchOwned;
     // Invalidations come from the page-fault handler: queued without the engine lock (it may be
     // held for long, or by the faulting thread itself) and applied before the next command.
     std::atomic_flag pendingLock = ATOMIC_FLAG_INIT;
@@ -233,7 +245,11 @@ struct Engine {
     // CPU-side DMA over guest [a, +n) (and [b, +m)): waits only when GPU work may touch it, and
     // submits first only when the overlap is in work not submitted yet.
     void syncForDma(u64 a, u64 n, u64 b = 0, u64 m = 0) {
-        const bool any = renderer->gpuMayAccess(a, n) || (m && renderer->gpuMayAccess(b, m));
+        // Images ahead of the memory the CPU is about to read or write are written back first (the
+        // copies it records count as queued GPU work on those ranges: submitted and waited for below).
+        const bool written = renderer->syncToMemory(a, n);
+        const bool writtenB = m && renderer->syncToMemory(b, m);
+        const bool any = written || writtenB || renderer->gpuMayAccess(a, n) || (m && renderer->gpuMayAccess(b, m));
         if (!any) {
             ++dmaUnsynced;
             return;
@@ -303,15 +319,34 @@ struct Engine {
             const u64 from = address & ~(kWindow - 1);
             const u64 to = std::max(from + kWindow, (address + size + kWindow - 1) & ~(kWindow - 1));
             u64 begin, end;
-            if (!cachedSpan(address, from, to, begin, end) || address + size > end) return false;
-            out = {begin, end - begin, reinterpret_cast<void*>(begin)};
+            void* mirror = nullptr;
+            if (!cachedSpan(address, from, to, begin, end, mirror) || address + size > end) return false;
+            // With a mirror the GPU buffers alias it and the guest addresses may be page-protected
+            // (CPU write / read detection); without one they alias the guest addresses and nothing
+            // is protected (the renderer then finds CPU writes by content).
+            out = {begin, end - begin, mirror ? mirror : reinterpret_cast<void*>(begin), mirror != nullptr};
             return true;
         };
         hooks.shader = [this](uint64_t id, vp4ir::Stage, const vp4msl::MslShader& s) { shaders.add(id, toMetal(s)); };
         hooks.log = [this](const std::string& l) { log(l); };
-        hooks.uploaded = [this](uint64_t a, uint64_t n) {
-            if (uploaded) uploaded(a, n);
+        hooks.watchWrites = [this](uint64_t a, uint64_t n) {
+            if (watchWrites) watchWrites(a, n);
         };
+        hooks.watchOwned = [this](uint64_t a, uint64_t n, bool on) {
+            if (watchOwned) watchOwned(a, n, on);
+        };
+        // Views of images (another format of the same texel size, a layer range, a cube / array):
+        // lazily resolved handles of the Metal backend.
+        hooks.view = [this](const vpps4::ViewRequest& r) -> vp4gpu::TextureId {
+            vp4gpu::metal::MetalBackend::ViewDesc d;
+            d.type = r.type;
+            d.array = r.array;
+            d.format = r.format;
+            d.baseLayer = r.baseLayer;
+            d.layers = r.layers;
+            return backend->createView(r.base, d);
+        };
+        hooks.destroyView = [this](vp4gpu::TextureId v) { backend->destroyView(v); };
         renderer = std::make_unique<vpps4::Renderer>(*device, std::move(hooks));
         renderer->setSummaryEvery(kEvery);
         // No MSAA: antialiasing is temporal (VPKTAA), 1 sample per pixel. The game's MSAA targets
@@ -512,24 +547,87 @@ struct Rasterizer::Impl {
         std::scoped_lock l{watch_mutex};
         return recentlyReleased(a, n);
     }
+
+    // ---- Memory an image on the GPU is ahead of --------------------------------------------------
+    // Ranges whose newest bytes live in a GPU image (render target, depth buffer, storage image):
+    // the pages are inaccessible to the CPU (a write watcher plus a read watcher) until the renderer
+    // has written the image back (re-tiled it into the guest memory). The first access faults here.
+    // Keyed by (start, size) with a count: two images may share a range.
+    std::mutex owned_mutex;
+    std::map<std::pair<VAddr, u64>, u32> owned;
+    bool ownedWatchEnabled = std::getenv("VPK_NO_OWNED_WATCH") == nullptr;
+
+    void setOwned(VAddr a, u64 n, bool on) {
+        if (!ownedWatchEnabled || n == 0) return;
+        if (on && !isMapped(a, n)) return;
+        std::scoped_lock l{owned_mutex};
+        if (on) {
+            if (owned[{a, n}]++ != 0) return;
+            page_manager.UpdatePageWatchers<true>(a, n);
+            page_manager.UpdateReadWatchers<true>(a, n);
+        } else {
+            auto it = owned.find({a, n});
+            if (it == owned.end()) return;
+            if (--it->second != 0) return;
+            owned.erase(it);
+            page_manager.UpdateReadWatchers<false>(a, n);
+            page_manager.UpdatePageWatchers<false>(a, n);
+        }
+    }
+
+    // The owned ranges that contain `addr`.
+    std::vector<std::pair<VAddr, u64>> ownedAt(VAddr addr) {
+        std::vector<std::pair<VAddr, u64>> hit;
+        std::scoped_lock l{owned_mutex};
+        auto it = owned.lower_bound({addr > (1ull << 30) ? addr - (1ull << 30) : 0, 0});
+        for (; it != owned.end() && it->first.first <= addr; ++it)
+            if (addr < it->first.first + it->first.second) hit.push_back(it->first);
+        return hit;
+    }
+
+    // Takes every watch off the owned ranges that overlap [a, a + n) (they are being unmapped).
+    void dropOwned(VAddr a, u64 n) {
+        std::scoped_lock l{owned_mutex};
+        for (auto it = owned.begin(); it != owned.end();) {
+            if (it->first.first < a + n && it->first.first + it->first.second > a) {
+                for (u32 k = 0; k < it->second; ++k) {
+                    page_manager.UpdateReadWatchers<false>(it->first.first, it->first.second);
+                    page_manager.UpdatePageWatchers<false>(it->first.first, it->first.second);
+                }
+                it = owned.erase(it);
+            } else {
+                ++it;
+            }
+        }
+    }
+
+    // The CPU touched memory an image is ahead of (`write`: it is about to write it). The renderer
+    // writes the images over it back, the GPU finishes that, and the pages are released; a CPU write
+    // then changes bytes the image does not have, so the images are told (they are filled again).
+    // True if the access belonged to an owned range (the access is retried).
+    bool resolveOwned(VAddr addr, bool write);
 };
 
 Rasterizer::Rasterizer(AmdGpu::Liverpool* liverpool) : impl{std::make_unique<Impl>(this, liverpool)} {
     liverpool->BindRasterizer(this);
     Engine& e = engine();
     std::scoped_lock g{e.lock};
-    // No page watches: VPKEngine finds CPU writes to texture sources by their content. A watched
-    // (read-only) page cannot be aliased by a no-copy Metal buffer (log 17:49: guest buffer of
-    // 0x706c000000 refused, 40 resources missing a frame, black picture) and a write to it from
-    // host code (an HLE strncpy) faulted in a loop.
-    e.uploaded = nullptr;
+    // Page watches only where the GPU buffers alias a mirror of guest memory (vpkengine_mirror.h):
+    // a watched (read-only) guest page cannot be aliased by a no-copy Metal buffer (log 17:49: guest
+    // buffer of 0x706c000000 refused, 40 resources missing a frame, black picture), but the mirror
+    // is another mapping of the same pages that stays writable. The renderer asks for watches only
+    // over mirrored regions; elsewhere it finds CPU writes by content.
+    Impl* const raw = impl.get();
+    e.watchWrites = [raw](u64 a, u64 n) { raw->watch(a, n); };
+    e.watchOwned = [raw](u64 a, u64 n, bool on) { raw->setOwned(a, n, on); };
     e.start();
 }
 
 Rasterizer::~Rasterizer() {
     Engine& e = engine();
     std::scoped_lock g{e.lock};
-    e.uploaded = nullptr;
+    e.watchWrites = nullptr;
+    e.watchOwned = nullptr;
 }
 
 void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
@@ -797,12 +895,46 @@ u32 Rasterizer::ReadDataFromGds(u32 gds_offset) {
 
 bool Rasterizer::InvalidateMemory(VAddr addr, u64 size) {
     if (!impl->isMapped(addr, std::max<u64>(size, 1))) return false;
-    return impl->invalidate(addr, std::max<u64>(size, 1));
+    const bool owned = impl->resolveOwned(addr, true);
+    return impl->invalidate(addr, std::max<u64>(size, 1)) || owned;
 }
 
-bool Rasterizer::ReadMemory(VAddr, u64) {
-    // Nothing sets read watches: GPU writes go to guest memory in place.
-    return false;
+// The CPU read memory that an image on the GPU is ahead of (render targets are not written back by
+// themselves): the renderer re-tiles the image into the guest memory, the GPU finishes it, and the
+// read is retried.
+bool Rasterizer::ReadMemory(VAddr addr, u64 size) {
+    if (!impl->isMapped(addr, std::max<u64>(size, 1))) return false;
+    return impl->resolveOwned(addr, false);
+}
+
+bool Rasterizer::Impl::resolveOwned(VAddr addr, bool write) {
+    const auto hit = ownedAt(addr);
+    if (hit.empty()) return false;
+    Engine& e = engine();
+    {
+        std::scoped_lock g{e.lock};
+        e.applyPending();
+        if (e.renderer) {
+            for (auto [s, z] : hit) e.renderer->syncToMemory(s, z);
+            e.submit();
+            e.waitGpu(Engine::WaitDma);
+            e.renderer->submittedIdle();
+        }
+    }
+    // (the renderer let go of the watches of what it wrote back; anything left on these ranges goes)
+    std::scoped_lock l{owned_mutex};
+    for (auto [s, z] : hit) {
+        auto it = owned.find({s, z});
+        if (it == owned.end()) continue;
+        for (u32 k = 0; k < it->second; ++k) {
+            page_manager.UpdateReadWatchers<false>(s, z);
+            page_manager.UpdatePageWatchers<false>(s, z);
+        }
+        owned.erase(it);
+    }
+    if (write)
+        for (auto [s, z] : hit) e.queueInvalidate(s, z);
+    return true;
 }
 
 bool Rasterizer::IsMapped(VAddr addr, u64 size) {
@@ -835,6 +967,7 @@ void Rasterizer::MapMemory(VAddr addr, u64 size) {
 
 void Rasterizer::UnmapMemory(VAddr addr, u64 size) {
     impl->invalidate(addr, size);
+    impl->dropOwned(addr, size);
     impl->page_manager.OnGpuUnmap(addr, size);
     std::scoped_lock l{impl->mapped_mutex};
     const VAddr end = addr + size;
