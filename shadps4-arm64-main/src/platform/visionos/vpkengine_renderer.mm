@@ -27,6 +27,7 @@
 #include "common/logging/log.h"
 #include "common/path_util.h"
 #include "core/libraries/videoout/buffer.h"
+#include "core/memory.h"
 #include "vpkengine_mirror.h"
 #include "vpkengine_census.h"
 #include "vpkengine_xr.h"
@@ -193,6 +194,44 @@ u64 readable(u64 address, u64 want) {
     void* mirror = nullptr;
     if (!cachedSpan(address, from, from + kWindow, begin, end, mirror)) return 0;
     return std::min<u64>(want, end - address);
+}
+
+// One line on why the region hook has no span for `address`: whether the emulator's own map knows it
+// (a relocated fixed mapping would show here), the span and its mirror / watches, or the nearest regions.
+std::string ExplainAddress(u64 address) {
+    std::string out = fmt::format("addr {:#x}: emulator map {}", address,
+                                  Core::Memory::Instance()->IsValidMapping(address, 1) ? "valid" : "invalid");
+    const u64 from = address & ~(kWindow - 1);
+    u64 begin = 0, end = 0;
+    void* mirror = nullptr;
+    if (address >= 0x10000 && cachedSpan(address, from, from + kWindow, begin, end, mirror)) {
+        out += fmt::format("; host span [{:#x}, {:#x}) mirror={} watched={}", begin, end, mirror != nullptr,
+                           spanHasWatches(begin, end));
+        return out;
+    }
+    // Not mapped for the host: the nearest VM entries around it.
+    vm_address_t base = vm_address_t(address);
+    vm_size_t size = 0;
+    vm_region_basic_info_data_64_t info{};
+    mach_msg_type_number_t count = VM_REGION_BASIC_INFO_COUNT_64;
+    mach_port_t object = MACH_PORT_NULL;
+    if (vm_region_64(mach_task_self(), &base, &size, VM_REGION_BASIC_INFO_64, reinterpret_cast<vm_region_info_t>(&info),
+                     &count, &object) == KERN_SUCCESS)
+        out += fmt::format("; next host region [{:#x}, {:#x}) prot {}/{}", u64(base), u64(base) + u64(size), int(info.protection),
+                           int(info.max_protection));
+    else
+        out += "; no host region above";
+    if (address >= (1ull << 20)) {
+        // (the entry below: asked for from a bit lower; a hit at or above `address` means nothing is below nearby)
+        vm_address_t b2 = vm_address_t(address - std::min<u64>(address, 1ull << 30));
+        vm_size_t s2 = 0;
+        count = VM_REGION_BASIC_INFO_COUNT_64;
+        object = MACH_PORT_NULL;
+        if (vm_region_64(mach_task_self(), &b2, &s2, VM_REGION_BASIC_INFO_64, reinterpret_cast<vm_region_info_t>(&info),
+                         &count, &object) == KERN_SUCCESS && u64(b2) < address)
+            out += fmt::format("; a host region [{:#x}, {:#x}) within 1 GiB below", u64(b2), u64(b2) + u64(s2));
+    }
+    return out;
 }
 
 // MSL from the shader translator, as the Metal backend takes it (msl.h argument contract).
@@ -410,6 +449,7 @@ struct Engine {
             out = {begin, end - begin, mirror ? mirror : reinterpret_cast<void*>(begin), mirror != nullptr};
             return true;
         };
+        hooks.explainAddress = [](uint64_t address) { return ExplainAddress(address); };
         hooks.shader = [this](uint64_t id, vp4ir::Stage, const vp4msl::MslShader& s) { shaders.add(id, toMetal(s)); };
         hooks.log = [this](const std::string& l) { log(l); };
         hooks.watchWrites = [this](uint64_t a, uint64_t n) {
@@ -1699,6 +1739,107 @@ struct PresentState {
     }
 
     // Draws `regions` into a new headset frame of width x height; -1 if the host has none free.
+    // ---- EYE_STATS: what each eye picture holds, every 2 s (a black picture shows as luma 0, 0 % lit).
+    std::chrono::steady_clock::time_point stats_at{};
+    std::atomic<bool> stats_busy{false};
+
+    // Mean luminance and share of non-black pixels of `tex` (shared storage, read on the CPU, every 2nd pixel).
+    static void logEyeStats(u32 eye, id<MTLTexture> tex) {
+        const u32 w = u32(tex.width), h = u32(tex.height);
+        const MTLPixelFormat f = tex.pixelFormat;
+        u32 bpp = 0;
+        switch (f) {
+        case MTLPixelFormatRGBA8Unorm:
+        case MTLPixelFormatRGBA8Unorm_sRGB:
+        case MTLPixelFormatBGRA8Unorm:
+        case MTLPixelFormatBGRA8Unorm_sRGB:
+        case MTLPixelFormatRGB10A2Unorm: bpp = 4; break;
+        case MTLPixelFormatRGBA16Float: bpp = 8; break;
+        default: break;
+        }
+        if (!bpp || !w || !h) {
+            LOG_INFO(Render_Vulkan, "EYE_STATS eye {} {}x{} format {} not measured", eye, w, h, u32(f));
+            return;
+        }
+        std::vector<u8> bytes(size_t(w) * h * bpp);
+        [tex getBytes:bytes.data() bytesPerRow:size_t(w) * bpp fromRegion:MTLRegionMake2D(0, 0, w, h) mipmapLevel:0];
+        double luma = 0;
+        u64 lit = 0, count = 0;
+        for (u32 y = 0; y < h; y += 2) {
+            const u8* row = bytes.data() + size_t(y) * w * bpp;
+            for (u32 x = 0; x < w; x += 2) {
+                const u8* px = row + size_t(x) * bpp;
+                float r, g, b;
+                if (f == MTLPixelFormatRGBA16Float) {
+                    const __fp16* hp = reinterpret_cast<const __fp16*>(px);
+                    r = hp[0], g = hp[1], b = hp[2];
+                } else if (f == MTLPixelFormatRGB10A2Unorm) {
+                    u32 v;
+                    std::memcpy(&v, px, 4);
+                    r = float(v & 1023) / 1023.f, g = float((v >> 10) & 1023) / 1023.f, b = float((v >> 20) & 1023) / 1023.f;
+                } else {
+                    r = px[0] / 255.f, g = px[1] / 255.f, b = px[2] / 255.f;
+                }
+                luma += (r + g + b) / 3.0;
+                lit += (r > 0 || g > 0 || b > 0) ? 1 : 0;
+                ++count;
+            }
+        }
+        LOG_INFO(Render_Vulkan, "EYE_STATS eye {} {}x{} format {} avg_luma {:.4f} non_zero {:.1f}%", eye, w, h, u32(f),
+                 count ? luma / double(count) : 0.0, count ? 100.0 * double(lit) / double(count) : 0.0);
+    }
+
+    // Under the engine lock, after the eyes' drawing is submitted: copies both eyes into shared textures
+    // behind it on the queue and measures them when the copy completes.
+    void eyeStats(Engine& e, const std::array<id<MTLTexture>, 2>& eyes) {
+        const auto now = std::chrono::steady_clock::now();
+        if (now - stats_at < std::chrono::seconds{2}) return;
+        stats_at = now;
+        if (!eyes[0] && !eyes[1]) return;
+        if (stats_busy.exchange(true)) return;
+        id<MTLDevice> dev = (__bridge id<MTLDevice>)e.backend->nativeDevice();
+        std::array<id<MTLTexture>, 2> copies{};
+        for (u32 k = 0; k < 2; ++k) {
+            if (!eyes[k]) continue;
+            MTLTextureDescriptor* td = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:eyes[k].pixelFormat
+                                                                                          width:eyes[k].width
+                                                                                         height:eyes[k].height
+                                                                                      mipmapped:NO];
+            td.storageMode = MTLStorageModeShared;
+            td.usage = MTLTextureUsageShaderRead;
+            copies[k] = [dev newTextureWithDescriptor:td];
+        }
+        const std::array<id<MTLTexture>, 2> src = eyes;
+        e.device->drain();
+        bool queued = false;
+        e.device->withBackend([&] { queued = e.backend->encodeInterop(
+            [&](void* cbp) {
+                id<MTLCommandBuffer> cb = (__bridge id<MTLCommandBuffer>)cbp;
+                id<MTLBlitCommandEncoder> blit = [cb blitCommandEncoder];
+                blit.label = @"eye stats";
+                for (u32 k = 0; k < 2; ++k) {
+                    if (!src[k] || !copies[k]) continue;
+                    [blit copyFromTexture:src[k]
+                              sourceSlice:0
+                              sourceLevel:0
+                             sourceOrigin:MTLOriginMake(0, 0, 0)
+                               sourceSize:MTLSizeMake(src[k].width, src[k].height, 1)
+                                toTexture:copies[k]
+                         destinationSlice:0
+                         destinationLevel:0
+                        destinationOrigin:MTLOriginMake(0, 0, 0)];
+                }
+                [blit endEncoding];
+            },
+            "vp.eyestats",
+            [this, copies] {
+                for (u32 k = 0; k < 2; ++k)
+                    if (copies[k]) logEyeStats(k, copies[k]);
+                stats_busy = false;
+            }); });
+        if (!queued) stats_busy = false;
+    }
+
     int compose(Engine& e, u32 width, u32 height, std::span<const Region> regions) {
         u32 target_index = 0;
         void* target_texture = nullptr;
@@ -1822,6 +1963,7 @@ int ComposeEyes(std::span<const AmdGpu::Image, 2> eye_textures, const Core::Vr::
             LOG_WARNING(Render_Vulkan, "VPKENGINE_PRESENT eye pictures missing (left {}, right {}): black frame",
                         eyes[0] != nil, eyes[1] != nil);
     }
+    impl->eyeStats(e, eyes);
     impl->last_fov = fov;
     impl->last_eye_width = eye_width;
     impl->last_eye_height = eye_height;
