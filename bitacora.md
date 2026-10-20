@@ -353,3 +353,4 @@ Datos de los logs del visor (Vision Pro M2), ASTRO BOT, KosmicKrisp salvo donde 
 - `liverpool.cpp`: `VideoCore::WriteGuestLabel` definida fuera de `AmdGpu` (estaba dentro: ocultaba `VideoCore::RasterizerInterface`).
 - Tests Linux (proyecto CMake minimo, `NOT SHADPS4_VISIONOS`): census, reg_audit, pm4_exec, liverpool_pm4: 4/4.
 - Pendiente: compilar .mm/Swift en macOS (CI); medir en visor.
+- CMake de la app: anadidos los fuentes de formats/state/msaa/cpucost/submit que faltaban (ver PROGRESS-integration.md).

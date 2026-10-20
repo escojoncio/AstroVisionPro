@@ -1427,7 +1427,12 @@ if (SHADPS4_VISIONOS)
             ${VPKENGINE_ENGINE_DIR}/msl/src/*.cpp)
         list(APPEND VPKENGINE_SHADER_SOURCES
             ${VPKENGINE_ENGINE_DIR}/gcn/src/gcn.cpp
-            ${VPKENGINE_ENGINE_DIR}/gcn/src/lift.cpp)
+            ${VPKENGINE_ENGINE_DIR}/gcn/src/lift.cpp
+            ${VPKENGINE_ENGINE_DIR}/gcn/src/formats.cpp
+            ${VPKENGINE_ENGINE_DIR}/gcn/src/format_emit.cpp)
+        # (bit-exact format conversions: no fused multiply-adds, as VPKEngine's own CMake builds them)
+        set_source_files_properties(${VPKENGINE_ENGINE_DIR}/gcn/src/formats.cpp ${VPKENGINE_ENGINE_DIR}/gcn/src/format_emit.cpp
+            PROPERTIES COMPILE_OPTIONS -ffp-contract=off)
         target_sources(shadps4 PRIVATE ${VPKENGINE_SHADER_SOURCES}
             src/platform/visionos/vpkengine_shader_check.h
             src/platform/visionos/vpkengine_shader_check.mm)
@@ -1452,8 +1457,14 @@ if (SHADPS4_VISIONOS)
             configure_file(${VPKENGINE_PS4_DIR}/src/tiling_addr_text.cpp.in ${CMAKE_CURRENT_BINARY_DIR}/vpps4_tiling_addr_text.cpp @ONLY)
             target_sources(shadps4 PRIVATE ${VPKENGINE_CORE_SOURCES}
                 ${VPKENGINE_ENGINE_DIR}/metal/src/metal_backend.mm
+                ${VPKENGINE_PS4_DIR}/src/fixed_function.cpp
                 ${VPKENGINE_PS4_DIR}/src/formats.cpp
                 ${VPKENGINE_PS4_DIR}/src/renderer.cpp
+                ${VPKENGINE_PS4_DIR}/src/msaa.cpp
+                ${VPKENGINE_PS4_DIR}/src/lifetime.cpp
+                ${VPKENGINE_PS4_DIR}/src/foveation.cpp
+                ${VPKENGINE_PS4_DIR}/src/scheduler.cpp
+                ${VPKENGINE_PS4_DIR}/src/translation_cache.cpp
                 ${VPKENGINE_PS4_DIR}/src/tiling.cpp
                 ${VPKENGINE_PS4_DIR}/src/gpu_tiler.cpp
                 ${CMAKE_CURRENT_BINARY_DIR}/vpps4_tiling_addr_text.cpp
@@ -1472,6 +1483,26 @@ if (SHADPS4_VISIONOS)
                 ${VPKENGINE_ENGINE_DIR}/core/include
                 ${VPKENGINE_ENGINE_DIR}/metal/include
                 ${VPKENGINE_PS4_DIR}/include)
+            # Fingerprint of the translation chain for the persistent shader cache (as VPKEngine's own
+            # gpu/ps4/CMakeLists.txt computes it): a change in the lifter, the IR, the MSL emitter or the
+            # renderer's descriptor handling replaces the saved translations at the next start.
+            file(GLOB_RECURSE _vpps4_fp_sources CONFIGURE_DEPENDS
+                ${VPKENGINE_ENGINE_DIR}/gcn/src/* ${VPKENGINE_ENGINE_DIR}/gcn/include/*
+                ${VPKENGINE_ENGINE_DIR}/ir/src/* ${VPKENGINE_ENGINE_DIR}/ir/include/*
+                ${VPKENGINE_ENGINE_DIR}/msl/src/* ${VPKENGINE_ENGINE_DIR}/msl/include/*
+                ${VPKENGINE_PS4_DIR}/src/renderer.cpp ${VPKENGINE_PS4_DIR}/src/formats.cpp
+                ${VPKENGINE_PS4_DIR}/src/fetch.cpp ${VPKENGINE_PS4_DIR}/src/translation_cache.cpp)
+            list(SORT _vpps4_fp_sources)
+            set(_vpps4_fp_text "")
+            foreach(f ${_vpps4_fp_sources})
+                file(READ ${f} _vpps4_fp_c)
+                file(RELATIVE_PATH _vpps4_fp_rel ${VPKENGINE_PS4_DIR} ${f})
+                string(APPEND _vpps4_fp_text "${_vpps4_fp_rel}\n${_vpps4_fp_c}\n")
+            endforeach()
+            string(SHA256 _vpps4_fp_hash "${_vpps4_fp_text}")
+            string(SUBSTRING ${_vpps4_fp_hash} 0 16 _vpps4_fp_hash)
+            set_source_files_properties(${VPKENGINE_PS4_DIR}/src/translation_cache.cpp
+                PROPERTIES COMPILE_DEFINITIONS VPPS4_TRANSLATOR_HASH="${_vpps4_fp_hash}")
             target_compile_definitions(shadps4 PRIVATE SHADPS4_VPKENGINE_ONLY=1)
             set_source_files_properties(${VPKENGINE_ENGINE_DIR}/metal/src/metal_backend.mm
                 src/platform/visionos/vpkengine_renderer.mm
