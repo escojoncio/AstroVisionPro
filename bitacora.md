@@ -8,6 +8,7 @@ Compactada el 2026-10-11: lo resuelto queda en «Histórico» como una línea; e
 
 ## 2026-10-25
 - 2026-10-25: `.claude/agents/coder.md`: maxTurns → 70
+- 2026-10-25: `CLAUDE.md` línea 1: regla de cumplir siempre el rol asignado.
 
 ## Rama `ps4/cpucost` (2026-10-20): caches persistentes y menos CPU por draw (sin compilar para visionOS)
 - `vpkengine_renderer.mm`: `start()` fija `MetalOptions::cacheRoot = <CacheDir>/vpkengine/<serial>/metal` y llama `renderer->setCacheRoot(<...>/vpps4)` (traducciones GCN->MSL y lista de pipelines; ver `PROGRESS-cpucost.md` de VPKEngine). Draw: `Engine::fetchAddresses` (FetchAddressMemo) y `Engine::fetchBodies` (subrutina fetch por dirección + generación `SpanCache::mapGen` + comparación de contenido) en lugar de caminar el VS y la subrutina en cada draw.
