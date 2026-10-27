@@ -153,6 +153,8 @@ set(GUEST_MEMORY_VALIDATION_TEST_SOURCES
     core/test_mouse_open_param.cpp
     core/test_flip_label_tracker.cpp
     core/test_fios2_module_choice.cpp
+    input/test_pad_queue.cpp
+    libraries/test_hmd_setup_dialog_state.cpp
     video_core/test_legacy_vertex_attributes.cpp
     video_core/test_readconst_snapshot_diag.cpp
     video_core/test_fma_split_diag.cpp

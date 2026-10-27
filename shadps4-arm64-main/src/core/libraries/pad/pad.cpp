@@ -441,6 +441,11 @@ int ProcessStates(s32 handle, OrbisPadData* pData, Input::GameController& contro
         }
 
         pData[i].buttons = states[i].buttonsState;
+        const bool cross_down = True(states[i].buttonsState & OrbisPadButtonDataOffset::Cross);
+        if (const auto delay = controller.NoteCrossDelivered(cross_down)) {
+            LOG_INFO(Lib_Pad, "Cross {} reached the game {:.1f} ms after the controller reported it",
+                     cross_down ? "pressed" : "released", *delay);
+        }
         pData[i].leftStick.x = states[i].axes[static_cast<int>(Input::Axis::LeftX)];
         pData[i].leftStick.y = states[i].axes[static_cast<int>(Input::Axis::LeftY)];
         pData[i].rightStick.x = states[i].axes[static_cast<int>(Input::Axis::RightX)];

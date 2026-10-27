@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <algorithm>
+#include <optional>
 #include <vector>
 #include "common/types.h"
 
@@ -36,6 +38,27 @@ public:
             return {};
         }
         return m_storage[m_begin];
+    }
+
+    /// The newest item, to be changed in place; null when the queue is empty.
+    T* Newest() {
+        if (m_size == 0) {
+            return nullptr;
+        }
+        return &m_storage[(m_begin + m_size - 1) % m_storage.size()];
+    }
+
+    /// Takes the newest `max` items (fewer if there are fewer) in the order they were pushed, and
+    /// empties the queue: whatever is older than those is dropped. Returns how many were taken.
+    u64 DrainNewest(T* out, u64 max) {
+        const u64 count = std::min<u64>(max, m_size);
+        const u64 skipped = m_size - count;
+        for (u64 i = 0; i < count; ++i) {
+            out[i] = std::move(m_storage[(m_begin + skipped + i) % m_storage.size()]);
+        }
+        m_begin = 0;
+        m_size = 0;
+        return count;
     }
 
 private:

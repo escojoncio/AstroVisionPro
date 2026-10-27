@@ -10,7 +10,11 @@
 #include "core/libraries/kernel/threads/exception.h"
 #include "core/signals.h"
 #ifdef SHADPS4_ENABLE_FEX_GUEST_CPU
+#include "common/singleton.h"
 #include "core/fex/fex_guest_engine.h"
+#include "core/guest_cpu/guest_watchdog.h"
+#include "core/linker.h"
+#include "core/module.h"
 #endif
 #include "emulator.h"
 #if defined(SHADPS4_VISIONOS)
@@ -128,18 +132,26 @@ static std::string DisassembleInstruction(void* code_address) {
 }
 
 #ifdef SHADPS4_ENABLE_FEX_GUEST_CPU
-/// Reads a word of guest memory that may not be mapped. The kernel does the copy, so a bad
-/// address is an error return rather than a second fault inside the fault handler.
-static bool ReadGuestWord(u64 address, u64* value) {
+/// Reads guest memory that may not be mapped. The kernel does the copy, so a bad address is an
+/// error return rather than a second fault inside the fault handler. A range that ends in an
+/// unmapped page is copied as far as it goes, and is an error all the same.
+static bool ReadGuestBytes(u64 address, void* out, size_t size) {
     static int pipe_ends[2] = {-1, -1};
     if (pipe_ends[0] < 0 && pipe(pipe_ends) != 0) {
         return false;
     }
-    if (write(pipe_ends[1], reinterpret_cast<const void*>(address), sizeof(*value)) !=
-        static_cast<ssize_t>(sizeof(*value))) {
+    const ssize_t written = write(pipe_ends[1], reinterpret_cast<const void*>(address), size);
+    if (written <= 0) {
         return false;
     }
-    return read(pipe_ends[0], value, sizeof(*value)) == static_cast<ssize_t>(sizeof(*value));
+    // Whatever the kernel took has to be taken out again, or the next read finds it.
+    return read(pipe_ends[0], out, static_cast<size_t>(written)) == written &&
+           static_cast<size_t>(written) == size;
+}
+
+/// Reads a word of guest memory that may not be mapped.
+static bool ReadGuestWord(u64 address, u64* value) {
+    return ReadGuestBytes(address, value, sizeof(*value));
 }
 
 /// The return addresses up the guest's call stack, found through its frame pointers.
@@ -158,6 +170,69 @@ static std::string GuestCallers(u64 frame) {
         frame = next;
     }
     return callers;
+}
+#endif
+
+#if defined(SHADPS4_VISIONOS) && defined(SHADPS4_ENABLE_FEX_GUEST_CPU)
+/// A guest address as the module that holds it and the place in it (eboot+0x1acd37e).
+static std::string GuestModuleOffset(u64 address) {
+    const auto* module = Common::Singleton<Linker>::Instance()->FindByAddress(address);
+    if (module == nullptr) {
+        return "no module";
+    }
+    return fmt::format("{}+{:#x}", module->file.stem().string(), address - module->GetBaseAddress());
+}
+
+/// What the guest was doing: its registers (as they were at the last HLE call, which is where the
+/// guest's state is last known), the code around the place the last HLE call returns to, and the
+/// last HLE calls of the crashing thread.
+static void DescribeGuest() {
+    uint64_t gprs[16]{};
+    if (!::Core::Fex::BachataQueryGuestRegisters(gprs)) {
+        fprintf(stderr, "ASTRO_CRASH guest: no guest thread runs on this host thread\n");
+        return;
+    }
+    uint64_t rip = 0;
+    uint64_t rax = 0;
+    ::Core::Fex::BachataQueryGuestRipSyscall(&rip, &rax);
+    fprintf(stderr, "ASTRO_CRASH guest rip=%#llx (%s)\n", static_cast<unsigned long long>(rip),
+            GuestModuleOffset(rip).c_str());
+    static constexpr const char* names[16] = {"rax", "rcx", "rdx", "rbx", "rsp", "rbp",
+                                              "rsi", "rdi", "r8",  "r9",  "r10", "r11",
+                                              "r12", "r13", "r14", "r15"};
+    for (int i = 0; i < 16; i += 4) {
+        fprintf(stderr, "ASTRO_CRASH guest");
+        for (int j = i; j < i + 4; ++j) {
+            fprintf(stderr, " %s=%#llx", names[j], static_cast<unsigned long long>(gprs[j]));
+        }
+        fprintf(stderr, "\n");
+    }
+    // In an HLE call the guest stack pointer is at the address the call returns to.
+    uint64_t return_address = 0;
+    if ((gprs[4] & 7) != 0 || !ReadGuestWord(gprs[4], &return_address)) {
+        fprintf(stderr, "ASTRO_CRASH guest return address: unreadable at rsp=%#llx\n",
+                static_cast<unsigned long long>(gprs[4]));
+    } else {
+        fprintf(stderr, "ASTRO_CRASH guest return address=%#llx (%s), code from -0x40:\n",
+                static_cast<unsigned long long>(return_address),
+                GuestModuleOffset(return_address).c_str());
+        for (uint64_t offset = 0; offset < 96; offset += 16) {
+            const uint64_t address = return_address - 0x40 + offset;
+            uint8_t bytes[16];
+            const bool readable = ReadGuestBytes(address, bytes, sizeof(bytes));
+            char text[16 * 3 + 1];
+            for (int i = 0; i < 16; ++i) {
+                if (readable) {
+                    snprintf(text + i * 3, 4, "%02x ", bytes[i]);
+                } else {
+                    snprintf(text + i * 3, 4, "?? ");
+                }
+            }
+            fprintf(stderr, "ASTRO_CRASH guest code %s: %s\n", GuestModuleOffset(address).c_str(),
+                    text);
+        }
+    }
+    ::Core::GuestCpu::PrintRecentHleCalls(stderr, "ASTRO_CRASH guest");
 }
 #endif
 
@@ -219,6 +294,9 @@ static void DescribeCrash(int sig, siginfo_t* info, void* raw_context) {
         if (pair[0] <= frame) break;
         frame = pair[0];
     }
+#ifdef SHADPS4_ENABLE_FEX_GUEST_CPU
+    DescribeGuest();
+#endif
     fflush(stderr);
 }
 #endif

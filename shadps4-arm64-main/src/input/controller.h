@@ -14,6 +14,7 @@
 #include "common/ring_buffer_queue.h"
 #include "core/libraries/pad/pad.h"
 #include "core/libraries/system/userservice.h"
+#include "input/cross_probe.h"
 #include "input/pad_gestures.h"
 #include "input/stick_finger.h"
 #include "input/view_turn.h"
@@ -97,7 +98,13 @@ public:
     void DisconnectController();
 
     void ReadState(State* state, bool* isConnected, int* connectedCount);
+    /// What the game reads is what the pad says now, as on a console with a slow game: the
+    /// newest `states_num` states in the order they came (one state: the newest), and the older
+    /// ones that were not read are gone.
     int ReadStates(State* states, int states_num, bool* isConnected, int* connectedCount);
+    /// The game was handed a state with Cross in this position (see CrossProbe). The delay in ms
+    /// since the controller reported it when that is the first the game sees of it.
+    std::optional<double> NoteCrossDelivered(bool pressed);
 
     void Button(Libraries::Pad::OrbisPadButtonDataOffset button, bool isPressed);
     void Axis(Input::Axis axis, int value, bool smooth = true);
@@ -150,6 +157,9 @@ public:
 
 private:
     void PushState();
+    /// Motion changes alone must not fill the queue: the newest state waiting is brought up to
+    /// date when the pad's input in it is the current one, otherwise a state is pushed.
+    void PushMotionState();
     /// With m_states_queue_mutex held. The buttons that were down before.
     Libraries::Pad::OrbisPadButtonDataOffset ApplyRemoteLocked(
         Libraries::Pad::OrbisPadButtonDataOffset buttons, const std::array<int, 6>& axes,
@@ -188,6 +198,7 @@ private:
 
     std::mutex m_states_queue_mutex;
     RingBufferQueue<State> m_states_queue;
+    CrossProbe m_cross_probe;
 };
 
 class GameControllers {
