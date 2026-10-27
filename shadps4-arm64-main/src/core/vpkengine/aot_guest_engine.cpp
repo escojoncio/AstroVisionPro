@@ -540,6 +540,11 @@ bool BachataQueryGuestRipSyscall(uint64_t* out_rip, uint64_t* out_syscall) noexc
     return true;
 }
 
+bool BachataQueryGuestRipAtHostPc(uint64_t, uint64_t*, uint64_t*) noexcept {
+    // The translated code is native functions, with no table from their addresses to guest rips.
+    return false;
+}
+
 bool BachataQueryGuestRegisters(uint64_t* out_gprs) noexcept {
     if (!CurrentThread || !out_gprs) return false;
     std::memcpy(out_gprs, CurrentThread->Cpu.r, sizeof(uint64_t) * 16);

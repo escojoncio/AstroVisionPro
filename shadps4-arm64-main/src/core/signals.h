@@ -22,6 +22,12 @@ using IllegalInstructionHandler = bool (*)(void* context);
 void SignalHandler(int sig, siginfo_t* info, void* raw_context);
 #endif
 
+/// Writes what the calling guest thread is doing to stderr and the emulator's log file, every line
+/// starting with `tag`: its registers as of its last HLE call, its callers, the code at the place
+/// that call returns to, its last HLE calls and the one it is in. Does nothing without the FEX
+/// guest CPU.
+void DumpGuestState(const char* tag);
+
 /// Receives OS signals and dispatches to the appropriate handlers.
 class SignalDispatch {
 public:

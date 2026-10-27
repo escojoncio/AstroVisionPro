@@ -1,11 +1,15 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <algorithm>
+#include <cstdarg>
+#include <cstdio>
 #include <cstring>
 #include "common/arch.h"
 #include "common/assert.h"
 #include "common/crash_reporter.h"
 #include "common/decoder.h"
+#include "common/logging/log.h"
 #include "common/signal_context.h"
 #include "core/libraries/kernel/threads/exception.h"
 #include "core/signals.h"
@@ -131,6 +135,60 @@ static std::string DisassembleInstruction(void* code_address) {
     return buffer;
 }
 
+#if defined(SHADPS4_VISIONOS) || defined(SHADPS4_ENABLE_FEX_GUEST_CPU)
+/// Writes text to stderr and to the emulator's log file with write() alone. The logger takes locks
+/// and allocates, which a signal handler must not do, and its queue may not be written out before
+/// the process dies; this is how the crash dump gets into the log.
+static void CrashWrite(const char* text, size_t length) {
+    static_cast<void>(write(STDERR_FILENO, text, length));
+    Common::Log::WriteRaw(text, length);
+}
+
+/// Held while this thread writes a dump. A fault inside the dump (a stack that is not readable,
+/// say) comes back to the handler on the same thread: it must not start a second dump, which would
+/// hide the crash that was being described behind its own.
+class DumpGuard final {
+public:
+    DumpGuard() : entered{!active} {
+        active = true;
+    }
+    ~DumpGuard() {
+        if (entered) {
+            active = false;
+        }
+    }
+    DumpGuard(const DumpGuard&) = delete;
+    DumpGuard& operator=(const DumpGuard&) = delete;
+
+    /// False when this thread was already writing a dump.
+    bool Entered() const {
+        return entered;
+    }
+
+private:
+    static thread_local bool active;
+    bool entered;
+};
+thread_local bool DumpGuard::active = false;
+
+/// One line of the crash dump, as handed over by PrintRecentHleCalls.
+static void CrashLine(const char* line) {
+    CrashWrite(line, strlen(line));
+}
+
+static void CrashPrint(const char* format, ...) __attribute__((format(printf, 1, 2)));
+static void CrashPrint(const char* format, ...) {
+    char text[1024];
+    va_list arguments;
+    va_start(arguments, format);
+    const int length = vsnprintf(text, sizeof(text), format, arguments);
+    va_end(arguments);
+    if (length > 0) {
+        CrashWrite(text, std::min(static_cast<size_t>(length), sizeof(text) - 1));
+    }
+}
+#endif
+
 #ifdef SHADPS4_ENABLE_FEX_GUEST_CPU
 /// Reads guest memory that may not be mapped. The kernel does the copy, so a bad address is an
 /// error return rather than a second fault inside the fault handler. A range that ends in an
@@ -173,7 +231,7 @@ static std::string GuestCallers(u64 frame) {
 }
 #endif
 
-#if defined(SHADPS4_VISIONOS) && defined(SHADPS4_ENABLE_FEX_GUEST_CPU)
+#ifdef SHADPS4_ENABLE_FEX_GUEST_CPU
 /// A guest address as the module that holds it and the place in it (eboot+0x1acd37e).
 static std::string GuestModuleOffset(u64 address) {
     const auto* module = Common::Singleton<Linker>::Instance()->FindByAddress(address);
@@ -184,38 +242,59 @@ static std::string GuestModuleOffset(u64 address) {
 }
 
 /// What the guest was doing: its registers (as they were at the last HLE call, which is where the
-/// guest's state is last known), the code around the place the last HLE call returns to, and the
-/// last HLE calls of the crashing thread.
-static void DescribeGuest() {
+/// guest's state is last known), who called, the code around the place the last HLE call returns
+/// to, and the last HLE calls of the thread. Every line starts with `tag`. `host_pc` is the host
+/// program counter of a fault inside the JIT arena, or 0.
+static void DescribeGuest(const char* tag, uint64_t host_pc) {
     uint64_t gprs[16]{};
     if (!::Core::Fex::BachataQueryGuestRegisters(gprs)) {
-        fprintf(stderr, "ASTRO_CRASH guest: no guest thread runs on this host thread\n");
+        CrashPrint("%s guest: no guest thread runs on this host thread\n", tag);
         return;
     }
     uint64_t rip = 0;
     uint64_t rax = 0;
     ::Core::Fex::BachataQueryGuestRipSyscall(&rip, &rax);
-    fprintf(stderr, "ASTRO_CRASH guest rip=%#llx (%s)\n", static_cast<unsigned long long>(rip),
-            GuestModuleOffset(rip).c_str());
+    // Not where the thread is: the rip and rax the thread had at its last HLE call, which is what
+    // the guest state holds until the next one.
+    CrashPrint("%s guest last HLE syscall: rip=%#llx (%s) rax=%#llx\n", tag,
+               static_cast<unsigned long long>(rip), GuestModuleOffset(rip).c_str(),
+               static_cast<unsigned long long>(rax));
+    if (host_pc != 0) {
+        uint64_t fault_rip = 0;
+        uint64_t block = 0;
+        if (::Core::Fex::BachataQueryGuestRipAtHostPc(host_pc, &fault_rip, &block)) {
+            CrashPrint("%s guest rip at fault=%#llx (%s) in the block entered at %#llx (%s); "
+                       "from FEX's per-block RIP table, so only as exact as that; the last "
+                       "spilled rip if the host pc is not in that block\n",
+                       tag, static_cast<unsigned long long>(fault_rip),
+                       GuestModuleOffset(fault_rip).c_str(),
+                       static_cast<unsigned long long>(block), GuestModuleOffset(block).c_str());
+        } else {
+            CrashPrint("%s guest rip at fault: unknown, this engine cannot map host code to guest "
+                       "code\n",
+                       tag);
+        }
+    }
     static constexpr const char* names[16] = {"rax", "rcx", "rdx", "rbx", "rsp", "rbp",
                                               "rsi", "rdi", "r8",  "r9",  "r10", "r11",
                                               "r12", "r13", "r14", "r15"};
     for (int i = 0; i < 16; i += 4) {
-        fprintf(stderr, "ASTRO_CRASH guest");
-        for (int j = i; j < i + 4; ++j) {
-            fprintf(stderr, " %s=%#llx", names[j], static_cast<unsigned long long>(gprs[j]));
-        }
-        fprintf(stderr, "\n");
+        CrashPrint("%s guest %s=%#llx %s=%#llx %s=%#llx %s=%#llx\n", tag, names[i],
+                   static_cast<unsigned long long>(gprs[i]), names[i + 1],
+                   static_cast<unsigned long long>(gprs[i + 1]), names[i + 2],
+                   static_cast<unsigned long long>(gprs[i + 2]), names[i + 3],
+                   static_cast<unsigned long long>(gprs[i + 3]));
     }
+    CrashPrint("%s guest callers (rbp chain):%s\n", tag, GuestCallers(gprs[5]).c_str());
     // In an HLE call the guest stack pointer is at the address the call returns to.
     uint64_t return_address = 0;
     if ((gprs[4] & 7) != 0 || !ReadGuestWord(gprs[4], &return_address)) {
-        fprintf(stderr, "ASTRO_CRASH guest return address: unreadable at rsp=%#llx\n",
-                static_cast<unsigned long long>(gprs[4]));
+        CrashPrint("%s guest return address: unreadable at rsp=%#llx\n", tag,
+                   static_cast<unsigned long long>(gprs[4]));
     } else {
-        fprintf(stderr, "ASTRO_CRASH guest return address=%#llx (%s), code from -0x40:\n",
-                static_cast<unsigned long long>(return_address),
-                GuestModuleOffset(return_address).c_str());
+        CrashPrint("%s guest return address=%#llx (%s), code from -0x40:\n", tag,
+                   static_cast<unsigned long long>(return_address),
+                   GuestModuleOffset(return_address).c_str());
         for (uint64_t offset = 0; offset < 96; offset += 16) {
             const uint64_t address = return_address - 0x40 + offset;
             uint8_t bytes[16];
@@ -228,11 +307,12 @@ static void DescribeGuest() {
                     snprintf(text + i * 3, 4, "?? ");
                 }
             }
-            fprintf(stderr, "ASTRO_CRASH guest code %s: %s\n", GuestModuleOffset(address).c_str(),
-                    text);
+            CrashPrint("%s guest code %s: %s\n", tag, GuestModuleOffset(address).c_str(), text);
         }
     }
-    ::Core::GuestCpu::PrintRecentHleCalls(stderr, "ASTRO_CRASH guest");
+    char prefix[64];
+    snprintf(prefix, sizeof(prefix), "%s guest", tag);
+    ::Core::GuestCpu::PrintRecentHleCalls(CrashLine, prefix);
 }
 #endif
 
@@ -242,48 +322,67 @@ static void DescribeGuest() {
 static void DescribeAddress(const char* what, uint64_t address) {
     const auto [arena_begin, arena_end] = Common::JitArena::Range();
     if (address >= arena_begin && address < arena_end) {
-        fprintf(stderr, "ASTRO_CRASH %s=%#llx in JIT arena +%#llx\n", what,
-                static_cast<unsigned long long>(address),
-                static_cast<unsigned long long>(address - arena_begin));
+        CrashPrint("ASTRO_CRASH %s=%#llx in JIT arena +%#llx\n", what,
+                   static_cast<unsigned long long>(address),
+                   static_cast<unsigned long long>(address - arena_begin));
         return;
     }
+    // Host code: the image, the offset in it (for atos against the build's symbols) and the
+    // nearest symbol dladdr knows, which for a stripped image is the nearest exported one.
     Dl_info image{};
     if (dladdr(reinterpret_cast<void*>(address), &image) != 0 && image.dli_fname != nullptr) {
         const char* slash = strrchr(image.dli_fname, '/');
-        fprintf(stderr, "ASTRO_CRASH %s=%#llx in %s +%#llx (%s)\n", what,
-                static_cast<unsigned long long>(address), slash ? slash + 1 : image.dli_fname,
-                static_cast<unsigned long long>(address -
-                                                reinterpret_cast<uint64_t>(image.dli_fbase)),
-                image.dli_sname ? image.dli_sname : "?");
+        const auto image_offset = address - reinterpret_cast<uint64_t>(image.dli_fbase);
+        if (image.dli_sname != nullptr) {
+            CrashPrint("ASTRO_CRASH %s=%#llx in %s +%#llx (%s+%#llx)\n", what,
+                       static_cast<unsigned long long>(address),
+                       slash ? slash + 1 : image.dli_fname,
+                       static_cast<unsigned long long>(image_offset), image.dli_sname,
+                       static_cast<unsigned long long>(address -
+                                                       reinterpret_cast<uint64_t>(image.dli_saddr)));
+        } else {
+            CrashPrint("ASTRO_CRASH %s=%#llx in %s +%#llx (no symbol)\n", what,
+                       static_cast<unsigned long long>(address),
+                       slash ? slash + 1 : image.dli_fname,
+                       static_cast<unsigned long long>(image_offset));
+        }
         return;
     }
-    fprintf(stderr, "ASTRO_CRASH %s=%#llx (no image)\n", what,
-            static_cast<unsigned long long>(address));
+    CrashPrint("ASTRO_CRASH %s=%#llx (no image)\n", what, static_cast<unsigned long long>(address));
 }
 
 static void DescribeCrash(int sig, siginfo_t* info, void* raw_context) {
+    const DumpGuard guard;
+    if (!guard.Entered()) {
+        CrashPrint("ASTRO_CRASH signal=%d: a fault while describing a crash; the first dump stands\n",
+                   sig);
+        return;
+    }
     const auto* context = static_cast<ucontext_t*>(raw_context);
     const auto& state = context->uc_mcontext->__ss;
     const auto& exception = context->uc_mcontext->__es;
     const auto [arena_begin, arena_end] = Common::JitArena::Range();
-    fprintf(stderr, "ASTRO_CRASH signal=%d code=%d addr=%p esr=%#x far=%#llx arena=%#llx-%#llx\n",
-            sig, info->si_code, info->si_addr, exception.__esr,
-            static_cast<unsigned long long>(exception.__far),
-            static_cast<unsigned long long>(arena_begin), static_cast<unsigned long long>(arena_end));
+    CrashPrint("ASTRO_CRASH signal=%d code=%d addr=%p esr=%#x far=%#llx arena=%#llx-%#llx\n", sig,
+               info->si_code, info->si_addr, exception.__esr,
+               static_cast<unsigned long long>(exception.__far),
+               static_cast<unsigned long long>(arena_begin),
+               static_cast<unsigned long long>(arena_end));
     DescribeAddress("pc", state.__pc);
     DescribeAddress("lr", state.__lr);
     for (int i = 0; i < 29; i += 4) {
-        fprintf(stderr, "ASTRO_CRASH");
+        char registers[160];
+        int length = snprintf(registers, sizeof(registers), "ASTRO_CRASH");
         for (int j = i; j < i + 4 && j < 29; ++j) {
-            fprintf(stderr, " x%d=%#llx", j, static_cast<unsigned long long>(state.__x[j]));
+            length += snprintf(registers + length, sizeof(registers) - length, " x%d=%#llx", j,
+                               static_cast<unsigned long long>(state.__x[j]));
         }
-        fprintf(stderr, "\n");
+        CrashPrint("%s\n", registers);
     }
-    fprintf(stderr, "ASTRO_CRASH fp=%#llx sp=%#llx\n", static_cast<unsigned long long>(state.__fp),
-            static_cast<unsigned long long>(state.__sp));
+    CrashPrint("ASTRO_CRASH fp=%#llx sp=%#llx\n", static_cast<unsigned long long>(state.__fp),
+               static_cast<unsigned long long>(state.__sp));
     const auto* code = reinterpret_cast<const uint32_t*>(state.__pc & ~uint64_t{3});
-    fprintf(stderr, "ASTRO_CRASH code at pc-16..pc+12: %08x %08x %08x %08x [%08x] %08x %08x %08x\n",
-            code[-4], code[-3], code[-2], code[-1], code[0], code[1], code[2], code[3]);
+    CrashPrint("ASTRO_CRASH code at pc-16..pc+12: %08x %08x %08x %08x [%08x] %08x %08x %08x\n",
+               code[-4], code[-3], code[-2], code[-1], code[0], code[1], code[2], code[3]);
     // A few return addresses up the frame chain.
     uint64_t frame = state.__fp;
     for (int depth = 0; depth < 8 && frame != 0 && (frame & 7) == 0; ++depth) {
@@ -294,10 +393,13 @@ static void DescribeCrash(int sig, siginfo_t* info, void* raw_context) {
         if (pair[0] <= frame) break;
         frame = pair[0];
     }
+    const bool pc_in_arena = state.__pc >= arena_begin && state.__pc < arena_end;
+    if (!pc_in_arena) {
+        CrashPrint("ASTRO_CRASH guest rip at fault: none, the fault is in host code (pc above)\n");
+    }
 #ifdef SHADPS4_ENABLE_FEX_GUEST_CPU
-    DescribeGuest();
+    DescribeGuest("ASTRO_CRASH", pc_in_arena ? state.__pc : 0);
 #endif
-    fflush(stderr);
 }
 #endif
 
@@ -440,6 +542,17 @@ void SignalHandler(int sig, siginfo_t* info, void* raw_context) {
     }
 }
 
+#endif
+
+#if !defined(_WIN32) && defined(SHADPS4_ENABLE_FEX_GUEST_CPU)
+void DumpGuestState(const char* tag) {
+    const DumpGuard guard;
+    if (guard.Entered()) {
+        DescribeGuest(tag, 0);
+    }
+}
+#else
+void DumpGuestState(const char*) {}
 #endif
 
 SignalDispatch::SignalDispatch() {

@@ -18,5 +18,11 @@ test("GPU-tracking SIGSEGV bypasses FEX diagnostics and reaches normal dispatch"
   assert.match(engine, /signal != SIGBUS/);
   assert.match(engine, /HandleUnalignedAccess/);
   assert.doesNotMatch(engine, /BACHATA_FEX_GUEST_FAULT/);
-  assert.doesNotMatch(engine, /RestoreRIPFromHostPC/);
+  // Only the read-only lookup for the crash dump may use it, never a signal-time state rewrite.
+  const lookup = engine.match(
+    /bool BachataQueryGuestRipAtHostPc\([\s\S]*?\n\}\n/,
+  );
+  assert.ok(lookup);
+  assert.match(lookup[0], /RestoreRIPFromHostPC/);
+  assert.doesNotMatch(engine.replace(lookup[0], ""), /RestoreRIPFromHostPC/);
 });

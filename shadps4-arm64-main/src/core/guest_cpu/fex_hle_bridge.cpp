@@ -354,35 +354,67 @@ Fex::EngineResult<bool> HleGuestBridge::Invoke(HleCallFrame& frame) {
     return true;
 }
 
-void PrintRecentHleCalls(std::FILE* out, const char* prefix) {
+void PrintRecentHleCalls(void (*print)(const char* line), const char* prefix) {
+    // A literal format each time (so that the compiler checks it); a line cut short keeps its end.
+#define EMIT(...)                                                                                  \
+    do {                                                                                           \
+        char line[256];                                                                            \
+        const int length = std::snprintf(line, sizeof(line), __VA_ARGS__);                         \
+        if (length >= static_cast<int>(sizeof(line))) {                                            \
+            line[sizeof(line) - 2] = '\n';                                                         \
+            line[sizeof(line) - 1] = '\0';                                                         \
+        }                                                                                          \
+        print(line);                                                                               \
+    } while (false)
+
     const ThreadActivity* activity = MyActivity;
-    if (activity == nullptr || activity->calls_made == 0) {
-        std::fprintf(out, "%s no HLE calls made by this thread\n", prefix);
+    auto* const names = ActivityNames.load(std::memory_order_relaxed);
+    if (activity == nullptr) {
+        EMIT("%s no HLE calls made by this thread\n", prefix);
         return;
     }
-    auto* const names = ActivityNames.load(std::memory_order_relaxed);
     const u64 made = activity->calls_made;
-    const u64 first = made > ThreadActivity::RecentCalls ? made - ThreadActivity::RecentCalls + 1 : 1;
-    std::fprintf(out, "%s last %llu HLE calls of this thread, oldest first:\n", prefix,
-                 static_cast<unsigned long long>(made - first + 1));
-    for (u64 sequence = first; sequence <= made; ++sequence) {
-        const auto& call = activity->recent[sequence % ThreadActivity::RecentCalls];
-        if (call.sequence != sequence) {
-            continue;
-        }
-        const HleCallAdapter* adapter = names != nullptr ? names->FindForCall(call.operation) : nullptr;
-        const std::string_view name = adapter != nullptr ? adapter->Name() : std::string_view{"?"};
-        if (call.returned) {
-            std::fprintf(out, "%s   #%llu %.*s (operation %llu) = %#llx\n", prefix,
-                         static_cast<unsigned long long>(sequence), static_cast<int>(name.size()),
-                         name.data(), static_cast<unsigned long long>(call.operation),
-                         static_cast<unsigned long long>(call.result));
-        } else {
-            std::fprintf(out, "%s   #%llu %.*s (operation %llu) = not returned\n", prefix,
-                         static_cast<unsigned long long>(sequence), static_cast<int>(name.size()),
-                         name.data(), static_cast<unsigned long long>(call.operation));
+    if (made == 0) {
+        EMIT("%s no HLE calls made by this thread\n", prefix);
+    } else {
+        const u64 first =
+            made > ThreadActivity::RecentCalls ? made - ThreadActivity::RecentCalls + 1 : 1;
+        EMIT("%s last %llu HLE calls of this thread, oldest first:\n", prefix,
+             static_cast<unsigned long long>(made - first + 1));
+        for (u64 sequence = first; sequence <= made; ++sequence) {
+            const auto& call = activity->recent[sequence % ThreadActivity::RecentCalls];
+            if (call.sequence != sequence) {
+                continue;
+            }
+            const HleCallAdapter* adapter =
+                names != nullptr ? names->FindForCall(call.operation) : nullptr;
+            const std::string_view name =
+                adapter != nullptr ? adapter->Name() : std::string_view{"?"};
+            if (call.returned) {
+                EMIT("%s   #%llu %.*s (operation %llu) = %#llx\n", prefix,
+                     static_cast<unsigned long long>(sequence), static_cast<int>(name.size()),
+                     name.data(), static_cast<unsigned long long>(call.operation),
+                     static_cast<unsigned long long>(call.result));
+            } else {
+                EMIT("%s   #%llu %.*s (operation %llu) = not returned\n", prefix,
+                     static_cast<unsigned long long>(sequence), static_cast<int>(name.size()),
+                     name.data(), static_cast<unsigned long long>(call.operation));
+            }
         }
     }
+    // The call the thread is inside of, if it is inside one: an ActivityScope that has not been
+    // left. (An HLE call that fails never gets to Returned, but its scope is left all the same.)
+    const u64 operation = activity->operation.load(std::memory_order_relaxed);
+    if (operation == 0) {
+        EMIT("%s thread was running guest code (no HLE call in progress)\n", prefix);
+    } else {
+        const HleCallAdapter* adapter = names != nullptr ? names->FindForCall(operation) : nullptr;
+        const std::string_view name = adapter != nullptr ? adapter->Name() : std::string_view{"?"};
+        EMIT("%s HLE call in progress: %.*s (operation %llu)\n", prefix,
+             static_cast<int>(name.size()), name.data(),
+             static_cast<unsigned long long>(operation));
+    }
+#undef EMIT
 }
 
 std::optional<GuestExecutionRange> HleGuestBridge::QueryExecutableRange(

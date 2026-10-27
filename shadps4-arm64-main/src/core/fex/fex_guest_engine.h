@@ -72,6 +72,15 @@ bool DeliverGuestOrbisSignal(int orbis_sig, siginfo_t* info, void* rawContext,
 // FEX thread is active on the current host thread. Designed for use inside a SIGSYS
 // signal handler — touches only thread-local pointer state and frame registers.
 bool BachataQueryGuestRipSyscall(uint64_t* out_rip, uint64_t* out_syscall) noexcept;
+/// Where in the guest's code a fault at host program counter `host_pc` is, as far as FEX can tell:
+/// `out_rip` is the guest rip reconstructed from the RIP table of the JIT block the thread
+/// entered last (block granular), `out_block` the guest address that block starts at. When
+/// `host_pc` is outside that block FEX hands back the rip it last spilled instead, so compare it
+/// with the rip of BachataQueryGuestRipSyscall. Reads memory only, no locks: async-signal-safe.
+/// False when no guest thread runs on this host thread, when `host_pc` or the block's header and
+/// RIP table are not inside the JIT arena (or the build has none), or when the engine cannot map
+/// host code to guest code.
+bool BachataQueryGuestRipAtHostPc(uint64_t host_pc, uint64_t* out_rip, uint64_t* out_block) noexcept;
 /// Copies the 16 general purpose registers of the guest thread running on this host thread, as
 /// they were at its last HLE/JIT boundary and in x86 encoding order. Async-signal-safe.
 bool BachataQueryGuestRegisters(uint64_t* out_gprs) noexcept;
