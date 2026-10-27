@@ -8,6 +8,7 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <functional>
 #include <condition_variable>
 #include <cstdlib>
@@ -23,6 +24,7 @@
 #include <vector>
 
 #include <fmt/ranges.h>
+#include "common/diagnostics.h"
 #include "common/elf_info.h"
 #include "common/logging/log.h"
 #include "common/path_util.h"
@@ -640,6 +642,21 @@ struct Engine {
     void present() {
         if (scheduler) scheduler->present();
     }
+
+    // Draw probes (EYE_CHAIN / EYE_GS / EYE_PS): armed for a picture, the renderer records what its draws
+    // sampled and expanded; the guest-level resolves of that picture are noted here. Under `lock`.
+    struct ResolveNote {
+        u64 address;
+        u32 width, height, pitch;
+    };
+    bool probeArmed = false;
+    std::vector<ResolveNote> resolves;
+    void armProbes(bool on) {
+        if (!renderer) return;
+        probeArmed = on;
+        renderer->setProbes(on);
+        resolves.clear();
+    }
 };
 
 Engine& engine() {
@@ -1041,6 +1058,10 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
         if (!e.start()) return;
         e.applyPending();
         e.renderer->resolve(colorTarget(regs, 0), colorTarget(regs, 1));
+        if (e.probeArmed && e.resolves.size() < 16) {
+            const vpps4::ColorTarget dst = colorTarget(regs, 1);
+            e.resolves.push_back({dst.address, dst.width, dst.height, dst.pitch});
+        }
         e.noteWork();
         return;
     }
@@ -1895,6 +1916,22 @@ struct PresentState {
     id<MTLComputePipelineState> stats_pso{nil};
     std::array<id<MTLBuffer>, 2> stats_buf{};
 
+    // ---- EYE_CHAIN: the same reduction on the texture the eye pass's pixel shader samples and on the
+    // guest-level resolve destinations over it (slot 0 the source, then the resolves). The renderer's draw
+    // probes (armed for the picture before the 2 s mark) say which T# that is.
+    static constexpr u32 kChainMax = 3;
+    std::array<id<MTLBuffer>, kChainMax> chain_buf{};
+    struct Chain {
+        bool valid = false;  // probes were armed: the line is logged
+        std::array<id<MTLTexture>, kChainMax> tex{};
+        std::array<std::string, kChainMax> label{}, tail{};
+    };
+    bool probes_on = false;  // probes armed for the picture being drawn
+    std::vector<vpps4::Renderer::DrawProbe> snap;  // the draws of the picture just composed (when probes were on)
+    std::vector<Engine::ResolveNote> snap_resolves;
+    bool snap_valid = false;
+    u32 gs_logs = 0, gs_none = 0;  // EYE_GS lines started / "none" lines (4 each per session)
+
     // Under build_mutex (with the compose pipeline, off the first frame's path).
     void buildStatsPipeline(id<MTLDevice> dev) {
         static const char* kSource = R"MSL(
@@ -1922,22 +1959,215 @@ kernel void vp_eye_stats(texture2d<float, access::read> t [[texture(0)]], device
         if (fn) stats_pso = [dev newComputePipelineStateWithFunction:fn error:&error];
         for (auto& b : stats_buf) b = [dev newBufferWithLength:kStatsGrid * kStatsGrid * sizeof(float) * 2
                                                        options:MTLResourceStorageModeShared];
+        for (auto& b : chain_buf) b = [dev newBufferWithLength:kStatsGrid * kStatsGrid * sizeof(float) * 2
+                                                       options:MTLResourceStorageModeShared];
         if (!stats_pso) LOG_WARNING(Render_Vulkan, "EYE_STATS kernel unavailable");
     }
 
-    static void logEyeStats(u32 eye, u32 w, u32 h, u32 format, id<MTLBuffer> buf) {
+    // (average luma, % of samples lit) of a filled stats buffer.
+    static std::pair<double, double> reduced(id<MTLBuffer> buf) {
         const float* v = static_cast<const float*>(buf.contents);
         double luma = 0, lit = 0;
         for (u32 i = 0; i < kStatsGrid * kStatsGrid; ++i) luma += v[2 * i], lit += v[2 * i + 1];
         const double n = kStatsGrid * kStatsGrid;
+        return {luma / n, 100.0 * lit / n};
+    }
+
+    static void logEyeStats(u32 eye, u32 w, u32 h, u32 format, id<MTLBuffer> buf) {
+        const std::pair<double, double> r = reduced(buf);
         LOG_INFO(Render_Vulkan, "EYE_STATS eye {} {}x{} format {} avg_luma {:.4f} non_zero {:.1f}%", eye, w, h, format,
-                 luma / n, 100.0 * lit / n);
+                 r.first, r.second);
+    }
+
+    // A 2D single-sample picture of `t` (slice `layer` of an array one) the stats kernel can read; nil if it is not
+    // one (integer, depth or stencil formats would not match the kernel's float texture; memoryless has no contents).
+    static id<MTLTexture> reducible(id<MTLTexture> t, u16 layer) {
+        if (!t || t.sampleCount != 1 || !(t.usage & MTLTextureUsageShaderRead) || t.storageMode == MTLStorageModeMemoryless)
+            return nil;
+        switch (t.pixelFormat) {
+        case MTLPixelFormatInvalid:
+        case MTLPixelFormatR8Uint: case MTLPixelFormatR8Sint: case MTLPixelFormatRG8Uint: case MTLPixelFormatRG8Sint:
+        case MTLPixelFormatR16Uint: case MTLPixelFormatR16Sint: case MTLPixelFormatRG16Uint: case MTLPixelFormatRG16Sint:
+        case MTLPixelFormatR32Uint: case MTLPixelFormatR32Sint: case MTLPixelFormatRG32Uint: case MTLPixelFormatRG32Sint:
+        case MTLPixelFormatRGBA8Uint: case MTLPixelFormatRGBA8Sint: case MTLPixelFormatRGBA16Uint:
+        case MTLPixelFormatRGBA16Sint: case MTLPixelFormatRGBA32Uint: case MTLPixelFormatRGBA32Sint:
+        case MTLPixelFormatRGB10A2Uint: case MTLPixelFormatDepth16Unorm: case MTLPixelFormatDepth32Float:
+        case MTLPixelFormatStencil8: case MTLPixelFormatDepth32Float_Stencil8: case MTLPixelFormatX32_Stencil8:
+            return nil;
+        default: break;
+        }
+        if (t.textureType == MTLTextureType2D) return layer == 0 ? t : nil;
+        if (t.textureType == MTLTextureType2DArray && layer < t.arrayLength)
+            return [t newTextureViewWithPixelFormat:t.pixelFormat
+                                        textureType:MTLTextureType2D
+                                             levels:NSMakeRange(0, 1)
+                                             slices:NSMakeRange(layer, 1)];
+        return nil;
+    }
+
+    // The record of the eye pass among the draws of the last picture: what wrote eye 0's target, else eye 1's.
+    static const vpps4::Renderer::DrawProbe* findProbe(const std::vector<vpps4::Renderer::DrawProbe>& probes, u64 address) {
+        for (const vpps4::Renderer::DrawProbe& p : probes)
+            if (p.colorAddress == address) return &p;
+        return nullptr;
+    }
+    const vpps4::Renderer::DrawProbe* eyeProbe(const std::array<vpps4::ImageDesc, 2>& eyeDesc) const {
+        const vpps4::Renderer::DrawProbe* p = findProbe(snap, eyeDesc[0].address);
+        return p ? p : findProbe(snap, eyeDesc[1].address);
+    }
+
+    // The texture the eye pass's pixel shader samples, and the guest-level resolve destinations over it, as textures to
+    // reduce (or the reason there are none). Under the engine lock, with `snap` filled.
+    Chain chainOf(Engine& e, const std::array<vpps4::ImageDesc, 2>& eyeDesc) {
+        Chain c;
+        c.valid = true;
+        c.label[0] = "src=unknown";
+        vpps4::ImageDesc anchor = eyeDesc[0];  // what the resolves are matched with: the sampled T#, else the eye itself
+        const vpps4::Renderer::DrawProbe* p = eyeProbe(eyeDesc);
+        if (!p) {
+            c.tail[0] = " (no draw wrote the eye target in the last picture)";
+        } else if (!p->hasPsTexture) {
+            c.tail[0] = " (the eye pass pixel shader samples no texture)";
+        } else {
+            const vpps4::ImageDesc& s = p->psTexture;
+            anchor = s;
+            uint16_t layer = 0;
+            std::string kind;
+            const vp4gpu::TextureId tid = e.renderer->backingAt(s, layer, kind);
+            if (!tid) {
+                c.label[0] = fmt::format("src=unbacked T# {:#x}", s.address);
+                c.tail[0] = fmt::format(" {}x{} fmt {}/{} (no GPU surface backs it: guest memory only)", s.width, s.height,
+                                        u32(s.dataFormat), u32(s.numFormat));
+            } else {
+                c.label[0] = fmt::format("src={:#x}", s.address);
+                c.tex[0] = reducible(nativeTexture(e, tid), layer);
+                c.tail[0] = fmt::format(" ({}{})", kind, c.tex[0] ? "" : "; the kernel cannot read it");
+            }
+        }
+        auto bytes = [](const vpps4::ImageDesc& d) { return u64(std::max(d.pitch, d.width)) * d.height * 8; };
+        const u64 a0 = anchor.address, a1 = a0 + bytes(anchor);
+        u32 n = 1;
+        for (const Engine::ResolveNote& r : snap_resolves) {
+            if (n >= kChainMax) break;
+            vpps4::ImageDesc q;
+            q.address = r.address;
+            q.width = r.width;
+            q.height = r.height;
+            q.pitch = r.pitch;
+            if (r.address >= a1 || a0 >= r.address + bytes(q)) continue;  // does not overlap
+            uint16_t layer = 0;
+            std::string kind;
+            const vp4gpu::TextureId tid = e.renderer->backingAt(q, layer, kind);
+            c.label[n] = fmt::format("resolve@{:#x}", r.address);
+            if (!tid) {
+                c.tail[n] = fmt::format(" {}x{} (unbacked)", r.width, r.height);
+            } else {
+                c.tex[n] = reducible(nativeTexture(e, tid), layer);
+                c.tail[n] = fmt::format(" ({}{})", kind, c.tex[n] ? "" : "; the kernel cannot read it");
+            }
+            ++n;
+        }
+        return c;
+    }
+
+    static void logChain(const Chain& c, const std::array<id<MTLBuffer>, kChainMax>& cbufs,
+                         const std::array<id<MTLTexture>, 2>& eyes, const std::array<id<MTLBuffer>, 2>& ebufs) {
+        std::string line = "EYE_CHAIN";
+        for (u32 i = 0; i < kChainMax; ++i) {
+            if (c.label[i].empty()) continue;
+            line += i == 0 ? " " : " | ";
+            line += c.label[i];
+            if (c.tex[i] && cbufs[i]) {
+                const std::pair<double, double> r = reduced(cbufs[i]);
+                line += fmt::format(" {}x{} fmt {} luma {:.4f} non_zero {:.1f}%", u32(c.tex[i].width), u32(c.tex[i].height),
+                                    u32(c.tex[i].pixelFormat), r.first, r.second);
+            }
+            line += c.tail[i];
+        }
+        for (u32 k = 0; k < 2; ++k)
+            if (eyes[k] && ebufs[k]) {
+                const std::pair<double, double> r = reduced(ebufs[k]);
+                line += fmt::format(" | eye {} luma {:.4f} non_zero {:.1f}%", k, r.first, r.second);
+            }
+        LOG_INFO(Render_Vulkan, "{}", line);
+    }
+
+    // EYE_PS (diagnostics, every 120 pictures): the first T# of the eye pass's pixel shader.
+    void logEyePs(Engine& e, const std::array<vpps4::ImageDesc, 2>& eyeDesc) const {
+        const vpps4::Renderer::DrawProbe* p = eyeProbe(eyeDesc);
+        if (!p || !p->hasPsTexture) {
+            LOG_INFO(Render_Vulkan, "EYE_PS eye target {:#x}: {}", eyeDesc[0].address,
+                     p ? "its last draw's pixel shader samples no texture" : "no draw wrote it in the last picture");
+            return;
+        }
+        const vpps4::ImageDesc& s = p->psTexture;
+        uint16_t layer = 0;
+        std::string kind;
+        const bool backed = bool(e.renderer->backingAt(s, layer, kind));
+        LOG_INFO(Render_Vulkan,
+                 "EYE_PS eye target {:#x} (geometry draw {}): PS T# {:#x} tile {} pitch {} fmt {}/{} {}x{} type {} backing: {}",
+                 eyeDesc[0].address, p->geom, s.address, u32(s.tilingIndex), s.pitch, u32(s.dataFormat), u32(s.numFormat),
+                 s.width, s.height, u32(s.type), backed ? kind : std::string("none (guest memory only)"));
+    }
+
+    // EYE_GS, read once the frame is done: indices of the GS output list that are not padding (0xffffffff) and the w of
+    // the first 16 vertices they name, taken as component 3 of the copy shader's ring (position assumed to be the first
+    // four components the GS writes; v0 shows them raw). Ring layout: vpgcn/geom.h (copy load).
+    static void logEyeGs(const u32* index, u64 count, const u32* ring, u64 ringDwords, u32 maxVert) {
+        constexpr u64 kScan = 1ull << 23;
+        const u64 n = std::min(count, kScan);
+        const u64 plane = u64(maxVert) * 16;  // dwords between the components of a vertex
+        u64 prims = 0, shown = 0, outside = 0, nonFinite = 0;
+        float wMin = 0, wMax = 0;
+        std::array<float, 4> v0{};
+        for (u64 i = 0; i < n; ++i) {
+            const u32 v = index[i];
+            if (v == 0xffffffffu) continue;
+            ++prims;
+            if (shown >= 16) continue;
+            if (u64(v) + 3 * plane >= ringDwords) {
+                ++outside;
+                continue;
+            }
+            std::array<float, 4> c{};
+            for (u32 k = 0; k < 4; ++k) std::memcpy(&c[k], &ring[u64(v) + k * plane], sizeof(float));
+            if (!std::isfinite(c[3])) {
+                ++nonFinite;
+            } else {
+                wMin = shown == 0 ? c[3] : std::min(wMin, c[3]);
+                wMax = shown == 0 ? c[3] : std::max(wMax, c[3]);
+            }
+            if (shown == 0) v0 = c;
+            ++shown;
+        }
+        LOG_INFO(Render_Vulkan,
+                 "EYE_GS prims={} (indices not 0xffffffff, of {} scanned/{} total) w_min {} w_max {} (first {} vertices; "
+                 "{} outside the ring, {} w not finite; v0 = {} {} {} {})",
+                 prims, n, count, wMin, wMax, shown, outside, nonFinite, v0[0], v0[1], v0[2], v0[3]);
     }
 
     // Under the engine lock, after the eyes' drawing is submitted: reduces both eyes behind it on the queue.
-    void eyeStats(Engine& e, const std::array<id<MTLTexture>, 2>& eyes) {
+    void eyeStats(Engine& e, const std::array<id<MTLTexture>, 2>& eyes, const std::array<vpps4::ImageDesc, 2>& eyeDesc) {
         const auto now = std::chrono::steady_clock::now();
-        if (now - stats_at < std::chrono::seconds{2}) return;
+        // The draw probes of the picture just composed (armed for it, see below).
+        snap.clear();
+        snap_resolves.clear();
+        snap_valid = probes_on;
+        if (probes_on) {
+            snap = e.renderer->takeProbes();
+            snap_resolves.swap(e.resolves);
+        }
+        const bool due = now - stats_at >= std::chrono::seconds{2};
+        const bool diagnostics = Common::Diagnostics();
+        if (diagnostics && snap_valid && frames % 120 == 0) logEyePs(e, eyeDesc);
+        // Probes for the next picture: the ones before the 2 s mark (EYE_CHAIN) and, in diagnostics, before every
+        // 120th picture (EYE_PS, EYE_GS). Outside those pictures the renderer records nothing.
+        const bool arm = (!due && now - stats_at >= std::chrono::milliseconds{1800}) || (diagnostics && frames % 120 == 119);
+        if (arm != probes_on) {
+            e.armProbes(arm);
+            probes_on = arm;
+        }
+        if (!due) return;
         stats_at = now;
         {
             std::scoped_lock built{build_mutex};
@@ -1947,10 +2177,21 @@ kernel void vp_eye_stats(texture2d<float, access::read> t [[texture(0)]], device
         std::array<id<MTLTexture>, 2> src{};
         for (u32 k = 0; k < 2; ++k)
             if (eyes[k] && eyes[k].textureType == MTLTextureType2D && eyes[k].sampleCount == 1) src[k] = eyes[k];
-        if (!src[0] && !src[1]) return;
+        if (!src[0] && !src[1] && !snap_valid) return;
         if (stats_busy.exchange(true)) return;
+        Chain chain;
+        if (snap_valid) chain = chainOf(e, eyeDesc);
+        bool anyChain = false;
+        for (u32 i = 0; i < kChainMax; ++i)
+            if (chain.tex[i]) anyChain = true;
+        if (!src[0] && !src[1] && !anyChain) {
+            logChain(chain, {}, src, {});  // nothing to reduce: the line says why
+            stats_busy = false;
+            return;
+        }
         const auto pso = stats_pso;
         const auto bufs = stats_buf;
+        const auto cbufs = chain_buf;
         // The reduction goes after the frames submitted before it: with the submit thread, they must
         // have reached the backend (as in compose()).
         e.device->drain();
@@ -1967,15 +2208,54 @@ kernel void vp_eye_stats(texture2d<float, access::read> t [[texture(0)]], device
                     [enc setBuffer:bufs[k] offset:0 atIndex:0];
                     [enc dispatchThreads:MTLSizeMake(kStatsGrid, kStatsGrid, 1) threadsPerThreadgroup:MTLSizeMake(8, 8, 1)];
                 }
+                for (u32 i = 0; i < kChainMax; ++i) {
+                    if (!chain.tex[i]) continue;
+                    [enc setTexture:chain.tex[i] atIndex:0];
+                    [enc setBuffer:cbufs[i] offset:0 atIndex:0];
+                    [enc dispatchThreads:MTLSizeMake(kStatsGrid, kStatsGrid, 1) threadsPerThreadgroup:MTLSizeMake(8, 8, 1)];
+                }
                 [enc endEncoding];
             },
             "vp.eyestats",
-            [this, src, bufs] {
+            [this, src, bufs, chain, cbufs] {
                 for (u32 k = 0; k < 2; ++k)
                     if (src[k]) logEyeStats(k, u32(src[k].width), u32(src[k].height), u32(src[k].pixelFormat), bufs[k]);
+                if (chain.valid) logChain(chain, cbufs, src, bufs);
                 stats_busy = false;
             }); });
         if (!queued) stats_busy = false;
+    }
+
+    // EYE_GS (diagnostics, the first 4 pictures every 120th that have one): the eye pass's geometry-shader output, read from
+    // the scratch slab's host memory once the GPU has finished the frame (a command buffer behind it, nothing is waited
+    // for). Shares stats_busy with the stats reduction. Under the engine lock, after eyeStats.
+    void eyeGs(Engine& e, const std::array<vpps4::ImageDesc, 2>& eyeDesc) {
+        if (!Common::Diagnostics() || !snap_valid || frames % 120 != 0 || gs_logs >= 4) return;
+        const vpps4::Renderer::DrawProbe* p = eyeProbe(eyeDesc);
+        if (!p || !p->geom) {
+            if (gs_none++ < 4) LOG_INFO(Render_Vulkan, "EYE_GS none: no geometry-shader draw wrote the eye target in the last picture");
+            return;
+        }
+        if (!p->gsIndex || !p->gsVs) {
+            LOG_INFO(Render_Vulkan, "EYE_GS unavailable: the GS rings of the eye draw are in an oversized scratch slab");
+            return;
+        }
+        if (stats_busy.exchange(true)) return;
+        const u32* index = p->gsIndex;
+        const u32* ring = p->gsVs;
+        const u64 count = p->gsIndexCount, ringDwords = p->gsVsDwords;
+        const u32 maxVert = p->maxVertOut;
+        e.device->drain();
+        bool queued = false;
+        e.device->withBackend([&] { queued = e.backend->encodeInterop(
+            [](void*) {},
+            "vp.eyegs",
+            [this, index, ring, count, ringDwords, maxVert] {
+                logEyeGs(index, count, ring, ringDwords, maxVert);
+                stats_busy = false;
+            }); });
+        if (queued) ++gs_logs;
+        else stats_busy = false;
     }
 
     int compose(Engine& e, u32 width, u32 height, std::span<const Region> regions) {
@@ -2060,10 +2340,12 @@ int ComposeEyes(std::span<const AmdGpu::Image, 2> eye_textures, const Core::Vr::
     e.applyPending();
     std::array<id<MTLTexture>, 2> eyes{};
     std::array<bool, 2> encoded{};
+    std::array<vpps4::ImageDesc, 2> eyeDesc{};
     for (u32 k = 0; k < 2; ++k) {
         std::array<u32, 8> words{};
         std::memcpy(words.data(), &eye_textures[k], std::min(sizeof words, sizeof(AmdGpu::Image)));
         const vpps4::ImageDesc d = vpps4::decodeImage(words);
+        eyeDesc[k] = d;
         // A T# at slice k > 0 of an array colour target (stereo eyes as the two slices of one
         // target): that slice as a 2D view. Slice 0 is the target's own address (textureOf).
         u16 slice = 0;
@@ -2107,7 +2389,8 @@ int ComposeEyes(std::span<const AmdGpu::Image, 2> eye_textures, const Core::Vr::
             LOG_WARNING(Render_Vulkan, "VPKENGINE_PRESENT eye pictures missing (left {}, right {}): black frame",
                         eyes[0] != nil, eyes[1] != nil);
     }
-    impl->eyeStats(e, eyes);
+    impl->eyeStats(e, eyes, eyeDesc);
+    impl->eyeGs(e, eyeDesc);
     impl->last_fov = fov;
     impl->last_eye_width = eye_width;
     impl->last_eye_height = eye_height;
