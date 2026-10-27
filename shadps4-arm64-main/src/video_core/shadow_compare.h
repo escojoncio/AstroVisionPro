@@ -366,8 +366,27 @@ inline void CompareDraw(Differ& d, const Side& a, const Side& b, bool indirect) 
         d.Eq("scissor.valid", a.scissorValid, b.scissorValid);
     } else if (a.scissorValid) {
         static constexpr const char* names[] = {"x", "y", "width", "height"};
+        // (VPKEngine clips the scissor to its targets, Vulkan leaves the registers' rectangle: compared inside the targets)
+        const auto clipped = [](const Side& side) {
+            int64_t w = INT64_MAX, h = INT64_MAX;
+            for (const Target& t : side.color) {
+                if (t.used) {
+                    w = std::min<int64_t>(w, t.width), h = std::min<int64_t>(h, t.height);
+                }
+            }
+            if (side.depth.used) {
+                w = std::min<int64_t>(w, side.depth.width), h = std::min<int64_t>(h, side.depth.height);
+            }
+            const int64_t x0 = std::max<int64_t>(0, side.scissor[0]), y0 = std::max<int64_t>(0, side.scissor[1]);
+            const int64_t x1 = std::min<int64_t>(w, int64_t{side.scissor[0]} + side.scissor[2]);
+            const int64_t y1 = std::min<int64_t>(h, int64_t{side.scissor[1]} + side.scissor[3]);
+            return std::array<int32_t, 4>{int32_t(x0), int32_t(y0), int32_t(std::max<int64_t>(0, x1 - x0)),
+                                          int32_t(std::max<int64_t>(0, y1 - y0))};
+        };
+        const auto sa = clipped(a);
+        const auto sb = clipped(b);
         for (size_t k = 0; k < 4; ++k) {
-            d.Eq(std::string("scissor.") + names[k], a.scissor[k], b.scissor[k]);
+            d.Eq(std::string("scissor.") + names[k], sa[k], sb[k]);
         }
     }
     if (a.stateValid && b.stateValid) {

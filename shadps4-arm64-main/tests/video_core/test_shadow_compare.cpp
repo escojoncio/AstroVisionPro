@@ -149,6 +149,16 @@ TEST(ShadowCompare, TargetsDepthAndFixedFunction) {
     EXPECT_TRUE(Has(o, "state.depth_test"));
 }
 
+TEST(ShadowCompare, ScissorIsComparedInsideTheTargets) {
+    Record r = DrawRecord();
+    r.vk.scissorValid = r.vpk.scissorValid = true;
+    r.vk.scissor[2] = 16384, r.vk.scissor[3] = 16384;  // the registers' default rectangle
+    r.vpk.scissor[2] = 1920, r.vpk.scissor[3] = 1080;  // clipped to the target
+    EXPECT_TRUE(Compare(r).diffs.empty());
+    r.vpk.scissor[2] = 1000;
+    EXPECT_TRUE(Has(Compare(r), "scissor.width"));
+}
+
 TEST(ShadowCompare, SkippedByOneSideIsTheDifferenceAndNothingElse) {
     Record r = DrawRecord();
     r.vpk.status = Status::Skipped;
