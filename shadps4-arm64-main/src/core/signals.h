@@ -28,6 +28,12 @@ void SignalHandler(int sig, siginfo_t* info, void* raw_context);
 /// guest CPU.
 void DumpGuestState(const char* tag);
 
+/// Writes the text the calling guest thread has at hand to stderr and the emulator's log file, every
+/// line starting with `tag`: the runs of at least 8 printable ASCII characters (one byte each, and
+/// UTF-16LE) in the 2 KiB at r12 and at rsp, as of the thread's last HLE call. The reads are safe
+/// on unmapped memory. Does nothing without the FEX guest CPU.
+void DumpGuestText(const char* tag);
+
 /// Receives OS signals and dispatches to the appropriate handlers.
 class SignalDispatch {
 public:

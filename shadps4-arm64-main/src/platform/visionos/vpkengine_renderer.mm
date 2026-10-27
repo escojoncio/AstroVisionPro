@@ -57,8 +57,11 @@ void PrewarmCompose(void* nativeDevice);  // (defined with PresentState)
 
 // Guest addresses are host addresses. Buffers alias guest memory through windows of this size
 // (aligned), cut down to the mapped part around the address: one huge mapping as a single
-// no-copy MTLBuffer can exceed the device's maximum buffer length.
+// no-copy MTLBuffer can exceed the device's maximum buffer length. A range that crosses the end of its window
+// is asked for in a window widened (in multiples of this) to hold it: see the region hook and readable().
 constexpr u64 kWindow = 64ull << 20;
+// The longest range the renderer asks a widened window for (gpu/ps4 kMaxGuestSpan).
+constexpr u64 kMaxGuestSpan = 256ull << 20;
 
 // vm_region_64 calls made by mappedSpan (reported by Engine::report).
 std::atomic<u64> gVmRegionCalls{0};
@@ -283,12 +286,19 @@ bool cachedSpan(u64 address, u64 from, u64 to, u64& begin, u64& end, void*& mirr
     return true;
 }
 
-// Bytes readable from `address` on (up to `want`), 0 if it is not mapped.
+// Bytes readable from `address` on (up to `want`), 0 if it is not mapped. A range that runs past its window is
+// looked for in a window widened to hold it (as the region hook does), so that mapped memory across the
+// boundary counts as readable.
 u64 readable(u64 address, u64 want) {
     const u64 from = address & ~(kWindow - 1);
+    // (the widening is bounded like the renderer's: a longer range is looked for in the window that reaches 256 MiB past
+    // `address`, and the answer says how much of it is there)
+    const u64 reach = std::min<u64>(want, kMaxGuestSpan);
+    const u64 to = reach && address + reach > address ? std::max(from + kWindow, (address + reach + kWindow - 1) & ~(kWindow - 1))
+                                                      : from + kWindow;
     u64 begin, end;
     void* mirror = nullptr;
-    if (!cachedSpan(address, from, from + kWindow, begin, end, mirror)) return 0;
+    if (!cachedSpan(address, from, to, begin, end, mirror)) return 0;
     return std::min<u64>(want, end - address);
 }
 
@@ -592,6 +602,9 @@ struct Engine {
             vpps4::setFormatCaps(fc);
         }
         device = std::make_unique<vpgpu::Device>(*backend, 2, [this](const std::string& l) { log(l); });
+        // A guest window the backend cannot wrap (no-copy) has no buffer: the renderer must get no id for it, not one that
+        // reads as address 0.
+        device->setRefuseFailedBuffers(true);
         // The PS4 hold regime (core's default is the single-budget one with back-off, opt-in here): the first 120
         // frames (or 10 s held) wait up to the whole hold (1500 ms, VP_HOLD_MS) for every pipeline, afterwards draws
         // wait 12 ms and a draw whose pipeline is not ready is left out of that frame only; Dispatch work keeps the

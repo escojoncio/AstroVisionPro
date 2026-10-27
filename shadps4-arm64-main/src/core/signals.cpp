@@ -5,6 +5,7 @@
 #include <cstdarg>
 #include <cstdio>
 #include <cstring>
+#include <mutex>
 #include "common/arch.h"
 #include "common/assert.h"
 #include "common/crash_reporter.h"
@@ -193,8 +194,7 @@ static void CrashPrint(const char* format, ...) {
 /// Reads guest memory that may not be mapped. The kernel does the copy, so a bad address is an
 /// error return rather than a second fault inside the fault handler. A range that ends in an
 /// unmapped page is copied as far as it goes, and is an error all the same.
-static bool ReadGuestBytes(u64 address, void* out, size_t size) {
-    static int pipe_ends[2] = {-1, -1};
+static bool ReadGuestBytesVia(int (&pipe_ends)[2], u64 address, void* out, size_t size) {
     if (pipe_ends[0] < 0 && pipe(pipe_ends) != 0) {
         return false;
     }
@@ -205,6 +205,20 @@ static bool ReadGuestBytes(u64 address, void* out, size_t size) {
     // Whatever the kernel took has to be taken out again, or the next read finds it.
     return read(pipe_ends[0], out, static_cast<size_t>(written)) == written &&
            static_cast<size_t>(written) == size;
+}
+
+/// The crash path (signal handler): a static pipe, no TLS and no lock, which a handler must not touch.
+/// `serialized` is for the dumps that run on guest threads from HLE calls (not fatal, several at
+/// once): their own pipe, behind a mutex.
+static bool ReadGuestBytes(u64 address, void* out, size_t size, bool serialized = false) {
+    if (serialized) {
+        static std::mutex hle_mutex;
+        static int hle_pipe[2] = {-1, -1};
+        const std::scoped_lock lock{hle_mutex};
+        return ReadGuestBytesVia(hle_pipe, address, out, size);
+    }
+    static int pipe_ends[2] = {-1, -1};
+    return ReadGuestBytesVia(pipe_ends, address, out, size);
 }
 
 /// Reads a word of guest memory that may not be mapped.
@@ -551,8 +565,92 @@ void DumpGuestState(const char* tag) {
         DescribeGuest(tag, 0);
     }
 }
+
+/// Calls `emit(first, utf16, count)` for each run of at least `min_length` printable ASCII
+/// characters in `data`: one byte per character, and UTF-16LE (a zero byte after each) at either
+/// alignment. `first` is the offset of the run's first byte, `utf16` whether it is UTF-16LE, `count`
+/// its characters.
+template <typename Emit>
+static void ScanText(const uint8_t* data, size_t size, size_t min_length, Emit&& emit) {
+    for (size_t width = 1; width <= 2; ++width) {
+        for (size_t phase = 0; phase < width; ++phase) {
+            size_t start = 0;
+            size_t run = 0;
+            for (size_t i = phase; i + width <= size; i += width) {
+                const bool printable = data[i] >= 0x20 && data[i] < 0x7f && (width == 1 || data[i + 1] == 0);
+                if (printable) {
+                    if (run++ == 0) {
+                        start = i;
+                    }
+                    continue;
+                }
+                if (run >= min_length) {
+                    emit(start, width == 2, run);
+                }
+                run = 0;
+            }
+            if (run >= min_length) {
+                emit(start, width == 2, run);
+            }
+        }
+    }
+}
+
+/// The text found in the guest memory at `address` (`size` bytes, as far as it is mapped), one
+/// line per run of printable characters.
+static void DumpGuestRegionText(const char* tag, const char* name, u64 address, size_t size) {
+    constexpr size_t Piece = 64;
+    constexpr size_t MinLength = 8;
+    constexpr size_t MaxChars = 400;
+    constexpr unsigned MaxLines = 64;
+    uint8_t memory[0x800];
+    size = std::min(size, sizeof(memory));
+    // Piece by piece: a range that ends in an unmapped page still gives what is before it.
+    size_t read_bytes = 0;
+    while (read_bytes < size &&
+           ReadGuestBytes(address + read_bytes, memory + read_bytes, std::min(Piece, size - read_bytes), true)) {
+        read_bytes += std::min(Piece, size - read_bytes);
+    }
+    CrashPrint("%s %s=%#llx: %zu of %zu bytes readable\n", tag, name,
+               static_cast<unsigned long long>(address), read_bytes, size);
+    unsigned lines = 0;
+    ScanText(memory, read_bytes, MinLength, [&](size_t first, bool utf16, size_t count) {
+        if (++lines > MaxLines) {
+            return;
+        }
+        char text[MaxChars + 1];
+        const size_t shown = std::min(count, MaxChars);
+        for (size_t i = 0; i < shown; ++i) {
+            text[i] = static_cast<char>(memory[first + i * (utf16 ? 2 : 1)]);
+        }
+        text[shown] = '\0';
+        CrashPrint("%s %s+%#zx %s %zu chars: %s%s\n", tag, name, first, utf16 ? "utf16" : "ascii", count,
+                   text, shown < count ? "..." : "");
+    });
+    if (lines > MaxLines) {
+        CrashPrint("%s %s: %u more runs not shown\n", tag, name, lines - MaxLines);
+    }
+}
+
+void DumpGuestText(const char* tag) {
+    const DumpGuard guard;
+    if (!guard.Entered()) {
+        return;
+    }
+    uint64_t gprs[16]{};
+    if (!::Core::Fex::BachataQueryGuestRegisters(gprs)) {
+        CrashPrint("%s no guest thread runs on this host thread\n", tag);
+        return;
+    }
+    // Registers as of the last HLE call: r12 is callee-saved, so it is the caller's, and the stack
+    // from rsp up holds the caller's locals and whatever it formatted there.
+    constexpr size_t Window = 0x800;
+    DumpGuestRegionText(tag, "r12", gprs[12], gprs[12] != 0 ? Window : 0);
+    DumpGuestRegionText(tag, "rsp", gprs[4], Window);
+}
 #else
 void DumpGuestState(const char*) {}
+void DumpGuestText(const char*) {}
 #endif
 
 SignalDispatch::SignalDispatch() {
