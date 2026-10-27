@@ -4,6 +4,11 @@ ASTRO BOT Rescue Mission (CUSA12392) y KITCHEN (CUSA06799), PSVR, en Apple Visio
 Detalle anterior en `git log -p bitacora.md`. Detalle técnico estable de la ruta GPU PS4: `notas/vpkengine-ps4.md`.
 
 ## Last done
+- 2026-10-27 rama `shadow-mode` (app 1 commit sobre main + VPKEngine `shadow-mode` 7eb4cdc): modo sombra. Build CI run 40587561363 (dispatch sobre la rama). NO fusionado en main.
+  - Selección en runtime `ASTRO_RENDERER` = `vpkengine` (defecto) | `vulkan` | `shadow` (`src/platform/visionos/astro_renderer.h`, gnmdriver.cpp RegisterLib, driver.cpp `PresenterRouter`, astro_core.mm GpuBench); macro `SHADPS4_VPKENGINE_ONLY` → `SHADPS4_VPKENGINE_RENDERER`. Ajuste "Motor gráfico" (AstroSettings.swift, SettingsView.swift) y env de KosmicKrisp restaurados (invertido de 84e38d5); workflow con paso KK (continue-on-error) y copia de KosmicKrisp.framework. GpuTimer apagado con KK (vk_scheduler.cpp).
+  - `src/video_core/tee_rasterizer.h`: primario Vulkan + sombra VPK; efectos visibles/retornos solo primario; sombra desactivable (`ASTRO_SHADOW disabled`). Sombra VPK: NullBackend (record/autoComplete), sin PageManager/watchers/mirrors/escrituras guest/presentación; `ShadowEndFrame` desde el Flip. Test motor `vpps4.shadow_never_writes_guest_memory`, `gpu_core.nullrun`.
+  - Comparación por draw/dispatch/fill/copy: `shadow_record.h`, `shadow_compare.h` (test_shadow_compare.cpp), instrumentación vk_rasterizer.cpp/buffer_cache.cpp, hook opt-in `vpps4::Hooks::resolved` (`vpps4/resolved.h`). Log `ASTRO_SHADOW diff|summary|top` (3 completas por (campo,pgm), resumen cada 600 frames, tope 4000 líneas). ctest motor 457/457.
+  - Ruido esperado en el diff: `topology` (RectList/QuadList), `state.front_clockwise`, `color*.width/height`.
 - 2026-10-27 build 484dbfe (app) + VPKEngine `unify/engine` 79e9b85: arreglos de Registros_10. CI en curso.
 - Ventanas guest de 64 MiB: `guestBuffer` (R `gpu/ps4/src/renderer.cpp`) ignoraba `size` → recursos que cruzan frontera recortados (HDR 0x705f400000 1440x1536 mapped=12582912/18874368; depth KITCHEN 0x712bcf0000). Ahora size real (tope 256 MiB), clave (base,size), `retireSuperseded`/`windowSuperseded`, tabla FLAT disjunta (base asc, size desc), `shrinkRegion` si Metal rechaza, fallo cacheado por generación o 120 frames. App: `readable()` mismo tope; `vpkengine_mirror.cpp` índice (begin,end) + retirada de mirrors solapados obsoletos.
 - Buffers rechazados (gpu.err size=55099392/67108864 en carga de sala → draws con dirección 0): `Device::setRefuseFailedBuffers(true)` (opt-in, solo PS4) → BufferId{} → "bound as zeros"; metal2 `bufferCreated`, log `gpu.metal.info what=buffer_refused` con vm_region. Causa del nil sin conocer.
@@ -20,6 +25,7 @@ Detalle anterior en `git log -p bitacora.md`. Detalle técnico estable de la rut
 - Rendimiento: backend submit 388 ms/s (4x), frame compile 19 ms/s (1x).
 
 ## Pendiente (orden)
+0. Probar build de `shadow-mode` con Motor gráfico = Sombra en ASTRO y KITCHEN; analizar `ASTRO_SHADOW summary/top/diff`; arreglar vpps4 por categoría. Fase 2: hash de RTs/ojos (readTexture) y comparación de memoria escrita por GPU (universo privado de memoria para la sombra).
 1. Logs de 484dbfe: `buffer_refused`/`guest_buffer_refused`, `tiled outside guest memory` (debe ser 0), `resolve_src`, `ASTRO_ABNORMAL_TEXT`, `gpu.err`, missing_resources.
 2. Semántica GCN: LDS en PS/VS, v_mbcnt, si la corrupción persiste.
 3. Rendimiento GPU (memoryless/MSAA, caché MTLLibrary, backend submit).
