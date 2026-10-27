@@ -47,6 +47,12 @@ namespace Libraries::VideoOut {
 // whichever was made. Both have the same calls; this forwards each to the one that exists, and
 // takes the name `presenter` inside this namespace, so that the code below reads as it always did.
 class PresenterRouter {
+    // Defined before its users: clang rejects calling a deduced-return-type function earlier.
+    template <typename Fn>
+    decltype(auto) Use(Fn&& fn) {
+        return vp_presenter ? fn(*vp_presenter) : fn(*::presenter);
+    }
+
 public:
     PresenterRouter* operator->() {
         return this;
@@ -102,12 +108,6 @@ public:
     }
     void Present(Vulkan::Frame* frame, bool is_reusing_frame = false) {
         Use([&](auto& p) { p.Present(frame, is_reusing_frame); });
-    }
-
-private:
-    template <typename Fn>
-    decltype(auto) Use(Fn&& fn) {
-        return vp_presenter ? fn(*vp_presenter) : fn(*::presenter);
     }
 };
 static PresenterRouter presenter;
