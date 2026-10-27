@@ -30,7 +30,7 @@
 #include "shader_recompiler/runtime_info.h"
 #include "video_core/amdgpu/resource.h"
 #include "vpgcn/lift.h"
-#include "vp4msl/msl.h"
+#include "vpmsl/msl.h"
 
 namespace VpkengineShaderCheck {
 namespace {
@@ -194,18 +194,18 @@ std::optional<vpgcn::DescriptorInfo> describeDescriptor(const vpgcn::DescriptorS
     AmdGpu::Image image{};
     std::memcpy(&image, d->data(), sizeof(image) < 32 ? sizeof(image) : 32);
     switch (static_cast<AmdGpu::ImageType>(image.type)) {
-    case AmdGpu::ImageType::Color1D: out.dim = vp4ir::TexDim::D1; break;
-    case AmdGpu::ImageType::Color3D: out.dim = vp4ir::TexDim::D3; break;
-    case AmdGpu::ImageType::Cube: out.dim = image.last_array > 5 ? vp4ir::TexDim::CubeArray : vp4ir::TexDim::Cube; break;
+    case AmdGpu::ImageType::Color1D: out.dim = vpir::TexDim::D1; break;
+    case AmdGpu::ImageType::Color3D: out.dim = vpir::TexDim::D3; break;
+    case AmdGpu::ImageType::Cube: out.dim = image.last_array > 5 ? vpir::TexDim::CubeArray : vpir::TexDim::Cube; break;
     case AmdGpu::ImageType::Color1DArray: // (no 1D arrays in VPIR: as 2D arrays)
     case AmdGpu::ImageType::Color2DArray:
-    case AmdGpu::ImageType::Color2DMsaaArray: out.dim = vp4ir::TexDim::D2Array; break;
-    default: out.dim = vp4ir::TexDim::D2; break;
+    case AmdGpu::ImageType::Color2DMsaaArray: out.dim = vpir::TexDim::D2Array; break;
+    default: out.dim = vpir::TexDim::D2; break;
     }
     const auto nfmt = static_cast<AmdGpu::NumberFormat>(image.num_format);
-    out.elem = nfmt == AmdGpu::NumberFormat::Uint   ? vp4ir::Scalar::U32
-               : nfmt == AmdGpu::NumberFormat::Sint ? vp4ir::Scalar::I32
-                                                    : vp4ir::Scalar::F32;
+    out.elem = nfmt == AmdGpu::NumberFormat::Uint   ? vpir::Scalar::U32
+               : nfmt == AmdGpu::NumberFormat::Sint ? vpir::Scalar::I32
+                                                    : vpir::Scalar::F32;
     // V#: dword 3, num_format [14:12], data_format [18:15]
     out.nfmt = uint8_t((*d)[3] >> 12 & 7);
     out.dfmt = uint8_t((*d)[3] >> 15 & 15);
@@ -312,7 +312,9 @@ void Check(std::span<const uint32_t> code, const Shader::Info& info, const Shade
         logTally(t);
         return;
     }
-    vp4msl::EmitResult m = vp4msl::emitMsl(r.module);
+    vpmsl::EmitOptions emit;
+    emit.constTables = false;  // as the renderer: constant tables have no GCN coverage
+    vpmsl::EmitResult m = vpmsl::emitMsl(r.module, emit);
     if (!m.errors.empty()) {
         LOG_WARNING(Render_Vulkan, "VPKENGINE_SHADER {} verifier: {}", name, m.errors.front());
         setStatus(hash, stage, Status::Failed, "verify: " + m.errors.front());

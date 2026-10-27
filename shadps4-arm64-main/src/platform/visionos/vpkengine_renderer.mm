@@ -39,13 +39,13 @@
 #include "video_core/amdgpu/regs.h"
 #include "video_core/amdgpu/resource.h"
 #include "video_core/page_manager.h"
-#include "vp4gpu/core/device.h"
-#include "vp4gpu/metal/metal_backend.h"
+#include "vpgpu/core/device.h"
+#include "vpgpu/metal2/metal_backend.h"
 #include "vpps4/fetch.h"
 #include "vpps4/formats.h"
 #include "vpps4/renderer.h"
 #include "vpps4/scheduler.h"
-#include "vp4gpu/core/submit_policy.h"
+#include "vpgpu/core/submit_policy.h"
 #include "vpps4/report.h"
 
 namespace VpkengineRenderer {
@@ -125,8 +125,10 @@ bool mappedSpan(u64 address, u64 from, u64 to, u64& begin, u64& end) {
 // mappedSpan answers cached: it walks the VM map with vm_region_64 syscalls (often tens per call)
 // and is asked for every buffer binding of every draw. The span of an address inside a window is
 // unique, so (window, span) pairs are kept for as long as the guest's map does not change. The map
-// changes only through the emulator's MemoryManager (map, unmap, protect, commit: each one counts
-// in MappingGeneration(), odd while it is in progress) and through Map/UnmapMemory of the rasterizer
+// changes only through the emulator's MemoryManager (map, unmap, free, commit, decommit: each one counts
+// in HostMapGeneration(), odd while it is in progress; Protect only calls mprotect, which leaves the
+// maximum protection mappedSpan reads as it was, and naming / memory types do not touch the host map
+// at all: they count in MappingGeneration() only) and through Map/UnmapMemory of the rasterizer
 // (the PRT area is mapped without a mutation): the cache follows both, nothing else empties it.
 // Answers are kept too when there is no span ("not mapped") and when the span has no mirror yet
 // (asked again for the mirror only, after kMirrorRetryNs).
@@ -145,7 +147,7 @@ struct SpanCache {
     std::array<Unmapped, 32> unmapped{};
     unsigned unmappedUsed = 0, unmappedNext = 0;
     u64 gen = 0;  // bumped by every emptying: a span looked up before it is not inserted after it
-    // The emulator's MappingGeneration() the entries were made at (written under the lock).
+    // The emulator's HostMapGeneration() the entries were made at (written under the lock).
     std::atomic<u64> seen{0};
     // `gen` readable without the lock: what was checked readable at one value of it is still mapped
     // at the same value (the draw adapter keeps fetch subroutines by it, vpps4 keeps its regions).
@@ -153,7 +155,7 @@ struct SpanCache {
     // Counters printed by Engine::report (VPKENGINE_GPU cpu region caches).
     std::atomic<u64> hits{0}, misses{0}, unmappedHits{0}, mirrorRetries{0}, bumps{0};
 
-    static u64 emulatorGeneration() { return Core::Memory::Instance()->MappingGeneration(); }
+    static u64 emulatorGeneration() { return Core::Memory::Instance()->HostMapGeneration(); }
     void reset() {  // (under the lock)
         used = next = last = 0;
         unmappedUsed = unmappedNext = 0;
@@ -326,15 +328,15 @@ std::string ExplainAddress(u64 address) {
 }
 
 // MSL from the shader translator, as the Metal backend takes it (msl.h argument contract).
-vp4gpu::metal::MslShader toMetal(const vp4msl::MslShader& s) {
-    vp4gpu::metal::MslShader m;
+vpgpu::metal2::MslShader toMetal(const vpmsl::MslShader& s) {
+    vpgpu::metal2::MslShader m;
     m.source = s.source;
     m.entry = "vp_main";
     m.argumentBufferIndex = 0;
     m.threadsPerGroup = s.workgroupSize;
     m.colorOutputs = s.colorOutputs;
-    for (const vp4msl::Argument& a : s.arguments)
-        m.arguments.push_back({vp4gpu::BindKind(uint8_t(a.kind) + 1), uint16_t(a.index), a.offset});
+    for (const vpmsl::Argument& a : s.arguments)
+        m.arguments.push_back({vpgpu::BindKind(uint8_t(a.kind) + 1), uint16_t(a.index), a.offset});
     return m;
 }
 
@@ -346,9 +348,9 @@ struct Engine {
     // Recursive: a CPU access to memory an image on the GPU is ahead of faults inside code that
     // holds the lock already (a DMA done on the CPU); the fault handler writes the image back.
     std::recursive_mutex lock;
-    vp4gpu::metal::ShaderTable shaders;
-    std::unique_ptr<vp4gpu::metal::MetalBackend> backend;
-    std::unique_ptr<vp4gpu::Device> device;
+    vpgpu::metal2::ShaderTable shaders;
+    std::unique_ptr<vpgpu::metal2::MetalBackend> backend;
+    std::unique_ptr<vpgpu::Device> device;
     std::unique_ptr<vpps4::Renderer> renderer;
     // When recorded work goes to the GPU, and how DMA / GDS / labels stay ordered with it.
     std::unique_ptr<vpps4::Scheduler> scheduler;
@@ -445,7 +447,7 @@ struct Engine {
         // copies it records count as queued GPU work on those ranges: submitted and waited for below).
         const bool written = renderer->syncToMemory(a, n);
         const bool writtenB = m && renderer->syncToMemory(b, m);
-        if (scheduler->syncCpu(a, n, vp4gpu::SubmitReason::Dma, b, m) || written || writtenB) ++dmaSynced;
+        if (scheduler->syncCpu(a, n, vpgpu::SubmitReason::Dma, b, m) || written || writtenB) ++dmaSynced;
         else ++dmaUnsynced;
     }
     void watchdogLoop() {
@@ -495,15 +497,24 @@ struct Engine {
         }
         {
             SpanCache& sc = spanCache();
+            // (what began a mutation of the emulator's map in this interval: the first six move the span cache's
+            // generation, the last three only MappingGeneration())
+            std::string mutations;
+            {
+                const auto counts = Core::Memory::Instance()->TakeMapMutationCounts();
+                for (size_t k = 0; k < counts.size(); ++k)
+                    mutations += fmt::format("{}{} {:.0f}", k ? ", " : "", Core::MemoryManager::MapMutationName(k),
+                                             double(counts[k]) / s);
+            }
             const VpkengineRenderer::GuestMirrorStats ms = VpkengineRenderer::TakeGuestMirrorStats();
             LOG_INFO(Render_Vulkan,
                      "VPKENGINE_GPU cpu region caches (per s): cachedSpan {:.0f} hits, {:.0f} misses, {:.0f} unmapped hits, "
                      "{:.0f} mirror retries; vm_region_64 {:.0f}, vm_region_recurse_64 {:.0f} ({:.0f} GuestMirror lookups); "
-                     "span cache emptied {:.0f}; vpps4 region cache {:.0f} hits, {:.0f} misses",
+                     "span cache emptied {:.0f}; vpps4 region cache {:.0f} hits, {:.0f} misses; map mutations (per s): {}",
                      double(take(sc.hits)) / s, double(take(sc.misses)) / s, double(take(sc.unmappedHits)) / s,
                      double(take(sc.mirrorRetries)) / s, double(take(gVmRegionCalls)) / s, double(ms.regionCalls) / s,
                      double(ms.lookups) / s, double(take(sc.bumps)) / s, double(t.regionHits) / s,
-                     double(t.regionMisses) / s);
+                     double(t.regionMisses) / s, mutations);
         }
         if (scheduler) LOG_INFO(Render_Vulkan, "VPKENGINE_GPU {}", scheduler->takeSummary());
     }
@@ -527,8 +538,9 @@ struct Engine {
         // slot until the GPU finishes them, so with two the next picture's submit waits for the previous one to
         // finish; three let the recording thread run one picture ahead (one picture more of latency, which the
         // headset's reprojection hides). VPKENGINE_FRAMES_IN_FLIGHT=2..6 (vpps4's upload rings, 8, cover up to 6).
-        vp4gpu::metal::MetalOptions options;
+        vpgpu::metal2::MetalOptions options;
         options.framesInFlight = 3;
+        options.renderCache = true;  // PS4 draws repeat state and table buffers; VPKENGINE_RENDER_CACHE=0 turns it off (A/B)
         if (const char* v = std::getenv("VPKENGINE_FRAMES_IN_FLIGHT"); v && *v)
             options.framesInFlight = unsigned(std::clamp(std::atoi(v), 2, 6));
         LOG_INFO(Render_Vulkan, "VPKENGINE_GPU frames in flight {}", options.framesInFlight);
@@ -543,7 +555,7 @@ struct Engine {
             std::filesystem::create_directories(cacheDir / "metal", ec);
             if (!ec) options.cacheRoot = cacheDir / "metal";
         }
-        backend = std::make_unique<vp4gpu::metal::MetalBackend>(shaders, [this](const std::string& l) { log(l); },
+        backend = std::make_unique<vpgpu::metal2::MetalBackend>(shaders, [this](const std::string& l) { log(l); },
                                                                options);
         if (!backend->ok()) {
             failed = true;
@@ -557,7 +569,13 @@ struct Engine {
             fc.bc = backend->caps().bc;
             vpps4::setFormatCaps(fc);
         }
-        device = std::make_unique<vp4gpu::Device>(*backend, 2, [this](const std::string& l) { log(l); });
+        device = std::make_unique<vpgpu::Device>(*backend, 2, [this](const std::string& l) { log(l); });
+        // The PS4 hold regime (core's default is the single-budget one with back-off, opt-in here): the first 120
+        // frames (or 10 s held) wait up to the whole hold (1500 ms, VP_HOLD_MS) for every pipeline, afterwards draws
+        // wait 12 ms and a draw whose pipeline is not ready is left out of that frame only; Dispatch work keeps the
+        // whole hold. VPKENGINE_HOLD_MS / VPKENGINE_HOLD_WARMUP_FRAMES (read by the Device) still override these.
+        if (const char* e = std::getenv("VPKENGINE_HOLD_MS"); !e || !*e) device->setHoldSteadyMs(12);
+        if (const char* e = std::getenv("VPKENGINE_HOLD_WARMUP_FRAMES"); !e || !*e) device->setHoldWarmupFrames(120);
         vpps4::Hooks hooks;
         hooks.region = [](uint64_t address, uint64_t size, vpps4::GuestRegion& out) {
             if (address < 0x10000) return false;
@@ -580,7 +598,7 @@ struct Engine {
         // vpps4 keeps the mirrored regions this hook returns until the guest's map changes.
         hooks.regionGeneration = [] { return spanCache().generation(); };
         hooks.explainAddress = [](uint64_t address) { return ExplainAddress(address); };
-        hooks.shader = [this](uint64_t id, vp4ir::Stage, const vp4msl::MslShader& s) { shaders.add(id, toMetal(s)); };
+        hooks.shader = [this](uint64_t id, vpir::Stage, const vpmsl::MslShader& s) { shaders.add(id, toMetal(s)); };
         hooks.log = [this](const std::string& l) { log(l); };
         hooks.watchWrites = [this](uint64_t a, uint64_t n) {
             if (watchWrites) watchWrites(a, n);
@@ -590,16 +608,18 @@ struct Engine {
         };
         // Views of images (another format of the same texel size, a layer range, a cube / array):
         // lazily resolved handles of the Metal backend.
-        hooks.view = [this](const vpps4::ViewRequest& r) -> vp4gpu::TextureId {
-            vp4gpu::metal::MetalBackend::ViewDesc d;
+        hooks.view = [this](const vpps4::ViewRequest& r) -> vpgpu::TextureId {
+            vpgpu::metal2::MetalBackend::ViewDesc d;
             d.type = r.type;
             d.array = r.array;
             d.format = r.format;
             d.baseLayer = r.baseLayer;
             d.layers = r.layers;
+            d.baseMip = r.baseMip;
+            d.mips = r.mips;  // 0: every level from baseMip (the backend resolves it against the base)
             return backend->createView(r.base, d);
         };
-        hooks.destroyView = [this](vp4gpu::TextureId v) { backend->destroyView(v); };
+        hooks.destroyView = [this](vpgpu::TextureId v) { backend->destroyView(v); };
         // Opt-in (VPK_SUBMIT_THREAD=1): frame encoding on its own thread. Not on by default: the Metal
         // backend was written for one thread that creates resources and submits.
         if (const char* t = std::getenv("VPK_SUBMIT_THREAD"); t && *t && *t != '0') device->startSubmitThread(2);
@@ -609,7 +629,7 @@ struct Engine {
         });
         renderer = std::make_unique<vpps4::Renderer>(*device, std::move(hooks));
         renderer->setSummaryEvery(kEvery);
-        scheduler = std::make_unique<vpps4::Scheduler>(*renderer, *device, vp4gpu::SubmitPolicy{}, [] { return msNow(); });
+        scheduler = std::make_unique<vpps4::Scheduler>(*renderer, *device, vpgpu::SubmitPolicy{}, [] { return msNow(); });
         scheduler->setSubmitHook([this] {
             ++submits;
             if (submits % kEvery == 1)
@@ -993,10 +1013,9 @@ struct Rasterizer::Impl {
         std::scoped_lock l{owned_mutex};
         for (auto it = owned.begin(); it != owned.end();) {
             if (it->first.first < a + n && it->first.first + it->first.second > a) {
-                for (u32 k = 0; k < it->second; ++k) {
-                    page_manager.UpdateReadWatchers<false>(it->first.first, it->first.second);
-                    page_manager.UpdatePageWatchers<false>(it->first.first, it->first.second);
-                }
+                // (setOwned adds the watchers once per key, whatever the count: released once)
+                page_manager.UpdateReadWatchers<false>(it->first.first, it->first.second);
+                page_manager.UpdatePageWatchers<false>(it->first.first, it->first.second);
                 noteReleasedOwned(it->first.first, it->first.second);
                 it = owned.erase(it);
             } else {
@@ -1522,10 +1541,9 @@ bool Rasterizer::Impl::resolveOwned(VAddr addr, bool write) {
                     continue;
                 }
                 aheadSince.erase({s, z});
-                for (u32 k = 0; k < it->second; ++k) {
-                    page_manager.UpdateReadWatchers<false>(s, z);
-                    page_manager.UpdatePageWatchers<false>(s, z);
-                }
+                // (one watcher per key, whatever the count: see setOwned)
+                page_manager.UpdateReadWatchers<false>(s, z);
+                page_manager.UpdatePageWatchers<false>(s, z);
                 owned.erase(it);
                 noteReleasedOwned(s, z);
                 if (write) e.queueInvalidate(s, z);
@@ -1764,7 +1782,7 @@ void Rasterizer::WriteDataOrdered(void* address, const void* data, u32 size) {
             // Images ahead of this memory are written back first (and their pages released once the GPU
             // has run that): a protected page would fault in the middle of the copy.
             if (e.renderer) e.renderer->syncToMemory(reinterpret_cast<u64>(address), size);
-            e.scheduler->syncCpu(reinterpret_cast<u64>(address), size, vp4gpu::SubmitReason::WriteData);
+            e.scheduler->syncCpu(reinterpret_cast<u64>(address), size, vpgpu::SubmitReason::WriteData);
             std::memcpy(address, data, size);
             e.scheduler->forgetLabelValues(reinterpret_cast<u64>(address), size);
             return;
@@ -1894,13 +1912,13 @@ struct PresentState {
 
     // The texture VPKEngine has for a T#, after recording whatever fills it.
     static id<MTLTexture> textureOf(Engine& e, const vpps4::ImageDesc& d) {
-        const vp4gpu::TextureId tid = e.renderer->textureFor(d);
+        const vpgpu::TextureId tid = e.renderer->textureFor(d);
         if (!tid) return nil;
         return nativeTexture(e, tid);
     }
 
     // The Metal texture of `tid` (with the submit thread, if there is one, kept out of the backend meanwhile).
-    static id<MTLTexture> nativeTexture(Engine& e, vp4gpu::TextureId tid) {
+    static id<MTLTexture> nativeTexture(Engine& e, vpgpu::TextureId tid) {
         void* native = nullptr;
         e.device->withBackend([&] { native = e.backend->nativeTexture(tid); });
         return (__bridge id<MTLTexture>)native;
@@ -2033,7 +2051,7 @@ kernel void vp_eye_stats(texture2d<float, access::read> t [[texture(0)]], device
             anchor = s;
             uint16_t layer = 0;
             std::string kind;
-            const vp4gpu::TextureId tid = e.renderer->backingAt(s, layer, kind);
+            const vpgpu::TextureId tid = e.renderer->backingAt(s, layer, kind);
             if (!tid) {
                 c.label[0] = fmt::format("src=unbacked T# {:#x}", s.address);
                 c.tail[0] = fmt::format(" {}x{} fmt {}/{} (no GPU surface backs it: guest memory only)", s.width, s.height,
@@ -2057,7 +2075,7 @@ kernel void vp_eye_stats(texture2d<float, access::read> t [[texture(0)]], device
             if (r.address >= a1 || a0 >= r.address + bytes(q)) continue;  // does not overlap
             uint16_t layer = 0;
             std::string kind;
-            const vp4gpu::TextureId tid = e.renderer->backingAt(q, layer, kind);
+            const vpgpu::TextureId tid = e.renderer->backingAt(q, layer, kind);
             c.label[n] = fmt::format("resolve@{:#x}", r.address);
             if (!tid) {
                 c.tail[n] = fmt::format(" {}x{} (unbacked)", r.width, r.height);
@@ -2349,8 +2367,8 @@ int ComposeEyes(std::span<const AmdGpu::Image, 2> eye_textures, const Core::Vr::
         // A T# at slice k > 0 of an array colour target (stereo eyes as the two slices of one
         // target): that slice as a 2D view. Slice 0 is the target's own address (textureOf).
         u16 slice = 0;
-        const vp4gpu::TextureId arrayTarget = e.renderer->colorTargetAt(d.address)
-                                                 ? vp4gpu::TextureId{}
+        const vpgpu::TextureId arrayTarget = e.renderer->colorTargetAt(d.address)
+                                                 ? vpgpu::TextureId{}
                                                  : e.renderer->colorTargetSlice(d.address, d.width, d.height, slice);
         if (arrayTarget) {
             id<MTLTexture> t = PresentState::nativeTexture(e, arrayTarget);

@@ -69,6 +69,7 @@ targets:
           - -framework Security
           - -framework CoreBluetooth
           - -framework CoreGraphics
+          - -framework ImageIO
           - -framework Metal
           - -framework MetalFX
           - -liconv

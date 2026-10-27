@@ -1188,3 +1188,19 @@ index 6163800..c172de5 100644
    list(APPEND SRCS Linux/Utils/ELFContainer.cpp)
  endif()
  
+diff --git a/FEXCore/Source/Interface/Context/Context.h b/FEXCore/Source/Interface/Context/Context.h
+index e374d85..67b844b 100644
+--- a/FEXCore/Source/Interface/Context/Context.h
++++ b/FEXCore/Source/Interface/Context/Context.h
+@@ -335,7 +335,10 @@ public:
+   TrackingStructure BlockDebuggerTracker {};
+ public:
+   struct {
+-    uint64_t VirtualMemSize {1ULL << 36};
++    // The guest's address space is masked by this for the lookup caches (aliases are told apart by the
++    // guest address): 2^35 covers the console's 24 GB of mapped memory without aliasing, and costs each
++    // thread 64 MB less of address space than 2^36 (the L2 table alone: 128 MB -> 64 MB).
++    uint64_t VirtualMemSize {1ULL << 35};
+     uint64_t TSCScale = 0;
+ 
+     // Used if the JIT needs to have its interrupt fault code emitted.

@@ -1529,9 +1529,63 @@ EngineResult<GuestEngine::Thread*> GuestEngine::CreateThread(const GuestExecutio
     return *failure;
   }
 
+  // What the creation line reports, printed when the creation lock is gone (declared first: destroyed last).
+  struct CreationReport {
+    GuestEngine::Impl* impl;
+    bool valid = false;
+    void* native = nullptr;
+    unsigned long long l1 = 0, mask = 0, l2 = 0;
+    int error = 0;
+    ~CreationReport() {
+      if (!valid) return;
+      size_t liveThreads = 0;
+      {
+        std::scoped_lock lock {impl->ThreadsMutex};
+        liveThreads = impl->Threads.size();
+      }
+      // (the process's whole virtual size and the live FEX threads: each thread reserves its lookup caches)
+#if defined(SHADPS4_VISIONOS)
+      task_vm_info_data_t vmInfo {};
+      mach_msg_type_number_t vmInfoCount = TASK_VM_INFO_COUNT;
+      char processVa[32] = "?";
+      if (task_info(mach_task_self(), TASK_VM_INFO, reinterpret_cast<task_info_t>(&vmInfo), &vmInfoCount) ==
+          KERN_SUCCESS) {
+        std::snprintf(processVa, sizeof(processVa), "%llu", static_cast<unsigned long long>(vmInfo.virtual_size >> 20));
+      }
+#else
+      const char* processVa = "?";
+#endif
+      std::fprintf(stderr,
+                   "BACHATA_FEX_THREAD native=%p lookup l1=%#llx mask=%#llx l2=%#llx errno=%d live=%zu "
+                   "process_va_mb=%s\n",
+                   native, l1, mask, l2, error, liveThreads, processVa);
+    }
+  } creationReport {ImplState.get()};
+
+  // FEX creates and destroys threads under the same mutex it invalidates code under: the new thread
+  // reads the shared code buffer list while another thread may be replacing it.
+  std::scoped_lock creationLock {ImplState->Context->GetCodeInvalidationMutex()};
+  errno = 0;
   thread->Native = ImplState->Context->CreateThread(request.Rip, request.Rsp);
   if (thread->Native == nullptr) {
     return Failure(EngineStage::Thread, ENOMEM);
+  }
+  {
+    // (LookupCache's mmap failing leaves its pointers at -1 + offsets, unchecked in a release build:
+    // the first block lookup of the thread then faults inside FEX)
+    const auto& frame = *thread->Native->CurrentFrame;
+    creationReport.valid = true;
+    creationReport.native = static_cast<void*>(thread->Native);
+    creationReport.l1 = frame.State.L1Pointer;
+    creationReport.mask = frame.State.L1Mask;
+    creationReport.l2 = frame.Pointers.L2Pointer;
+    creationReport.error = errno;
+    if (frame.Pointers.L2Pointer == ~uint64_t {0}) {
+      const int creationErrno = creationReport.error;
+      ImplState->Context->DestroyThread(thread->Native);
+      thread->Native = nullptr;
+      return Failure(EngineStage::Thread, creationErrno != 0 ? creationErrno : ENOMEM);
+    }
   }
 
   auto& state = thread->Native->CurrentFrame->State;
@@ -1717,9 +1771,12 @@ EngineResult<bool> GuestEngine::DestroyThread(Thread*& thread) {
       return Failure(EngineStage::Thread, EPERM);
     }
   }
-  ImplState->Syscalls->UnregisterThread(thread->Native);
-  ImplState->Context->DestroyThread(thread->Native);
-  thread->Native = nullptr;
+  {
+    std::scoped_lock destructionLock {ImplState->Context->GetCodeInvalidationMutex()};
+    ImplState->Syscalls->UnregisterThread(thread->Native);
+    ImplState->Context->DestroyThread(thread->Native);
+    thread->Native = nullptr;
+  }
   {
     std::scoped_lock lock {ImplState->ThreadsMutex};
     ImplState->Threads.erase(thread);
