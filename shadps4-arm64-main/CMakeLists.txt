@@ -1409,6 +1409,7 @@ if (SHADPS4_VISIONOS)
         src/common/jit_arena.h
         src/platform/visionos/astro_core.h
         src/platform/visionos/astro_core.mm
+        src/platform/visionos/astro_renderer.h
         src/platform/visionos/jit_arena.c
         src/platform/visionos/diagnostics.c
         src/platform/visionos/logging.c
@@ -1458,8 +1459,8 @@ if (SHADPS4_VISIONOS)
         set_source_files_properties(src/platform/visionos/vpkengine_shader_check.mm
             PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
         # VPKEngine renderer (vpgpu core + gpu/metal2 backend + VPKEngine's PS4 renderer, gpu/ps4):
-        # the only renderer on visionOS (src/platform/visionos/vpkengine_renderer.h). The Vulkan
-        # path is still compiled but never started.
+        # one of the two renderers on visionOS, chosen at run time by ASTRO_RENDERER
+        # (src/platform/visionos/astro_renderer.h): this one by default, or the Vulkan path.
         set(VPKENGINE_PS4_DIR ${VPKENGINE_GPU_DIR}/ps4)
         set(VPKENGINE_CORE_DIR ${VPKENGINE_GPU_DIR}/core)
         set(VPKENGINE_METAL_DIR ${VPKENGINE_GPU_DIR}/metal2)
@@ -1538,7 +1539,7 @@ if (SHADPS4_VISIONOS)
             if(_vpps4_fp_hash STREQUAL "" OR _vpmsl_fp_hash STREQUAL "")
                 message(FATAL_ERROR "VPKEngine translator fingerprint is empty: sources not found")
             endif()
-            target_compile_definitions(shadps4 PRIVATE SHADPS4_VPKENGINE_ONLY=1)
+            target_compile_definitions(shadps4 PRIVATE SHADPS4_VPKENGINE_RENDERER=1)
             set_source_files_properties(${VPKENGINE_METAL_DIR}/src/metal_backend.mm
                 src/platform/visionos/vpkengine_renderer.mm
                 PROPERTIES COMPILE_OPTIONS "-fobjc-arc")

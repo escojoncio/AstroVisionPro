@@ -61,6 +61,10 @@ struct AstroSettings {
     var diagnostics = false
     /// The game's picture antialiased (SMAA 1x, Render/EdgeSmoother.swift) before it is shown.
     var edgeSmoothing = true
+    /// «Motor gráfico» (ASTRO_RENDERER): "vpkengine" (VPKEngine's own Metal renderer), "vulkan"
+    /// (shadPS4's Vulkan renderer on KosmicKrisp) or "shadow" (Vulkan draws and presents, VPKEngine
+    /// runs beside it).
+    var renderer = "vpkengine"
     /// The game's own MSAA, as many samples per pixel as the title asks for up to this limit: 1, 2 or 4
     /// (SHADPS4_MAX_MSAA). 1 turns it off.
     var msaaSamples = 4
@@ -156,6 +160,9 @@ struct AstroSettings {
         case "jit_arena_mb": jitArenaMB = min(max(Int(value) ?? jitArenaMB, 64), 2048)
         case "show_hands": showHands = flag
         case "smaa": edgeSmoothing = flag
+        case "renderer":
+            let name = value.lowercased()
+            renderer = ["vpkengine", "vulkan", "shadow"].contains(name) ? name : renderer
         case "msaa_samples": msaaSamples = [1, 2, 4].contains(Int(value) ?? 0) ? Int(value)! : msaaSamples
         case "game_foveation": gameFoveation = flag
         case "spatial_audio": spatialAudio = flag
@@ -217,8 +224,30 @@ struct AstroSettings {
         env.append("SHADPS4_SPATIAL_AUDIO=\(spatialAudio ? 1 : 0)")
         env.append("SHADPS4_MAX_MSAA=\(msaaSamples)")
         env.append("SHADPS4_GAME_FOVEATION=\(gameFoveation ? 1 : 0)")
-        // The picture is VPKEngine's (Metal); there is no Vulkan driver. Fixed: the title's GPU
-        // clock adjusted every frame (only for titles the emulator knows, ASTRO BOT).
+        env.append("ASTRO_RENDERER=\(renderer)")
+        // Vulkan draws in "vulkan" and "shadow". Fixed: what was measured best (bitacora.md,
+        // «Informe de rendimiento»). KosmicKrisp (geometry shaders; MoltenVK ran at half the
+        // speed); pipelines made in the background and kept for the next start; geometry shaders'
+        // work inside the pass and their memory freed between passes; passes merged; no restart on
+        // lists; constants as uniform buffers; pixel arithmetic free to be fused; raw compute
+        // copies of images coherent.
+        let vulkan = renderer != "vpkengine"
+        if vulkan {
+            env.append("SHADPS4_VK_DRIVER=kosmickrisp")
+            env.append("SHADPS4_ASYNC_PIPELINES=1")
+            env.append("SHADPS4_PIPELINE_CACHE=1")
+            env.append("KK_GS_IN_PASS=1")
+            env.append("KK_HEAP_BETWEEN_PASSES=1")
+            env.append("KK_LIGHT_BARRIERS=0")
+            env.append("SHADPS4_MERGE_PASSES=1")
+            env.append("SHADPS4_LIST_RESTART=0")
+            env.append("SHADPS4_CONSTANT_UBO=1")
+            env.append("SHADPS4_EXACT_PIXEL_MATH=0")
+            env.append("SHADPS4_RAW_IMAGE_SYNC=1")
+            env.append("SHADPS4_RESOLVE_AA=0")
+        }
+        // Fixed: the title's GPU clock adjusted every frame (only for titles the emulator knows,
+        // ASTRO BOT).
         env.append("SHADPS4_GPU_CLOCK_SCALE=auto")
         if diagnostics {
             env.append("SHADPS4_DIAGNOSTICS=1")
@@ -229,8 +258,27 @@ struct AstroSettings {
             // known_title.cpp).
             env.append("SHADPS4_GPU_STAMP_LOG=1")
             env.append("SHADPS4_QUALITY_DUMP=1")
+            if vulkan {
+                env.append("SHADPS4_GPU_BENCH=shaders")
+                // VPKEngine lifts each shader too and the headset's Metal compiles it (VPKENGINE_SHADER lines).
+                env.append("SHADPS4_VPKENGINE_SHADER_CHECK=1")
+                // Each shader's GCN code, once, to VPS4/VPKEngine/shaders/dumps (VPKEngine's corpus).
+                if let root = GameFolder.url() {
+                    env.append("SHADPS4_DUMP_SHADERS=\(root.appendingPathComponent("VPKEngine/shaders").path)")
+                }
+                // KosmicKrisp: Metal encoders a second and what cut each render encoder short.
+                env.append("KK_CENSUS=1")
+            }
         }
         env.append("SHADPS4_CONSOLE_LANGUAGE=\(GameLanguages.tag(for: gameLanguage))")
+        if vulkan {
+            // KosmicKrisp keeps what it translated (Mesa's shader cache) where the app may write:
+            // the VPS4 folder when there is one (it outlives the app), else the app's caches.
+            let caches = (GameFolder.caches ?? FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0])
+                .appendingPathComponent("mesa_shader_cache")
+            try? FileManager.default.createDirectory(at: caches, withIntermediateDirectories: true)
+            env.append("MESA_SHADER_CACHE_DIR=\(caches.path)")
+        }
         // The users and their saves, in the VPS4 folder when there is one.
         if let saves = GameFolder.saves {
             env.append("SHADPS4_HOME_DIR=\(saves.path)")
@@ -296,6 +344,9 @@ struct AstroSettings {
     show_hands=0
     # 1: antialiasing SMAA de la imagen del juego (bordes suaves sin emborronar las texturas).
     smaa=1
+    # Motor gráfico: vpkengine (el propio, Metal), vulkan (shadPS4 sobre KosmicKrisp) o shadow
+    # (Vulkan dibuja y presenta, VPKEngine corre en paralelo).
+    renderer=vpkengine
     # Antialiasing del juego (MSAA): 1, 2 o 4 muestras por píxel como máximo (1: apagado).
     msaa_samples=4
     # 1: renderizado foveado del propio juego (experimental; no se combina con MSAA).

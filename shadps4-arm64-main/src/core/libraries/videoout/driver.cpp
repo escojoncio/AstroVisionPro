@@ -31,17 +31,86 @@
 #endif
 #endif
 
-#ifdef SHADPS4_VPKENGINE_ONLY
+#ifdef SHADPS4_VPKENGINE_RENDERER
 #include "vpkengine_presenter.h"
 extern std::unique_ptr<VpkengineRenderer::Presenter> vp_presenter;
-// (VPKEngine's presenter stands in for Vulkan's under the same name in this file)
-static auto& presenter = vp_presenter;
-#else
-extern std::unique_ptr<Vulkan::Presenter> presenter;
 #endif
+extern std::unique_ptr<Vulkan::Presenter> presenter;
 extern std::unique_ptr<AmdGpu::Liverpool> liverpool;
 
 namespace Libraries::VideoOut {
+
+#ifdef SHADPS4_VPKENGINE_RENDERER
+// visionOS: the renderer is chosen at run time (ASTRO_RENDERER, see RegisterLib in
+// gnmdriver.cpp), so the presenter is VPKEngine's (vp_presenter) or Vulkan's (::presenter),
+// whichever was made. Both have the same calls; this forwards each to the one that exists, and
+// takes the name `presenter` inside this namespace, so that the code below reads as it always did.
+class PresenterRouter {
+public:
+    PresenterRouter* operator->() {
+        return this;
+    }
+
+    void RegisterVideoOutSurface(const BufferAttributeGroup& group, VAddr address) {
+        Use([&](auto& p) { p.RegisterVideoOutSurface(group, address); });
+    }
+    void SetHDR(bool enable) {
+        Use([&](auto& p) { p.SetHDR(enable); });
+    }
+    bool HasLocalHeadset() {
+        return Use([](auto& p) { return p.HasLocalHeadset(); });
+    }
+    Vulkan::HmdFrames PrepareHmdFrame(std::span<const AmdGpu::Image, 2> eye_textures,
+                                      const Core::Vr::Fov& fov, u32 frame_id, u32& eye_width,
+                                      u32& eye_height) {
+        return Use([&](auto& p) {
+            return p.PrepareHmdFrame(eye_textures, fov, frame_id, eye_width, eye_height);
+        });
+    }
+    Vulkan::HmdFrames PrepareScreenAsHmdFrame(const BufferAttributeGroup& attribute,
+                                              VAddr cpu_address, Core::Vr::Fov& fov,
+                                              u32& eye_width, u32& eye_height) {
+        return Use([&](auto& p) {
+            return p.PrepareScreenAsHmdFrame(attribute, cpu_address, fov, eye_width, eye_height);
+        });
+    }
+    Vulkan::HmdFrames PrepareTextureAsScreenHmdFrame(const AmdGpu::Image& texture,
+                                                     Core::Vr::Fov& fov, u32& eye_width,
+                                                     u32& eye_height) {
+        return Use([&](auto& p) {
+            return p.PrepareTextureAsScreenHmdFrame(texture, fov, eye_width, eye_height);
+        });
+    }
+    bool DeliverHmdFrame(Vulkan::Frame* frame, const Core::Vr::PresentedFrame& info) {
+        return Use([&](auto& p) { return p.DeliverHmdFrame(frame, info); });
+    }
+    bool IsFrameFinished(const Vulkan::Frame* frame) {
+        return Use([&](auto& p) { return p.IsFrameFinished(frame); });
+    }
+    bool IsGpuBusy() {
+        return Use([](auto& p) { return p.IsGpuBusy(); });
+    }
+    Vulkan::Frame* PrepareFrame(const BufferAttributeGroup& attribute, VAddr cpu_address) {
+        return Use([&](auto& p) { return p.PrepareFrame(attribute, cpu_address); });
+    }
+    Vulkan::Frame* PrepareBlankFrame(bool present_thread) {
+        return Use([&](auto& p) { return p.PrepareBlankFrame(present_thread); });
+    }
+    Vulkan::Frame* PrepareLastFrame() {
+        return Use([](auto& p) { return p.PrepareLastFrame(); });
+    }
+    void Present(Vulkan::Frame* frame, bool is_reusing_frame = false) {
+        Use([&](auto& p) { p.Present(frame, is_reusing_frame); });
+    }
+
+private:
+    template <typename Fn>
+    decltype(auto) Use(Fn&& fn) {
+        return vp_presenter ? fn(*vp_presenter) : fn(*::presenter);
+    }
+};
+static PresenterRouter presenter;
+#endif
 
 static std::atomic_uint32_t submit_traces{};
 static std::atomic_uint32_t dispatch_traces{};

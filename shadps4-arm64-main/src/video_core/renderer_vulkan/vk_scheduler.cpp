@@ -11,6 +11,7 @@
 #include <ctime>
 #include <utility>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
@@ -406,6 +407,17 @@ public:
         if (!wanted) {
             return nullptr;
         }
+#if defined(SHADPS4_VISIONOS)
+        // Outside a render pass KosmicKrisp writes each timestamp through a compute encoder of its
+        // own (log 12:15: crash in kk_dispatch_precomp from GpuTimer::End, seen with VPKEngine
+        // running beside Vulkan), so the timer stays off on KosmicKrisp (the default driver: only
+        // SHADPS4_VK_DRIVER=moltenvk chooses the other).
+        const char* driver = std::getenv("SHADPS4_VK_DRIVER");
+        if (driver == nullptr || std::string_view{driver} != "moltenvk") {
+            LOG_INFO(Render_Vulkan, "GPU_TIME: off (KosmicKrisp crashes in its timestamp code)");
+            return nullptr;
+        }
+#endif
         const auto properties = instance.GetPhysicalDevice().getProperties();
         if (!properties.limits.timestampComputeAndGraphics ||
             properties.limits.timestampPeriod <= 0.0f) {

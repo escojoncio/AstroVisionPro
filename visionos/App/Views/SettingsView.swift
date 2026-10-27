@@ -74,6 +74,18 @@ struct SettingsView: View {
                 }
 
                 Section {
+                    Picker(L("Motor gráfico", "Graphics engine"), selection: text("renderer", \.renderer)) {
+                        Text("VPKEngine").tag("vpkengine")
+                        Text("Vulkan (KosmicKrisp)").tag("vulkan")
+                        Text(L("Sombra", "Shadow")).tag("shadow")
+                    }
+                } header: {
+                    Text(L("Motor gráfico", "Graphics engine"))
+                } footer: {
+                    Text(L("VPKEngine: el motor gráfico propio, Metal puro; es el recomendado. Vulkan (KosmicKrisp): el renderizador de Vulkan del emulador sobre KosmicKrisp, como antes de VPKEngine. Sombra (experimental): dibuja y presenta Vulkan; VPKEngine irá en paralelo, de momento es igual que Vulkan. Se aplica al abrir el juego.", "VPKEngine: the own graphics engine, pure Metal; the recommended one. Vulkan (KosmicKrisp): the emulator's Vulkan renderer on KosmicKrisp, as before VPKEngine. Shadow (experimental): Vulkan draws and presents; VPKEngine will run alongside, for now it is the same as Vulkan. It applies when the game opens."))
+                }
+
+                Section {
                     Toggle(L("Modo diagnóstico", "Diagnostics mode"), isOn: Binding(
                         get: { model.settings.diagnostics },
                         set: { save("diagnostics", $0 ? "1" : "0") }))
