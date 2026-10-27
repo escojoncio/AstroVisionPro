@@ -481,6 +481,17 @@ struct Engine {
                  t.bindDescMs / s, t.bindTexMs / s, t.bindBufMs / s, t.bindCbMs / s, t.bindUploadMs / s,
                  (t.bindMs - t.bindDescMs - t.bindTexMs - t.bindBufMs - t.bindCbMs - t.bindUploadMs) / s);
         {
+            // What "frame compile+submit" is made of. The backend's submit is in it only when it runs on the
+            // caller's thread (without VPK_SUBMIT_THREAD); `other` is the rest (queue space for the submit thread).
+            const double backendInSubmit = device->asyncSubmit() ? 0.0 : t.backendMs;
+            LOG_INFO(Render_Vulkan,
+                     "VPKENGINE_GPU cpu submit phases (ms/s): life.plan {:.1f}, hold for pipelines {:.1f} ({:.0f} frames/s, {:.0f}/s gave up "
+                     "at the budget), frame compile {:.1f}, backend submit {:.1f} (waiting for a frame slot {:.1f}){}, other {:.1f}",
+                     t.lifeMs / s, t.holdMs / s, double(t.holdFrames) / s, double(t.holdTimeouts) / s, t.compileMs / s,
+                     t.backendMs / s, t.slotWaitMs / s, device->asyncSubmit() ? " [submit thread: not in compile+submit]" : "",
+                     (t.submitMs - t.lifeMs - t.holdMs - t.compileMs - backendInSubmit) / s);
+        }
+        {
             SpanCache& sc = spanCache();
             const VpkengineRenderer::GuestMirrorStats ms = VpkengineRenderer::TakeGuestMirrorStats();
             LOG_INFO(Render_Vulkan,
@@ -510,10 +521,15 @@ struct Engine {
     bool start() {
         if (renderer || failed) return renderer != nullptr;
         // One GPU frame per presented picture (vpps4::Scheduler accumulates the ~15 Liverpool command
-        // buffers of a picture), so two frames in flight (the headset's compose included) are enough and
-        // bound the latency; vpps4's upload rings (8) cover them.
+        // buffers of a picture). The picture's frame and the headset's compose (encodeInterop) each hold a frame
+        // slot until the GPU finishes them, so with two the next picture's submit waits for the previous one to
+        // finish; three let the recording thread run one picture ahead (one picture more of latency, which the
+        // headset's reprojection hides). VPKENGINE_FRAMES_IN_FLIGHT=2..6 (vpps4's upload rings, 8, cover up to 6).
         vp4gpu::metal::MetalOptions options;
-        options.framesInFlight = 2;
+        options.framesInFlight = 3;
+        if (const char* v = std::getenv("VPKENGINE_FRAMES_IN_FLIGHT"); v && *v)
+            options.framesInFlight = unsigned(std::clamp(std::atoi(v), 2, 6));
+        LOG_INFO(Render_Vulkan, "VPKENGINE_GPU frames in flight {}", options.framesInFlight);
         // What the engine keeps between runs, in the cache folder the app points the emulator at
         // (the VPS4 folder's Cachés), one folder per game: the Metal pipeline archive, the
         // translated shaders and the list of pipelines built (compiled ahead at the next start).
