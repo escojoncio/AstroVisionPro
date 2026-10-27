@@ -751,7 +751,7 @@ struct Engine {
         renderer->setMaxSamples(uint8_t(maxMsaa));
         const char* fov = std::getenv("SHADPS4_GAME_FOVEATION");
         renderer->setFoveation(fov && std::atoi(fov) != 0);
-        renderer->setCacheRoot(cacheDir / "vpps4");
+        if (!shadow) renderer->setCacheRoot(cacheDir / "vpps4");
         LOG_INFO(Render_Vulkan, "VPKENGINE_GPU persistent caches in {}", cacheDir.string());
         if (shadow) {
             LOG_INFO(Render_Vulkan, "VPKENGINE_GPU shadow renderer on (null backend: no GPU, no guest memory written)");

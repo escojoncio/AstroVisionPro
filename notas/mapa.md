@@ -3,7 +3,7 @@
 ## Cadena
 - CPU del juego: FEX (JIT x86-64→ARM64), arena RWX de StikDebug (`brk #0xf00d` + universal.js). Parche `visionos/patches/fex-darwin.patch`; `fex_guest_engine.cpp` (SIGBUS Darwin, `kHostPageSize`).
 - GPU: Liverpool (PM4, `video_core/amdgpu/liverpool.cpp`) → `VideoCore::RasterizerInterface` (`rasterizer_interface.h`) → `platform/visionos/vpkengine_renderer.{h,mm}` (VpkengineRenderer::Rasterizer, Present) → VPKEngine (`gpu/core`, `gpu/metal2`, `gpu/shader/{ir,msl,gcn}` + `gpu/ps4` vpps4) fijado por `visionos/vpkengine-gpu.ref`.
-- `gnmdriver.cpp` (`SHADPS4_VPKENGINE_ONLY`) crea Rasterizer + Presenter VPKEngine; `vpkengine_presenter.{h,cpp}` fachada para `videoout/driver.cpp`. Vulkan/MoltenVK sigue enlazado sin iniciarse.
+- `gnmdriver.cpp` (`SHADPS4_VPKENGINE_RENDERER`) crea Rasterizer + Presenter VPKEngine; `vpkengine_presenter.{h,cpp}` fachada para `videoout/driver.cpp`. Vulkan/MoltenVK sigue enlazado sin iniciarse.
 - Ojos: `Present::ComposeEyes` → `openxr_host_visionos.mm` (`StartMetal`/`BeginMetalFrame`, ranuras RGBA8 sRGB, `NumSlots` 6) → `visionos/App/Render/GameRenderer.swift` (reproyección por pose, SMAA, log `Headset:`).
 - Pantalla plana en el visor: `driver.cpp` `SubmitScreenToHeadset` (pantalla 70°, pose solo guiñada).
 
@@ -28,5 +28,5 @@
 ## CI
 - `.github/workflows/visionos-app.yml`: `[build]` o dispatch; release `visionos-latest/AstroQuest.ipa`; logs en rama `ci-logs` (`git show FETCH_HEAD:<workflow>.txt`).
 - `visionos-vpengine.yml` (`[build-vpkengine]`, release `visionos-vpengine`, «AstroQuest VPEngine»), `stikdebug-visionos.yml`.
-- Comprobación local: `clang++ -std=c++23 -fsyntax-only` con `SHADPS4_VISIONOS ENABLE_OPENXR_HOST SHADPS4_VPKENGINE_ONLY`; los `.mm` solo compilan en CI macOS. Tests Linux (CMake mínimo): census, reg_audit, pm4_exec, liverpool_pm4.
+- Comprobación local: `clang++ -std=c++23 -fsyntax-only` con `SHADPS4_VISIONOS ENABLE_OPENXR_HOST SHADPS4_VPKENGINE_RENDERER`; los `.mm` solo compilan en CI macOS. Tests Linux (CMake mínimo): census, reg_audit, pm4_exec, liverpool_pm4.
 - Commits: identidad `Claude`, email vacío.
