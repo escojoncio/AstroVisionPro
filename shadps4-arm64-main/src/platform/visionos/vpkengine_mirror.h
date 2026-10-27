@@ -19,4 +19,11 @@ namespace VpkengineRenderer {
 // while longer because the GPU may still be reading it.
 void* GuestMirror(uint64_t begin, uint64_t end);
 
+// Calls made since the last take: GuestMirror lookups and the vm_region_recurse_64 syscalls of their
+// signatures (diagnostics).
+struct GuestMirrorStats {
+    uint64_t lookups = 0, regionCalls = 0;
+};
+GuestMirrorStats TakeGuestMirrorStats();
+
 } // namespace VpkengineRenderer
