@@ -29,7 +29,8 @@
 #include "video_core/amdgpu/liverpool.h"
 #include "video_core/amdgpu/pm4_cmds.h"
 #include "video_core/renderer_vulkan/vk_presenter.h"
-#ifdef SHADPS4_VPKENGINE_ONLY
+#ifdef SHADPS4_VPKENGINE_RENDERER
+#include "astro_renderer.h"
 #include "core/memory.h"
 #include "vpkengine_presenter.h"
 #include "vpkengine_renderer.h"
@@ -37,8 +38,9 @@
 
 extern Frontend::WindowSDL* g_window;
 std::unique_ptr<Vulkan::Presenter> presenter;
-#ifdef SHADPS4_VPKENGINE_ONLY
-// visionOS: VPKEngine is the renderer (Metal); there is no Vulkan presenter.
+#ifdef SHADPS4_VPKENGINE_RENDERER
+// visionOS: with the VPKEngine renderer (Metal) chosen, these are made and there is no Vulkan
+// presenter (see RegisterLib).
 std::unique_ptr<VpkengineRenderer::Rasterizer> vp_rasterizer;
 std::unique_ptr<VpkengineRenderer::Presenter> vp_presenter;
 #endif
@@ -2908,10 +2910,30 @@ int PS4_SYSV_ABI Func_F916890425496553() {
 void RegisterLib(Core::Loader::SymbolsResolver* sym) {
     LOG_INFO(Lib_GnmDriver, "Initializing presenter");
     liverpool = std::make_unique<AmdGpu::Liverpool>();
-#ifdef SHADPS4_VPKENGINE_ONLY
-    vp_rasterizer = std::make_unique<VpkengineRenderer::Rasterizer>(liverpool.get());
-    Core::Memory::Instance()->SetRasterizer(vp_rasterizer.get());
-    vp_presenter = std::make_unique<VpkengineRenderer::Presenter>();
+#ifdef SHADPS4_VPKENGINE_RENDERER
+    // visionOS: the renderer is chosen at run time by ASTRO_RENDERER (astro_renderer.h).
+    switch (AstroRenderer::Selected()) {
+    case AstroRenderer::Kind::Vpkengine:
+        LOG_INFO(Lib_GnmDriver, "Renderer: VPKEngine (Metal)");
+        vp_rasterizer = std::make_unique<VpkengineRenderer::Rasterizer>(liverpool.get());
+        Core::Memory::Instance()->SetRasterizer(vp_rasterizer.get());
+        vp_presenter = std::make_unique<VpkengineRenderer::Presenter>();
+        break;
+    case AstroRenderer::Kind::Shadow:
+        // TODO(shadow): for now this is the Vulkan renderer alone. Here the VPKEngine rasterizer
+        // (vp_rasterizer, as above) is to be made too, and both put behind the Tee rasterizer
+        // that is given to Core::Memory::SetRasterizer and Liverpool::BindRasterizer. Both
+        // rasterizers set themselves there from their constructors (vk_rasterizer.cpp,
+        // vpkengine_renderer.mm), so the Tee has to be set after both are made. The Vulkan
+        // presenter stays the one that presents.
+        LOG_INFO(Lib_GnmDriver, "Renderer: shadow (Vulkan on KosmicKrisp; VPKEngine not yet run)");
+        presenter = std::make_unique<Vulkan::Presenter>(*g_window, liverpool.get());
+        break;
+    case AstroRenderer::Kind::Vulkan:
+        LOG_INFO(Lib_GnmDriver, "Renderer: Vulkan");
+        presenter = std::make_unique<Vulkan::Presenter>(*g_window, liverpool.get());
+        break;
+    }
 #else
     presenter = std::make_unique<Vulkan::Presenter>(*g_window, liverpool.get());
 #endif
