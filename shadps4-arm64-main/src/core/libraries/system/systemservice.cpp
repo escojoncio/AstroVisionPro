@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <atomic>
 #include <cstdlib>
 #include "common/elf_info.h"
 #include "common/singleton.h"
@@ -10,8 +11,12 @@
 #include "core/libraries/libs.h"
 #include "core/libraries/system/systemservice.h"
 #include "core/libraries/system/systemservice_error.h"
+#include "core/signals.h"
 #include "core/vr/vr_runtime.h"
 #include "emulator.h"
+#ifdef SHADPS4_ENABLE_FEX_GUEST_CPU
+#include "core/fex/fex_guest_engine.h"
+#endif
 
 namespace Libraries::SystemService {
 
@@ -2016,7 +2021,31 @@ int PS4_SYSV_ABI sceSystemServiceReleaseFb0() {
 }
 
 int PS4_SYSV_ABI sceSystemServiceReportAbnormalTermination() {
-    LOG_ERROR(Lib_SystemService, "(STUBBED) called");
+    // On a console this call ends the process. Here the game goes on, and whatever it does next
+    // is damage that hides the cause, so who called is recorded: the arguments, the thread and
+    // (the first times) the guest's state with its callers and last HLE calls.
+    static std::atomic<u32> reports{0};
+    constexpr u32 FullReports = 3;
+    const u32 count = reports.fetch_add(1, std::memory_order_relaxed) + 1;
+    if (count > FullReports) {
+        LOG_CRITICAL(Lib_SystemService,
+                     "The game reports an abnormal termination again (report {}, thread {})",
+                     count, Common::GetCurrentThreadName());
+        return ORBIS_OK;
+    }
+    LOG_CRITICAL(Lib_SystemService,
+                 "The game reports an abnormal termination (report {}, thread {}); it goes on "
+                 "running, unlike on a console",
+                 count, Common::GetCurrentThreadName());
+#ifdef SHADPS4_ENABLE_FEX_GUEST_CPU
+    uint64_t gprs[16]{};
+    if (Core::Fex::BachataQueryGuestRegisters(gprs)) {
+        LOG_CRITICAL(Lib_SystemService,
+                     "arguments: rdi={:#x} rsi={:#x} rdx={:#x} rcx={:#x} r8={:#x} r9={:#x}",
+                     gprs[7], gprs[6], gprs[2], gprs[1], gprs[8], gprs[9]);
+    }
+#endif
+    Core::DumpGuestState("ASTRO_ABNORMAL_TERMINATION");
     return ORBIS_OK;
 }
 

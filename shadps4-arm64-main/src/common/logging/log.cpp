@@ -256,6 +256,12 @@ void Flush() {
     }
 }
 
+void WriteRaw(const char* data, size_t size) noexcept {
+    if (const LogFileSink* sink = g_shad_file_sink.get()) {
+        sink->WriteRaw(data, size);
+    }
+}
+
 void Terminate() {
     try {
         if (std::exception_ptr eptr{std::current_exception()}) {

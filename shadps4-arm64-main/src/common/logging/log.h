@@ -35,6 +35,10 @@ void Shutdown();
 
 void Flush();
 
+/// Appends text to the log file with write() alone: nothing is allocated or locked, so a signal
+/// handler can use it where the logger above cannot. Does nothing before the log file exists.
+void WriteRaw(const char* data, size_t size) noexcept;
+
 void Terminate();
 
 void UpdateSinks();

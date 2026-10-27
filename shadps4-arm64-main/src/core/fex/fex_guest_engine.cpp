@@ -999,6 +999,59 @@ bool BachataQueryGuestRipSyscall(uint64_t* out_rip, uint64_t* out_syscall) noexc
   return true;
 }
 
+bool BachataQueryGuestRipAtHostPc(uint64_t host_pc, uint64_t* out_rip, uint64_t* out_block) noexcept {
+#if defined(SHADPS4_VISIONOS)
+  // Async-signal-safe, and called with the state of a thread that has just faulted: the block
+  // header the frame points at is checked before FEXCore's RestoreRIPFromHostPC reads it and
+  // walks its RIP table (it reads memory only, and trusts all of it).
+  const auto& exec = ActiveFexExecution;
+  if (exec.Context == nullptr || exec.Thread == nullptr || exec.Thread->CurrentFrame == nullptr) {
+    return false;
+  }
+  const auto [arena_begin, arena_end] = Common::JitArena::Range();
+  const auto in_arena = [&](uint64_t address, uint64_t size) {
+    return address >= arena_begin && size <= arena_end - arena_begin && address <= arena_end - size;
+  };
+  // The first fields of FEXCore's CPUBackend::JITCodeHeader and JITCodeTail, as they are in the
+  // FEX revision of runtime/locks/components.lock.json (private to FEXCore, so mirrored here).
+  struct BlockTail final {
+    uint64_t Size;
+    uint64_t RIP;
+    uint64_t GuestSize;
+    uint32_t NumberOfRIPEntries;
+    uint32_t OffsetToRIPEntries;
+  };
+  constexpr uint32_t kMaxRipEntries = 1u << 16;
+  const uint64_t header = exec.Thread->CurrentFrame->State.InlineJITBlockHeader;
+  if (!in_arena(host_pc, 1) || !in_arena(header, sizeof(uint32_t))) {
+    return false;
+  }
+  const uint64_t tail = header + *reinterpret_cast<const uint32_t*>(header);
+  if (!in_arena(tail, sizeof(BlockTail))) {
+    return false;
+  }
+  const auto& block = *reinterpret_cast<const BlockTail*>(tail);
+  // One byte at least per entry in the table.
+  if (block.NumberOfRIPEntries > kMaxRipEntries ||
+      !in_arena(tail + block.OffsetToRIPEntries, block.NumberOfRIPEntries)) {
+    return false;
+  }
+  if (out_rip != nullptr) {
+    *out_rip = exec.Context->RestoreRIPFromHostPC(exec.Thread, host_pc);
+  }
+  if (out_block != nullptr) {
+    *out_block = exec.Context->GetGuestBlockEntry(exec.Thread);
+  }
+  return true;
+#else
+  // Without the JIT arena there is no range to check the block's memory against.
+  static_cast<void>(host_pc);
+  static_cast<void>(out_rip);
+  static_cast<void>(out_block);
+  return false;
+#endif
+}
+
 bool BachataQueryGuestRegisters(uint64_t* out_gprs) noexcept {
   const auto& exec = ActiveFexExecution;
   if (out_gprs == nullptr || exec.Context == nullptr || exec.Thread == nullptr ||

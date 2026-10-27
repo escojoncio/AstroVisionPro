@@ -25,8 +25,9 @@ u64 WaitForGuestFrame(u64 count, std::chrono::milliseconds timeout);
 /// running guest code. Empty when the guest does not run on the FEX CPU.
 std::string DescribeGuestThreads();
 
-/// Prints the last HLE calls of the calling thread (name, operation and what each returned to
-/// the guest), for the dump of a crash. Nothing is allocated or locked.
-void PrintRecentHleCalls(std::FILE* out, const char* prefix);
+/// Hands `print` the last HLE calls of the calling thread, a line at a time (name, operation and
+/// what each returned to the guest), then the call the thread is in, if it is in one. For the
+/// dump of a crash: nothing is allocated or locked. Each line starts with `prefix`.
+void PrintRecentHleCalls(void (*print)(const char* line), const char* prefix);
 
 } // namespace Core::GuestCpu
