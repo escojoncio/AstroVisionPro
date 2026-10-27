@@ -55,6 +55,7 @@ public:
     u32 ReadDataFromGds(u32 gds_offset) override;
     bool InvalidateMemory(VAddr addr, u64 size) override;
     bool ReadMemory(VAddr addr, u64 size) override;
+    bool InvalidateHostPage(VAddr page, u64 size, bool write) override;
     bool IsMapped(VAddr addr, u64 size) override;
     void MapMemory(VAddr addr, u64 size) override;
     void UnmapMemory(VAddr addr, u64 size) override;

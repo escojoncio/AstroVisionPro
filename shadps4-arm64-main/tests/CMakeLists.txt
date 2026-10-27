@@ -159,6 +159,8 @@ set(GUEST_MEMORY_VALIDATION_TEST_SOURCES
     video_core/test_readconst_snapshot_diag.cpp
     video_core/test_fma_split_diag.cpp
     video_core/test_recip_refine_fix.cpp
+    video_core/test_recent_ranges.cpp
+    video_core/test_surface_metas.cpp
 )
 
 set(LIBC_MSPACE_TEST_SOURCES
