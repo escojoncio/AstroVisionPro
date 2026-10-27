@@ -346,6 +346,8 @@ s32 MemoryManager::Free(PAddr phys_addr, u64 size, bool is_checked) {
     // Acquire writer lock
     std::scoped_lock lk2{mutex};
     auto mapping_mutation = mapping_generation.BeginMutation();
+    auto host_map_mutation = host_map_generation.BeginMutation();
+    CountMapMutation(MapMutationKind::Free);
 
     for (const auto& [addr, size] : remove_list) {
         LOG_INFO(Kernel_Vmm, "Unmapping direct mapping {:#x} with size {:#x}", addr, size);
@@ -371,6 +373,8 @@ s32 MemoryManager::PoolCommit(VAddr virtual_addr, u64 size, MemoryProt prot, s32
     std::scoped_lock lk{unmap_mutex};
     std::unique_lock lk2{mutex};
     auto mapping_mutation = mapping_generation.BeginMutation();
+    auto host_map_mutation = host_map_generation.BeginMutation();
+    CountMapMutation(MapMutationKind::PoolCommit);
     ASSERT_MSG(IsValidMapping(virtual_addr, size), "Attempted to access invalid address {:#x}",
                virtual_addr);
 
@@ -456,6 +460,7 @@ s32 MemoryManager::PoolCommit(VAddr virtual_addr, u64 size, MemoryProt prot, s32
     MergeAdjacent(vma_map, new_vma_handle);
 
     mapping_mutation.Finish();
+    host_map_mutation.Finish();
     lk2.unlock();
     if (IsValidGpuMapping(mapped_addr, size)) {
         rasterizer->MapMemory(mapped_addr, size);
@@ -593,6 +598,8 @@ s32 MemoryManager::MapMemory(void** out_addr, VAddr virtual_addr, u64 size, Memo
     // Acquire writer lock.
     std::unique_lock lk2{mutex};
     auto mapping_mutation = mapping_generation.BeginMutation();
+    auto host_map_mutation = host_map_generation.BeginMutation();
+    CountMapMutation(MapMutationKind::MapMemory);
 
     // Create VMA representing this mapping.
     auto new_vma_handle = CreateArea(virtual_addr, size, prot, flags, type, name, alignment);
@@ -689,6 +696,7 @@ s32 MemoryManager::MapMemory(void** out_addr, VAddr virtual_addr, u64 size, Memo
         }
 
         mapping_mutation.Finish();
+        host_map_mutation.Finish();
         lk2.unlock();
 
         // If this is not a reservation, then map to GPU and address space
@@ -783,6 +791,8 @@ s32 MemoryManager::MapFile(void** out_addr, VAddr virtual_addr, u64 size, Memory
     // Aquire writer lock
     std::scoped_lock lk2{mutex};
     const auto mapping_mutation = mapping_generation.BeginMutation();
+    const auto host_map_mutation = host_map_generation.BeginMutation();
+    CountMapMutation(MapMutationKind::MapFile);
 
     // Update VMA map and map to address space.
     auto new_vma_handle = CreateArea(virtual_addr, size, prot, flags, VMAType::File, "anon", 0);
@@ -836,6 +846,8 @@ s32 MemoryManager::PoolDecommit(VAddr virtual_addr, u64 size) {
     // Aquire writer mutex
     std::scoped_lock lk2{mutex};
     const auto mapping_mutation = mapping_generation.BeginMutation();
+    const auto host_map_mutation = host_map_generation.BeginMutation();
+    CountMapMutation(MapMutationKind::PoolDecommit);
 
     // Loop through all vmas in the area, unmap them.
     u64 remaining_size = size;
@@ -917,6 +929,8 @@ s32 MemoryManager::UnmapMemory(VAddr virtual_addr, u64 size) {
     // Acquire writer lock.
     std::scoped_lock lk2{mutex};
     const auto mapping_mutation = mapping_generation.BeginMutation();
+    const auto host_map_mutation = host_map_generation.BeginMutation();
+    CountMapMutation(MapMutationKind::UnmapMemory);
     return UnmapMemoryImpl(virtual_addr, size);
 }
 
@@ -1137,6 +1151,7 @@ s32 MemoryManager::Protect(VAddr addr, u64 size, MemoryProt prot) {
     // Ensure the range to modify is valid
     std::scoped_lock lk{mutex, unmap_mutex};
     const auto mapping_mutation = mapping_generation.BeginMutation();
+    CountMapMutation(MapMutationKind::Protect);
     ASSERT_MSG(IsValidMapping(addr, size), "Attempted to access invalid address {:#x}", addr);
 
     // Appropriately restrict flags.
@@ -1296,6 +1311,7 @@ s32 MemoryManager::DirectQueryAvailable(PAddr search_start, PAddr search_end, u6
 s32 MemoryManager::SetDirectMemoryType(VAddr addr, u64 size, s32 memory_type) {
     std::scoped_lock lk{mutex, unmap_mutex};
     const auto mapping_mutation = mapping_generation.BeginMutation();
+    CountMapMutation(MapMutationKind::SetDirectMemoryType);
 
     ASSERT_MSG(IsValidMapping(addr, size), "Attempted to access invalid address {:#x}", addr);
 
@@ -1347,6 +1363,7 @@ s32 MemoryManager::SetDirectMemoryType(VAddr addr, u64 size, s32 memory_type) {
 void MemoryManager::NameVirtualRange(VAddr virtual_addr, u64 size, std::string_view name) {
     std::scoped_lock lk{mutex, unmap_mutex};
     const auto mapping_mutation = mapping_generation.BeginMutation();
+    CountMapMutation(MapMutationKind::NameVirtualRange);
 
     // Sizes are aligned up to the nearest 16_KB
     u64 aligned_size = Common::AlignUp(size, 16_KB);

@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <array>
+#include <atomic>
 #include <map>
 #include <mutex>
 #include <string>
@@ -272,6 +274,42 @@ public:
         return mapping_generation.Load();
     }
 
+    // Like MappingGeneration(), but only moved by what changes the host's map of the guest memory
+    // (Free, PoolCommit, MapMemory, MapFile, PoolDecommit, UnmapMemory): not by Protect (mprotect never
+    // changes the maximum protection), NameVirtualRange or SetDirectMemoryType.
+    [[nodiscard]] u64 HostMapGeneration() const {
+        return host_map_generation.Load();
+    }
+
+    // How many times each operation began a mutation of MappingGeneration() since the last call
+    // (the ones before Protect also moved HostMapGeneration()).
+    enum class MapMutationKind : u32 {
+        Free,
+        PoolCommit,
+        MapMemory,
+        MapFile,
+        PoolDecommit,
+        UnmapMemory,
+        Protect,
+        SetDirectMemoryType,
+        NameVirtualRange,
+        Count,
+    };
+    static constexpr std::size_t MapMutationKinds = static_cast<std::size_t>(MapMutationKind::Count);
+    [[nodiscard]] static constexpr const char* MapMutationName(std::size_t kind) {
+        constexpr const char* names[MapMutationKinds] = {"Free",         "PoolCommit",          "MapMemory",
+                                                         "MapFile",      "PoolDecommit",        "UnmapMemory",
+                                                         "Protect",      "SetDirectMemoryType", "NameVirtualRange"};
+        return names[kind];
+    }
+    [[nodiscard]] std::array<u64, MapMutationKinds> TakeMapMutationCounts() {
+        std::array<u64, MapMutationKinds> out{};
+        for (std::size_t i = 0; i < out.size(); ++i) {
+            out[i] = map_mutation_counts[i].exchange(0, std::memory_order_relaxed);
+        }
+        return out;
+    }
+
     s32 Protect(VAddr addr, u64 size, MemoryProt prot);
 
     s32 SealGuestExecutable(VAddr addr, u64 size);
@@ -346,6 +384,11 @@ private:
     Common::SharedFirstMutex mutex{};
     std::mutex unmap_mutex{};
     MemoryMapGeneration mapping_generation{};
+    MemoryMapGeneration host_map_generation{};
+    std::array<std::atomic_uint64_t, MapMutationKinds> map_mutation_counts{};
+    void CountMapMutation(MapMutationKind kind) {
+        map_mutation_counts[static_cast<std::size_t>(kind)].fetch_add(1, std::memory_order_relaxed);
+    }
     u64 total_direct_size{};
     u64 total_flexible_size{};
     u64 flexible_usage{};
