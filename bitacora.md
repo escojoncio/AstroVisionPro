@@ -25,13 +25,15 @@ Detalle anterior en `git log -p bitacora.md`. Detalle técnico estable de la rut
 - Rendimiento: backend submit 388 ms/s (4x), frame compile 19 ms/s (1x).
 
 ## Pendiente (orden)
-0. Probar build de `shadow-mode` con Motor gráfico = Sombra en ASTRO y KITCHEN; analizar `ASTRO_SHADOW summary/top/diff`; arreglar vpps4 por categoría. Fase 2: hash de RTs/ojos (readTexture) y comparación de memoria escrita por GPU (universo privado de memoria para la sombra).
-1. Logs de 484dbfe: `buffer_refused`/`guest_buffer_refused`, `tiled outside guest memory` (debe ser 0), `resolve_src`, `ASTRO_ABNORMAL_TEXT`, `gpu.err`, missing_resources.
-2. Semántica GCN: LDS en PS/VS, v_mbcnt, si la corrupción persiste.
-3. Rendimiento GPU (memoryless/MSAA, caché MTLLibrary, backend submit).
-4. Fusionar `unify/engine` en main de VPKEngine solo cuando PS4 funcione.
+1. Analizar Registros con Motor gráfico = Sombra (build a4044ab), ASTRO (pasar menú start) y KITCHEN (hasta partida): `ASTRO_SHADOW on backend=null`, `ASTRO_SHADOW disabled` (si sale, la sombra se apagó: causa primero), `ASTRO_SHADOW summary` (ops/equal/different/skipped_vk/skipped_vpk) y `ASTRO_SHADOW top` (campo, pgm, cuenta). Filtrar ruido conocido (`topology` RectList/QuadList, `state.front_clockwise`, `color*.width/height`). Agrupar diffs por categoría (skip solo en vpk, buffer recortado/size, formato host, tiling, textura no encontrada, depth, viewport/scissor, sampler) y arreglar vpps4/adaptador por categoría en una sola build.
+2. Confirmar en ese log que KITCHEN llega a partida con Vulkan primario (si no, la regresión no es de la GPU).
+3. Fase 2 de la sombra: hash de RTs/ojos (Backend::readTexture en vpps4; copia imagen→buffer en Vulkan) y comparación de memoria escrita por GPU (universo privado de memoria para la sombra; hoy la sombra no ejecuta GPU).
+4. Si persiste corrupción con diffs a cero: semántica GCN (LDS fuera de compute por lane, `v_mbcnt` parcial = 0, lift.cpp:5262/:1824), fill de D32FloatS8 desde memoria.
+5. Fusionar VPKEngine `shadow-mode` → `unify/engine` → main solo cuando PS4 funcione.
+6. Rendimiento GPU (memoryless/MSAA, caché MTLLibrary, backend submit).
 
 ## Decisions
+- Referencia de la sombra = interpretación de shadPS4 (texture/buffer cache, decodificación), no la imagen de KosmicKrisp; cada diff se decide contra documentación GCN/Liverpool. Objetivo: paridad con shadPS4 y después superarlo (Metal nativo).
 - VPKEngine es el único renderer en visionOS; KosmicKrisp/MoltenVK descartados (KK no era jugable: ~10 fps).
 - Arreglos generales de GPU PS4, nunca por juego, dirección ni hash.
 - Lo de PS4 en el motor compartido entra opt-in (setters/env); defaults = comportamiento de main.
