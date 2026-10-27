@@ -2092,6 +2092,7 @@ bool Rasterizer::IsComputeImageClear(const Pipeline* pipeline) {
 void Rasterizer::BindBuffers(const Shader::Info& stage, Shader::Backend::Bindings& binding,
                              Shader::PushData& push_data) {
     buffer_bindings.clear();
+    auto* side = ShadowSide();
 
     for (const auto& desc : stage.buffers) {
         const auto vsharp = desc.GetSharp(stage);
@@ -2102,7 +2103,7 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, Shader::Backend::Binding
         } else {
             buffer_bindings.emplace_back(VideoCore::BufferId{}, vsharp, 0);
         }
-        if (auto* side = ShadowSide(); side != nullptr && !desc.IsSpecial() && vsharp.base_address != 0) {
+        if (side != nullptr && !desc.IsSpecial() && vsharp.base_address != 0) {
             const auto& [bound_id, bound_sharp, bound_size] = buffer_bindings.back();
             side->buffers.push_back({ShadowStageOf(stage), bound_sharp.base_address, bound_size,
                                      bound_sharp.GetStride(), desc.is_written});
@@ -2418,6 +2419,7 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
     // This array holds the size of each consecutive array with the number of bindings consumed.
     // This is currently always 1 for anything other than mip fallback arrays.
     boost::container::small_vector<u32, 8> image_descriptor_array_sizes;
+    auto* side = ShadowSide();
 
     for (const auto& image_desc : stage.images) {
         const auto tsharp = image_desc.GetSharp(stage);
@@ -2455,7 +2457,7 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
                 image_id = depth_image_id;
                 image = &texture_cache.GetImage(image_id);
             }
-            if (auto* side = ShadowSide(); side != nullptr && i == 0) {
+            if (side != nullptr && i == 0) {
                 VideoCore::Shadow::TextureBinding t;
                 t.stage = ShadowStageOf(stage);
                 t.address = tsharp.Address();
