@@ -50,9 +50,12 @@
 #include "vpps4/scheduler.h"
 #include "vpgpu/core/submit_policy.h"
 #include "vpps4/report.h"
+#include "video_core/shadow_record.h"
 
 namespace VpkengineRenderer {
 namespace {
+
+void shadowResolved(const vpps4::Resolved& r);  // (below: Hooks::resolved of the shadow)
 void PrewarmCompose(void* nativeDevice);  // (defined with PresentState)
 
 // Guest addresses are host addresses. Buffers alias guest memory through windows of this size
@@ -665,6 +668,8 @@ struct Engine {
         // (the shadow has no Metal to give the shaders to; they are still translated)
         if (!shadow) hooks.shader = [this](uint64_t id, vpir::Stage, const vpmsl::MslShader& s) { shaders.add(id, toMetal(s)); };
         hooks.log = [this](const std::string& l) { log(l); };
+        // The shadow tells the Tee's comparison what the renderer resolved for each call (shadow_record.h).
+        if (shadow) hooks.resolved = [](const vpps4::Resolved& r) { shadowResolved(r); };
         hooks.watchWrites = [this](uint64_t a, uint64_t n) {
             if (watchWrites) watchWrites(a, n);
         };
@@ -784,6 +789,80 @@ Engine& engine() {
     return e;
 }
 
+// The VPKEngine half of the Tee's record (null outside the shadow's Tee calls).
+VideoCore::Shadow::Side* shadowSide() {
+    VideoCore::Shadow::Record* record = VideoCore::Shadow::Current();
+    return record != nullptr ? &record->vpk : nullptr;
+}
+
+// A call starts: left out until the renderer says otherwise.
+VideoCore::Shadow::Side* shadowBegin(const char* reason) {
+    VideoCore::Shadow::Side* side = shadowSide();
+    if (side) {
+        *side = {};
+        side->status = VideoCore::Shadow::Status::Skipped;
+        side->reason = reason;
+    }
+    return side;
+}
+
+VideoCore::Shadow::Stage shadowStage(uint8_t s) {
+    using Stage = VideoCore::Shadow::Stage;
+    switch (s) {  // vpgcn::ShaderStage: vertex, pixel, compute, export, geometry, copy shader
+    case 1: return Stage::Ps;
+    case 2: return Stage::Cs;
+    case 4: return Stage::Gs;
+    case 5: return Stage::Copy;
+    default: return Stage::Vs;  // (the ES is the vertex stage of Vulkan's logical stages)
+    }
+}
+
+// What vpps4 resolved for the call, into the record. (Programs, counts, index and blend factors are the
+// adapter's, filled before the call.)
+void shadowResolved(const vpps4::Resolved& r) {
+    using namespace VideoCore::Shadow;
+    Side* side = shadowSide();
+    if (!side) return;
+    side->status = r.status == vpps4::Resolved::Status::Drawn     ? Status::Drawn
+                   : r.status == vpps4::Resolved::Status::Handled ? Status::Handled
+                                                                  : Status::Skipped;
+    side->reason = r.reason;
+    for (size_t i = 0; i < 8; ++i) {
+        const vpps4::ResolvedTarget& t = r.color[i];
+        side->color[i] = {t.used, t.address, t.width, t.height, t.pitch, t.format, t.numberType, t.compSwap, t.tileMode,
+                          t.sliceStart, t.sliceCount, t.samples, t.hostFormat, t.cleared};
+    }
+    const vpps4::ResolvedDepth& z = r.depth;
+    side->depth = {z.used, z.zAddress, z.stencilAddress, z.width, z.height, z.zFormat, z.stencilFormat, z.tileMode, z.samples,
+                   z.hostFormat, z.depthClear, z.stencilClear};
+    side->buffers.clear();
+    for (const vpps4::ResolvedBuffer& b : r.buffers) side->buffers.push_back({shadowStage(b.stage), b.address, b.size, b.stride, b.write});
+    side->textures.clear();
+    for (const vpps4::ResolvedTexture& t : r.textures) {
+        const vpps4::ImageDesc& i = t.image;
+        side->textures.push_back({shadowStage(t.stage), i.address, i.dataFormat, i.numFormat, i.type, i.tilingIndex, i.baseLevel,
+                                  i.lastLevel, i.width, i.height, {i.dstSel[0], i.dstSel[1], i.dstSel[2], i.dstSel[3]}, t.storage,
+                                  t.found, t.hostFormat, t.hostWidth, t.hostHeight});
+    }
+    side->samplers.clear();
+    for (const vpps4::ResolvedSampler& m : r.samplers)
+        side->samplers.push_back({shadowStage(m.stage), m.addressU, m.addressV, m.addressW, m.magFilter, m.minFilter, m.mipFilter,
+                                  m.anisotropy, m.compare});
+    side->topology = r.topology;
+    side->viewportValid = r.viewportValid;
+    std::copy(std::begin(r.viewport), std::end(r.viewport), side->viewport);
+    side->scissorValid = r.scissorValid;
+    std::copy(std::begin(r.scissor), std::end(r.scissor), side->scissor);
+    side->stateValid = r.stateValid;
+    side->cull = r.cull;
+    side->frontClockwise = r.frontClockwise;
+    side->depthTest = r.depthTest;
+    side->depthWrite = r.depthWrite;
+    side->depthFunc = r.depthFunc;
+    side->stencilTest = r.stencilTest;
+    for (size_t i = 0; i < 8; ++i) side->blend[i].enable = r.blendEnable[i];
+}
+
 // The program of a stage as the renderer wants it: code (whole binary), user data, address.
 void fillStage(vpps4::Stage& st, const AmdGpu::ShaderProgram& program) {
     const auto params = AmdGpu::GetParams(program);
@@ -833,6 +912,10 @@ LeftOut gLeftOut[kLeftOut];
 std::atomic<size_t> gLeftOutUsed{0};
 
 void leftOut(const char* why) {
+    if (VideoCore::Shadow::Side* side = shadowSide()) {
+        side->status = VideoCore::Shadow::Status::Skipped;
+        side->reason = why;
+    }
     size_t n = gLeftOutUsed.load(std::memory_order_acquire);
     for (size_t i = 0; i < n; ++i)
         if (gLeftOut[i].why.load(std::memory_order_acquire) == why) {
@@ -1188,7 +1271,10 @@ bool Rasterizer::Failed() const {
 }
 
 void ShadowEndFrame() {
-    if (gShadowEngine.load(std::memory_order_acquire)) gShadowFlip.store(true, std::memory_order_release);
+    if (gShadowEngine.load(std::memory_order_acquire)) {
+        gShadowFlip.store(true, std::memory_order_release);
+        VideoCore::Shadow::Frames().fetch_add(1, std::memory_order_relaxed);  // (the Tee's comparison writes its summary by these)
+    }
 }
 
 Rasterizer::~Rasterizer() {
@@ -1203,6 +1289,7 @@ Rasterizer::~Rasterizer() {
 }
 
 void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
+    shadowBegin("left before the renderer (no draw to make, or not reached)");
     Engine::Timer timer{engine().adapterNs};
     engine().adapterCalls.fetch_add(1, std::memory_order_relaxed);
     const auto& regs = impl->liverpool->regs;
@@ -1544,6 +1631,26 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
         if (is_indexed) d.count = std::max<u32>(regs.max_index_size, 1);
         else d.count = 1;
     }
+    if (VideoCore::Shadow::Side* side = shadowSide()) {
+        // (the programs are the GCN binaries' own hashes, the same numbers Vulkan names its shaders by)
+        side->hash[size_t(VideoCore::Shadow::Stage::Vs)] = AmdGpu::GetParams(geometry ? regs.es_program : regs.vs_program).hash;
+        if (geometry) side->hash[size_t(VideoCore::Shadow::Stage::Gs)] = AmdGpu::GetParams(regs.gs_program).hash;
+        if (regs.ps_program.Address<VAddr>() != 0) side->hash[size_t(VideoCore::Shadow::Stage::Ps)] = AmdGpu::GetParams(regs.ps_program).hash;
+        side->count = d.count;
+        side->instances = d.instances;
+        side->index32 = d.index32;
+        side->indexAddress = d.indexAddress;
+        if (d.indexAddress && !d.indirectAddress) {
+            const u64 bytes = u64(d.count) * (d.index32 ? 4 : 2);
+            side->indexBytes = std::min(bytes, readable(d.indexAddress, bytes));
+        }
+        for (unsigned i = 0; i < 8; ++i) {
+            const vpps4::Blend& b = d.blend[i];
+            side->blend[i] = {b.enable, b.colorSrc, b.colorDst, b.colorFunc,
+                              b.separateAlpha ? b.alphaSrc : b.colorSrc, b.separateAlpha ? b.alphaDst : b.colorDst,
+                              b.separateAlpha ? b.alphaFunc : b.colorFunc};
+        }
+    }
     e.renderer->draw(d);
     e.noteWork();
 }
@@ -1581,6 +1688,7 @@ void Rasterizer::DispatchIndirect(VAddr address, u32 offset, u32) {
 void Rasterizer::Dispatch(VAddr indirect) {
     Engine::Timer timer{engine().adapterNs};
     engine().adapterCalls.fetch_add(1, std::memory_order_relaxed);
+    VideoCore::Shadow::Side* shadow_side = shadowBegin("left before the renderer (no compute program)");
     const auto& cs = impl->liverpool->GetCsRegs();
     if (cs.address == 0) return;
     Engine& e = engine();
@@ -1604,11 +1712,18 @@ void Rasterizer::Dispatch(VAddr indirect) {
     d.cs.workgroupSize = {cs.num_thread_x.full, cs.num_thread_y.full, cs.num_thread_z.full};
     d.groups = {cs.dim_x, cs.dim_y, cs.dim_z};
     d.indirectAddress = indirect;
+    if (shadow_side) {
+        shadow_side->hash[size_t(VideoCore::Shadow::Stage::Cs)] = params.hash;
+        if (!indirect) shadow_side->groups = {cs.dim_x, cs.dim_y, cs.dim_z};
+    }
     e.renderer->dispatch(d);
     e.noteWork();
 }
 
 void Rasterizer::FillBuffer(VAddr address, u32 num_bytes, u32 value, bool is_gds) {
+    if (VideoCore::Shadow::Side* side = shadowBegin(is_gds ? "GDS fill" : "left before the renderer")) {
+        side->dst = address, side->bytes = num_bytes, side->value = value;
+    }
     Engine& e = engine();
     std::scoped_lock g{e.lock};
     if (!e.start()) return;
@@ -1626,6 +1741,7 @@ void Rasterizer::FillBuffer(VAddr address, u32 num_bytes, u32 value, bool is_gds
     // of a metadata surface marks it cleared (and is done).
     if (value != 0 && e.metas.TryHtileClear(address, std::span{&value, 1})) {
         ++e.metaDma;
+        if (VideoCore::Shadow::Side* side = shadowSide()) side->status = VideoCore::Shadow::Status::Drawn, side->reason.clear();
         return;
     }
     if (e.metas.ClearAll(address)) ++e.metaDma;
@@ -1658,6 +1774,9 @@ void Rasterizer::FillBuffer(VAddr address, u32 num_bytes, u32 value, bool is_gds
 }
 
 void Rasterizer::CopyBuffer(VAddr dst, VAddr src, u32 num_bytes, bool dst_gds, bool src_gds) {
+    if (VideoCore::Shadow::Side* side = shadowBegin(dst_gds || src_gds ? "GDS copy" : "left before the renderer")) {
+        side->dst = dst, side->src = src, side->bytes = num_bytes;
+    }
     Engine& e = engine();
     std::scoped_lock g{e.lock};
     if (!e.start()) return;
@@ -1691,6 +1810,7 @@ void Rasterizer::CopyBuffer(VAddr dst, VAddr src, u32 num_bytes, bool dst_gds, b
         if (readable(src, num_bytes) >= num_bytes &&
             e.metas.TryHtileClear(dst, std::span{reinterpret_cast<const u32*>(src), num_bytes / sizeof(u32)})) {
             ++e.metaDma;
+            if (VideoCore::Shadow::Side* side = shadowSide()) side->status = VideoCore::Shadow::Status::Drawn, side->reason.clear();
             return;
         }
     }
