@@ -33,6 +33,7 @@
 
 #ifdef SHADPS4_VPKENGINE_RENDERER
 #include "vpkengine_presenter.h"
+#include "vpkengine_renderer.h"
 extern std::unique_ptr<VpkengineRenderer::Presenter> vp_presenter;
 #endif
 extern std::unique_ptr<Vulkan::Presenter> presenter;
@@ -397,12 +398,19 @@ void VideoOutDriver::Flip(const Request& req) {
 #ifdef SHADPS4_VPKENGINE_SHADER_CHECK
             VpkengineShaderCheck::EndFrame();
 #endif
+#ifdef SHADPS4_VPKENGINE_RENDERER
+            // (the shadow renderer's picture ends here too; it does nothing without one)
+            VpkengineRenderer::ShadowEndFrame();
+#endif
             FinishFlip(req.port, req.index, req.flip_arg, req.eop, req.lock_generation);
             return;
         }
     }
 
     // Present the frame.
+#ifdef SHADPS4_VPKENGINE_RENDERER
+    VpkengineRenderer::ShadowEndFrame();
+#endif
     presenter->Present(req.frame);
     note_flip();
     Platform::Bachata::ReportPresentedFrame();

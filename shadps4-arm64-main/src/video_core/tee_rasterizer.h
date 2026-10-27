@@ -9,6 +9,7 @@
 
 #include "common/logging/log.h"
 #include "video_core/rasterizer_interface.h"
+#include "video_core/shadow_compare.h"
 
 namespace VideoCore {
 
@@ -27,6 +28,9 @@ namespace VideoCore {
 /// The shadow runs behind the primary on the same thread, so the primary never waits for it except for the
 /// CPU time it takes. If a call into the shadow throws or the shadow reports that it failed, the shadow is
 /// switched off for good (`ASTRO_SHADOW disabled reason=...`) and the primary goes on alone.
+/// Draw, DrawIndirect, Dispatch*, FillBuffer and CopyBuffer are also compared (shadow_compare.h): each gets a
+/// sequence number and a Shadow::Record, the primary and then the shadow fill their half of it with what they
+/// resolved, and the differences are logged after the shadow (`ASTRO_SHADOW diff ...`, `ASTRO_SHADOW summary`).
 /// Calls from different command processor threads (graphics and compute queues) are not serialised here:
 /// each reaches the primary and the shadow in its own order, as it would reach one renderer.
 class TeeRasterizer final : public RasterizerInterface {
@@ -43,34 +47,42 @@ public:
     // ---- Work the shadow follows: primary, then shadow ----
 
     void Draw(bool is_indexed, u32 index_offset = 0) override {
-        primary.Draw(is_indexed, index_offset);
-        Shadow("Draw", [&](auto& s) { s.Draw(is_indexed, index_offset); });
+        Compared(
+            Shadow::Op::Draw, "Draw", [&] { primary.Draw(is_indexed, index_offset); },
+            [&](auto& s) { s.Draw(is_indexed, index_offset); });
     }
     void DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u32 size, u32 max_count,
                       VAddr count_address) override {
-        primary.DrawIndirect(is_indexed, arg_address, offset, size, max_count, count_address);
-        Shadow("DrawIndirect", [&](auto& s) {
-            s.DrawIndirect(is_indexed, arg_address, offset, size, max_count, count_address);
-        });
+        Compared(
+            Shadow::Op::DrawIndirect, "DrawIndirect",
+            [&] { primary.DrawIndirect(is_indexed, arg_address, offset, size, max_count, count_address); },
+            [&](auto& s) {
+                s.DrawIndirect(is_indexed, arg_address, offset, size, max_count, count_address);
+            });
     }
     void DispatchDirect() override {
-        primary.DispatchDirect();
-        Shadow("DispatchDirect", [&](auto& s) { s.DispatchDirect(); });
+        Compared(
+            Shadow::Op::DispatchDirect, "DispatchDirect", [&] { primary.DispatchDirect(); },
+            [&](auto& s) { s.DispatchDirect(); });
     }
     void DispatchIndirect(VAddr address, u32 offset, u32 size) override {
-        primary.DispatchIndirect(address, offset, size);
-        Shadow("DispatchIndirect", [&](auto& s) { s.DispatchIndirect(address, offset, size); });
+        Compared(
+            Shadow::Op::DispatchIndirect, "DispatchIndirect",
+            [&] { primary.DispatchIndirect(address, offset, size); },
+            [&](auto& s) { s.DispatchIndirect(address, offset, size); });
     }
     // DMA: the shadow records it on its own (discarded) GPU timeline, so its tracker knows the range
     // changed; it never writes the bytes itself.
     void FillBuffer(VAddr address, u32 num_bytes, u32 value, bool is_gds) override {
-        primary.FillBuffer(address, num_bytes, value, is_gds);
-        Shadow("FillBuffer", [&](auto& s) { s.FillBuffer(address, num_bytes, value, is_gds); });
+        Compared(
+            Shadow::Op::FillBuffer, "FillBuffer", [&] { primary.FillBuffer(address, num_bytes, value, is_gds); },
+            [&](auto& s) { s.FillBuffer(address, num_bytes, value, is_gds); });
     }
     void CopyBuffer(VAddr dst, VAddr src, u32 num_bytes, bool dst_gds, bool src_gds) override {
-        primary.CopyBuffer(dst, src, num_bytes, dst_gds, src_gds);
-        Shadow("CopyBuffer",
-               [&](auto& s) { s.CopyBuffer(dst, src, num_bytes, dst_gds, src_gds); });
+        Compared(
+            Shadow::Op::CopyBuffer, "CopyBuffer",
+            [&] { primary.CopyBuffer(dst, src, num_bytes, dst_gds, src_gds); },
+            [&](auto& s) { s.CopyBuffer(dst, src, num_bytes, dst_gds, src_gds); });
     }
     // Written by the memory manager (outside a fault): the shadow drops what it made from the range. The
     // answer is the primary's. Host page faults do not reach this class: the page manager talks to the
@@ -169,7 +181,42 @@ public:
         primary.CpSync();
     }
 
+    /// The comparison so far (tests, diagnostics).
+    Shadow::Totals CompareTotals() const {
+        return comparison.Snapshot();
+    }
+
 private:
+    /// A call whose result the two renderers are compared on: the primary, then the shadow, each filling its half
+    /// of a record (shadow_record.h); the record is compared once the shadow has answered. Whatever the primary
+    /// does is as without the comparison.
+    template <typename PrimaryFn, typename ShadowFn>
+    void Compared(Shadow::Op op, const char* what, PrimaryFn&& run_primary, ShadowFn&& run_shadow) {
+        if (!shadow_on.load(std::memory_order_acquire)) {
+            run_primary();
+            return;
+        }
+        Shadow::Record record;
+        record.op = op;
+        record.seq = comparison.NextSeq();
+        {
+            const Shadow::Scope scope{&record};
+            run_primary();
+        }
+        bool answered = false;
+        {
+            const Shadow::Scope scope{&record};
+            Shadow(what, [&](auto& s) {
+                run_shadow(s);
+                answered = true;
+            });
+        }
+        if (answered) {
+            comparison.Submit(record);
+        }
+        comparison.Tick(Shadow::Frames().load(std::memory_order_relaxed));
+    }
+
     template <typename Fn>
     void Shadow(const char* what, Fn&& fn) {
         if (!shadow_on.load(std::memory_order_acquire)) {
@@ -200,6 +247,7 @@ private:
     RasterizerInterface& shadow;
     std::function<bool()> shadow_failed;
     std::atomic<bool> shadow_on{true};
+    Shadow::Aggregator comparison{[](const std::string& line) { LOG_INFO(Render_Vulkan, "{}", line); }};
 };
 
 } // namespace VideoCore

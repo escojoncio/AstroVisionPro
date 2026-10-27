@@ -17,6 +17,7 @@
 #include "video_core/renderer_vulkan/vk_rasterizer.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
 #include "video_core/renderer_vulkan/vk_shader_hle.h"
+#include "video_core/shadow_record.h"
 #ifdef SHADPS4_VPKENGINE_SHADER_CHECK
 #include "vpkengine_shader_check.h"
 #endif
@@ -45,6 +46,118 @@
 #endif
 
 namespace Vulkan {
+
+// ASTRO_RENDERER=shadow: the Vulkan half of the Tee's record (video_core/shadow_record.h). Null outside the
+// Tee: then none of the Shadow* functions below does anything.
+static VideoCore::Shadow::Side* ShadowSide() {
+    VideoCore::Shadow::Record* record = VideoCore::Shadow::Current();
+    return record != nullptr ? &record->vk : nullptr;
+}
+
+static void ShadowStatus(VideoCore::Shadow::Status status, const char* reason = "") {
+    if (auto* side = ShadowSide()) {
+        side->status = status;
+        side->reason = reason;
+    }
+}
+
+/// A call starts: skipped until it gets further.
+static void ShadowBegin(const char* reason) {
+    if (auto* side = ShadowSide()) {
+        *side = {};
+        side->status = VideoCore::Shadow::Status::Skipped;
+        side->reason = reason;
+    }
+}
+
+static void ShadowStage(VideoCore::Shadow::Side& side, VideoCore::Shadow::Stage stage, u64 hash) {
+    side.hash[size_t(stage)] = hash;
+}
+
+static void ShadowStages(const GraphicsPipeline* pipeline) {
+    if (auto* side = ShadowSide()) {
+        const auto& key = pipeline->GetGraphicsKey();
+        using Stage = VideoCore::Shadow::Stage;
+        ShadowStage(*side, Stage::Vs, key.stage_hashes[u32(Shader::LogicalStage::Vertex)]);
+        ShadowStage(*side, Stage::Ps, key.stage_hashes[u32(Shader::LogicalStage::Fragment)]);
+        ShadowStage(*side, Stage::Gs, key.stage_hashes[u32(Shader::LogicalStage::Geometry)]);
+        for (u32 cb = 0; cb < AmdGpu::NUM_COLOR_BUFFERS; ++cb) {
+            const auto& blend = key.blend_controls[cb];
+            auto& out = side->blend[cb];
+            out.enable = blend.enable;
+            out.colorSrc = u8(blend.color_src_factor);
+            out.colorDst = u8(blend.color_dst_factor);
+            out.colorFunc = u8(blend.color_func);
+            out.alphaSrc = blend.separate_alpha_blend ? u8(blend.alpha_src_factor) : out.colorSrc;
+            out.alphaDst = blend.separate_alpha_blend ? u8(blend.alpha_dst_factor) : out.colorDst;
+            out.alphaFunc = blend.separate_alpha_blend ? u8(blend.alpha_func) : out.colorFunc;
+        }
+    }
+}
+
+static void ShadowStage(VideoCore::Shadow::Stage stage, u64 hash) {
+    if (auto* side = ShadowSide()) {
+        ShadowStage(*side, stage, hash);
+    }
+}
+
+/// What a draw asks of the geometry: counts, topology (as the host class; rect and quad lists are triangles),
+/// the index buffer.
+static void ShadowGeometry(const AmdGpu::Regs& regs, bool is_indexed, u32 index_offset,
+                           Core::MemoryManager* memory) {
+    auto* side = ShadowSide();
+    if (side == nullptr) {
+        return;
+    }
+    side->count = regs.num_indices;
+    side->instances = regs.num_instances.NumInstances();
+    switch (LiverpoolToVK::PrimitiveType(regs.primitive_type)) {
+    case vk::PrimitiveTopology::ePointList: side->topology = 0; break;
+    case vk::PrimitiveTopology::eLineList:
+    case vk::PrimitiveTopology::eLineStrip:
+    case vk::PrimitiveTopology::eLineListWithAdjacency:
+    case vk::PrimitiveTopology::eLineStripWithAdjacency: side->topology = 1; break;
+    case vk::PrimitiveTopology::ePatchList:
+        side->topology = regs.primitive_type == AmdGpu::PrimitiveType::PatchPrimitive ? 3 : 2;
+        break;
+    default: side->topology = 2; break;
+    }
+    if (is_indexed) {
+        side->index32 = regs.index_buffer_type.index_type != AmdGpu::IndexType::Index16;
+        const u32 size = side->index32 ? sizeof(u32) : sizeof(u16);
+        side->indexAddress = regs.index_base_address.Address<VAddr>() + u64{index_offset} * size;
+        side->indexBytes = memory->ClampRangeSize(side->indexAddress, u64{regs.num_indices} * size);
+    }
+}
+
+static void ShadowDepthTarget(const AmdGpu::Regs& regs, const VideoCore::ImageInfo& info) {
+    if (auto* side = ShadowSide()) {
+        auto& depth = side->depth = {};
+        const auto& db = regs.depth_buffer;
+        depth.used = true;
+        depth.zAddress = db.DepthValid() ? db.DepthAddress() : 0;
+        depth.stencilAddress = db.StencilValid() ? db.StencilAddress() : 0;
+        depth.width = info.size.width;
+        depth.height = info.size.height;
+        depth.zFormat = db.DepthValid() ? u8(db.z_info.format) : 0;
+        depth.stencilFormat = db.StencilValid() ? u8(db.stencil_info.format) : 0;
+        depth.tileMode = u8(db.z_info.tile_mode_index);
+        depth.samples = u8(info.num_samples);
+        depth.hostFormat = vk::to_string(info.pixel_format);
+        depth.depthClear = regs.depth_render_control.depth_clear_enable;
+        depth.stencilClear = regs.depth_render_control.stencil_clear_enable;
+    }
+}
+
+static VideoCore::Shadow::Stage ShadowStageOf(const Shader::Info& info) {
+    using Stage = VideoCore::Shadow::Stage;
+    switch (info.l_stage) {
+    case Shader::LogicalStage::Fragment: return Stage::Ps;
+    case Shader::LogicalStage::Compute: return Stage::Cs;
+    case Shader::LogicalStage::Geometry: return Stage::Gs;
+    default: return Stage::Vs;
+    }
+}
 
 static Shader::PushData MakeUserData(const AmdGpu::Regs& regs) {
     // TODO(roamic): Add support for multiple viewports and geometry shaders when ViewportIndex
@@ -262,6 +375,10 @@ void Rasterizer::PrepareRenderState(const GraphicsPipeline* pipeline) {
         LOG_WARNING(Render_Vulkan, "Color buffers require gamma correction");
     }
 
+    if (auto* side = ShadowSide()) {
+        side->color = {};
+        side->depth = {};
+    }
     const bool skip_cb_binding =
         regs.color_control.mode == AmdGpu::ColorControl::OperationMode::Disable;
     for (s32 cb = 0; cb < std::bit_width(key.mrt_mask); ++cb) {
@@ -277,6 +394,23 @@ void Rasterizer::PrepareRenderState(const GraphicsPipeline* pipeline) {
         image_id = bound_images.emplace_back(texture_cache.FindImage(desc));
         auto& image = texture_cache.GetImage(image_id);
         image.binding.is_target = 1u;
+        if (auto* side = ShadowSide()) {
+            auto& t = side->color[cb] = {};
+            t.used = true;
+            t.address = col_buf.Address();
+            t.width = image.info.size.width;
+            t.height = image.info.size.height;
+            t.pitch = image.info.pitch;
+            t.dataFormat = u8(col_buf.info.format);
+            t.numberType = u8(col_buf.info.number_type);
+            t.compSwap = u8(col_buf.info.comp_swap);
+            t.tileMode = u8(image.info.tile_mode);
+            t.sliceStart = u16(col_buf.BaseSlice());
+            t.sliceCount = u16(col_buf.NumSlices());
+            t.samples = u8(col_buf.NumSamples());
+            t.hostFormat = vk::to_string(image.info.pixel_format);
+            t.cleared = texture_cache.IsMetaCleared(col_buf.CmaskAddress(), col_buf.view.slice_start);
+        }
     }
 
     if ((regs.depth_control.depth_enable && regs.depth_buffer.DepthValid()) ||
@@ -289,6 +423,7 @@ void Rasterizer::PrepareRenderState(const GraphicsPipeline* pipeline) {
         image_id = bound_images.emplace_back(texture_cache.FindImage(desc));
         auto& image = texture_cache.GetImage(image_id);
         image.binding.is_target = 1u;
+        ShadowDepthTarget(regs, image.info);
     } else {
         db_desc.first = {};
     }
@@ -975,9 +1110,13 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
         Flush();
     }
 
+    if (!in_target_passes) {
+        ShadowBegin("left out by the draw filter (fast clear elimination, fmask, resolve, no primitive)");
+    }
     if (!FilterDraw()) {
         return;
     }
+    ShadowStatus(VideoCore::Shadow::Status::Skipped, "no graphics pipeline");
     const auto& regs = liverpool->regs;
     const GraphicsPipeline* pipeline = pipeline_cache.GetGraphicsPipeline();
     if (pipeline != nullptr && !in_target_passes) {
@@ -1077,6 +1216,9 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
     NoteVpkengineDraw(pipeline);
 
     RunDepthMirrors(pipeline);
+    ShadowStages(pipeline);
+    ShadowGeometry(regs, is_indexed, index_offset, memory);
+    ShadowStatus(VideoCore::Shadow::Status::Skipped, "resources could not be bound");
     PrepareRenderState(pipeline);
     if (!BindResources(pipeline)) {
         if (trace) {
@@ -1084,6 +1226,7 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
         }
         return;
     }
+    ShadowStatus(VideoCore::Shadow::Status::Drawn);
     const auto state = BeginRendering(pipeline);
 
     buffer_cache.BindVertexBuffers(*pipeline);
@@ -1499,10 +1642,12 @@ void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u3
         Flush();
     }
 
+    ShadowBegin("left out by the draw filter (fast clear elimination, fmask, resolve, no primitive)");
     if (!FilterDraw()) {
         return;
     }
 
+    ShadowStatus(VideoCore::Shadow::Status::Skipped, "no graphics pipeline");
     const GraphicsPipeline* pipeline = pipeline_cache.GetGraphicsPipeline();
     if (!pipeline) {
         return;
@@ -1510,10 +1655,14 @@ void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u3
     NoteVpkengineDraw(pipeline);
 
     RunDepthMirrors(pipeline);
+    ShadowStages(pipeline);
+    ShadowGeometry(liverpool->regs, is_indexed, 0, memory);
+    ShadowStatus(VideoCore::Shadow::Status::Skipped, "resources could not be bound");
     PrepareRenderState(pipeline);
     if (!BindResources(pipeline)) {
         return;
     }
+    ShadowStatus(VideoCore::Shadow::Status::Drawn);
     const auto state = BeginRendering(pipeline);
 
     buffer_cache.BindVertexBuffers(*pipeline);
@@ -1592,6 +1741,7 @@ void Rasterizer::DispatchDirect() {
     }
     FrameStats::Compute();
 
+    ShadowBegin("no compute pipeline");
     const auto& cs_program = liverpool->GetCsRegs();
     const ComputePipeline* pipeline = pipeline_cache.GetComputePipeline();
     const bool trace = TraceDraw();
@@ -1604,12 +1754,18 @@ void Rasterizer::DispatchDirect() {
     }
 
     const auto& cs = pipeline->GetStage(Shader::LogicalStage::Compute);
+    ShadowStage(VideoCore::Shadow::Stage::Cs, cs.pgm_hash);
+    if (auto* side = ShadowSide()) {
+        side->groups = {cs_program.dim_x, cs_program.dim_y, cs_program.dim_z};
+    }
     if (ExecuteShaderHLE(cs, liverpool->regs, cs_program, *this)) {
+        ShadowStatus(VideoCore::Shadow::Status::Handled, "shader HLE");
         if (trace) {
             LOG_INFO(Render_Vulkan, "TRACE   dispatch handled by shader HLE");
         }
         return;
     }
+    ShadowStatus(VideoCore::Shadow::Status::Skipped, "resources could not be bound");
 #ifdef SHADPS4_VPKENGINE_SHADER_CHECK
     // (after the HLE: those dispatches never reach the shader compiler)
     VpkengineShaderCheck::NoteDispatch(cs.pgm_hash);
@@ -1622,6 +1778,7 @@ void Rasterizer::DispatchDirect() {
         }
         return;
     }
+    ShadowStatus(VideoCore::Shadow::Status::Drawn);
 
     scheduler.EndRendering();
     pipeline->BindResources(set_writes, buffer_barriers, push_data);
@@ -1642,6 +1799,7 @@ void Rasterizer::DispatchIndirect(VAddr address, u32 offset, u32 size) {
         Flush();
     }
 
+    ShadowBegin("no compute pipeline");
     const auto& cs_program = liverpool->GetCsRegs();
     const ComputePipeline* pipeline = pipeline_cache.GetComputePipeline();
     if (!pipeline) {
@@ -1651,10 +1809,13 @@ void Rasterizer::DispatchIndirect(VAddr address, u32 offset, u32 size) {
     VpkengineShaderCheck::NoteDispatch(pipeline->GetStage(Shader::LogicalStage::Compute).pgm_hash);
 #endif
 
+    ShadowStage(VideoCore::Shadow::Stage::Cs, pipeline->GetStage(Shader::LogicalStage::Compute).pgm_hash);
+    ShadowStatus(VideoCore::Shadow::Status::Skipped, "resources could not be bound");
     RunDepthMirrors(pipeline);
     if (!BindResources(pipeline)) {
         return;
     }
+    ShadowStatus(VideoCore::Shadow::Status::Drawn);
 
     const auto [buffer, base] = buffer_cache.ObtainBuffer(address + offset, size, false);
 
@@ -1697,18 +1858,21 @@ bool Rasterizer::BindResources(const Pipeline* pipeline) {
         texture_cache.ClearRawBindMarks();
     };
     if (IsComputeImageCopy(pipeline)) {
+        ShadowStatus(VideoCore::Shadow::Status::Handled, "compute handled as image copy");
         if (g_draw_trace_budget.load(std::memory_order_relaxed) > 0) {
             LOG_INFO(Render_Vulkan, "TRACE   compute handled as image copy");
         }
         return false;
     }
     if (IsComputeMetaClear(pipeline)) {
+        ShadowStatus(VideoCore::Shadow::Status::Handled, "compute handled as meta clear");
         if (g_draw_trace_budget.load(std::memory_order_relaxed) > 0) {
             LOG_INFO(Render_Vulkan, "TRACE   compute handled as meta clear");
         }
         return false;
     }
     if (IsComputeImageClear(pipeline)) {
+        ShadowStatus(VideoCore::Shadow::Status::Handled, "compute handled as image clear");
         if (g_draw_trace_budget.load(std::memory_order_relaxed) > 0) {
             LOG_INFO(Render_Vulkan, "TRACE   compute handled as image clear");
         }
@@ -1720,6 +1884,11 @@ bool Rasterizer::BindResources(const Pipeline* pipeline) {
     buffer_barriers.clear();
     buffer_infos.clear();
     image_infos.clear();
+    if (auto* side = ShadowSide()) {
+        side->buffers.clear();
+        side->textures.clear();
+        side->samplers.clear();
+    }
 
     bool uses_dma = false;
 
@@ -1932,6 +2101,11 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, Shader::Backend::Binding
             buffer_bindings.emplace_back(buffer_id, vsharp, size);
         } else {
             buffer_bindings.emplace_back(VideoCore::BufferId{}, vsharp, 0);
+        }
+        if (auto* side = ShadowSide(); side != nullptr && !desc.IsSpecial() && vsharp.base_address != 0) {
+            const auto& [bound_id, bound_sharp, bound_size] = buffer_bindings.back();
+            side->buffers.push_back({ShadowStageOf(stage), bound_sharp.base_address, bound_size,
+                                     bound_sharp.GetStride(), desc.is_written});
         }
     }
 
@@ -2281,6 +2455,26 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
                 image_id = depth_image_id;
                 image = &texture_cache.GetImage(image_id);
             }
+            if (auto* side = ShadowSide(); side != nullptr && i == 0) {
+                VideoCore::Shadow::TextureBinding t;
+                t.stage = ShadowStageOf(stage);
+                t.address = tsharp.Address();
+                t.dataFormat = u8(tsharp.GetDataFmt());
+                t.numFormat = u8(tsharp.GetNumberFmt());
+                t.type = u8(tsharp.type);
+                t.tileMode = u8(tsharp.tiling_index);
+                t.baseLevel = u8(tsharp.base_level);
+                t.lastLevel = u8(tsharp.last_level);
+                t.width = tsharp.width + 1;
+                t.height = tsharp.height + 1;
+                t.dstSel = {u8(tsharp.dst_sel_x), u8(tsharp.dst_sel_y), u8(tsharp.dst_sel_z), u8(tsharp.dst_sel_w)};
+                t.storage = image_desc.is_written;
+                t.found = static_cast<bool>(image_id);
+                t.hostFormat = vk::to_string(image->info.pixel_format);
+                t.hostWidth = image->info.size.width;
+                t.hostHeight = image->info.size.height;
+                side->textures.push_back(std::move(t));
+            }
             if (image->binding.is_bound) {
                 // The image is already bound. In case if it is about to be used as storage we
                 // need to force general layout on it.
@@ -2436,6 +2630,29 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
             if (tsharp.base_level == 0 && tsharp.last_level == 0) {
                 ssharp.max_aniso.Assign(AmdGpu::AnisoRatio::One);
             }
+        }
+        if (auto* side = ShadowSide()) {
+            VideoCore::Shadow::SamplerBinding sb;
+            sb.stage = ShadowStageOf(stage);
+            const auto address_mode = [](vk::SamplerAddressMode mode) -> u8 {
+                switch (mode) {
+                case vk::SamplerAddressMode::eRepeat: return 0;
+                case vk::SamplerAddressMode::eMirroredRepeat: return 1;
+                case vk::SamplerAddressMode::eClampToEdge: return 2;
+                case vk::SamplerAddressMode::eMirrorClampToEdge: return 3;
+                default: return 4;
+                }
+            };
+            sb.addressU = address_mode(LiverpoolToVK::ClampMode(ssharp.clamp_x));
+            sb.addressV = address_mode(LiverpoolToVK::ClampMode(ssharp.clamp_y));
+            sb.addressW = address_mode(LiverpoolToVK::ClampMode(ssharp.clamp_z));
+            sb.magFilter = LiverpoolToVK::Filter(ssharp.xy_mag_filter) == vk::Filter::eLinear;
+            sb.minFilter = LiverpoolToVK::Filter(ssharp.xy_min_filter) == vk::Filter::eLinear;
+            sb.mipFilter = LiverpoolToVK::MipFilter(ssharp.mip_filter) == vk::SamplerMipmapMode::eLinear;
+            sb.anisotropy = ssharp.MaxAniso() > 1.0f && (AmdGpu::IsAnisoFilter(ssharp.xy_mag_filter) ||
+                                                           AmdGpu::IsAnisoFilter(ssharp.xy_min_filter));
+            sb.compare = ssharp.depth_compare_func.Value() != AmdGpu::DepthCompare::Never;
+            side->samplers.push_back(sb);
         }
         const auto vk_sampler = texture_cache.GetSampler(ssharp, liverpool->regs.ta_bc_base);
         image_infos.emplace_back(vk_sampler, VK_NULL_HANDLE, vk::ImageLayout::eGeneral);
@@ -2847,6 +3064,15 @@ bool Rasterizer::TryHtileClear(VAddr address, std::span<const u32> htile_words) 
 }
 
 void Rasterizer::FillBuffer(VAddr address, u32 num_bytes, u32 value, bool is_gds) {
+    ShadowBegin("GDS fill");
+    if (!is_gds) {
+        ShadowStatus(VideoCore::Shadow::Status::Drawn);
+    }
+    if (auto* side = ShadowSide()) {
+        side->dst = address;
+        side->bytes = num_bytes;
+        side->value = value;
+    }
     if (TraceDraw()) {
         LOG_INFO(Render_Vulkan, "TRACE dma-fill dst={:#x} bytes={:#x} value={:#x} gds={} is_meta={}",
                  address, num_bytes, value, is_gds, texture_cache.IsMeta(address));
@@ -2858,6 +3084,15 @@ void Rasterizer::FillBuffer(VAddr address, u32 num_bytes, u32 value, bool is_gds
 }
 
 void Rasterizer::CopyBuffer(VAddr dst, VAddr src, u32 num_bytes, bool dst_gds, bool src_gds) {
+    ShadowBegin("GDS copy");
+    if (!dst_gds && !src_gds) {
+        ShadowStatus(VideoCore::Shadow::Status::Drawn);
+    }
+    if (auto* side = ShadowSide()) {
+        side->dst = dst;
+        side->src = src;
+        side->bytes = num_bytes;
+    }
     if (TraceDraw()) {
         LOG_INFO(Render_Vulkan, "TRACE dma-copy dst={:#x} src={:#x} bytes={:#x} is_meta={}", dst,
                  src, num_bytes, texture_cache.IsMeta(dst));
@@ -3094,6 +3329,23 @@ void Rasterizer::UpdateViewportScissorState() const {
         }
     }
 
+    if (auto* side = ShadowSide(); side != nullptr && !viewports.empty() && !scissors.empty()) {
+        // (a negative height is a flipped viewport: the same rectangle)
+        const auto& vp = viewports[0];
+        side->viewportValid = true;
+        side->viewport[0] = vp.x;
+        side->viewport[1] = vp.height < 0 ? vp.y + vp.height : vp.y;
+        side->viewport[2] = vp.width;
+        side->viewport[3] = std::fabs(vp.height);
+        side->viewport[4] = vp.minDepth;
+        side->viewport[5] = vp.maxDepth;
+        side->scissorValid = true;
+        side->scissor[0] = scissors[0].offset.x;
+        side->scissor[1] = scissors[0].offset.y;
+        side->scissor[2] = s32(scissors[0].extent.width);
+        side->scissor[3] = s32(scissors[0].extent.height);
+    }
+
     auto& dynamic_state = scheduler.GetDynamicState();
     dynamic_state.SetViewports(viewports);
     dynamic_state.SetScissors(scissors);
@@ -3108,6 +3360,14 @@ void Rasterizer::UpdateDepthStencilState() const {
     const auto depth_test_enabled =
         regs.depth_control.depth_enable && regs.depth_buffer.DepthValid() && !dbg_no_depth;
     dynamic_state.SetDepthTestEnabled(depth_test_enabled);
+    if (auto* side = ShadowSide()) {
+        side->stateValid = true;
+        side->depthTest = depth_test_enabled;
+        side->depthWrite = depth_test_enabled && regs.depth_control.depth_write_enable &&
+                           !regs.depth_render_control.depth_clear_enable;
+        side->depthFunc = depth_test_enabled ? u8(LiverpoolToVK::CompareOp(regs.depth_control.depth_func)) : u8(7);
+        side->stencilTest = regs.depth_control.stencil_enable && regs.depth_buffer.StencilValid();
+    }
     if (depth_test_enabled) {
         dynamic_state.SetDepthWriteEnabled(regs.depth_control.depth_write_enable &&
                                            !regs.depth_render_control.depth_clear_enable);
@@ -3242,6 +3502,12 @@ void Rasterizer::UpdatePrimitiveState(const bool is_indexed) const {
     dynamic_state.SetRasterizerDiscardEnabled(regs.clipper_control.dx_rasterization_kill ||
                                               GpuBench::Current() ==
                                                   GpuBench::Mode::NoFragments);
+    if (auto* side = ShadowSide()) {
+        side->cull = cull_mode == vk::CullModeFlagBits::eFront  ? 1
+                     : cull_mode == vk::CullModeFlagBits::eBack ? 2
+                                                                : 0;
+        side->frontClockwise = front_face == vk::FrontFace::eClockwise;
+    }
     dynamic_state.SetCullMode(cull_mode);
     dynamic_state.SetFrontFace(front_face);
 }
