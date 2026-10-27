@@ -109,17 +109,15 @@ int GameController::ReadStates(State* states, int states_num, bool* isConnected,
     *connectedCount = m_connected_count;
 
     int ret_num = 0;
-    if (m_connected) {
+    if (m_connected && states_num > 0) {
         std::lock_guard lg(m_states_queue_mutex);
-        for (int i = 0; i < states_num; i++) {
-            auto o_state = m_states_queue.Pop();
-            if (!o_state) {
-                break;
-            }
-            states[ret_num++] = *o_state;
-        }
+        ret_num = static_cast<int>(m_states_queue.DrainNewest(states, states_num));
     }
     return ret_num;
+}
+
+std::optional<double> GameController::NoteCrossDelivered(bool pressed) {
+    return m_cross_probe.NoteDelivered(pressed, CrossProbe::Clock::now());
 }
 
 /// A VR host drives the real controller of the first player.
@@ -176,6 +174,12 @@ OrbisPadButtonDataOffset GameController::ApplyRemoteLocked(OrbisPadButtonDataOff
     m_state.OnTouchpad(0, touch_down, touch_x, touch_y);
     m_state.time = Libraries::Kernel::sceKernelGetProcessTime();
     m_states_queue.Push(m_state);
+    const bool was_down = True(before & OrbisPadButtonDataOffset::Cross);
+    const bool is_down = True(buttons & OrbisPadButtonDataOffset::Cross);
+    if (was_down != is_down && m_cross_probe.NoteEdge(is_down, CrossProbe::Clock::now())) {
+        LOG_INFO(Input, "Cross {} reported by the controller at {} us",
+                 is_down ? "pressed" : "released", m_state.time);
+    }
     return before;
 }
 
@@ -237,7 +241,7 @@ void GameController::SetHeadsetPlays(bool plays) {
 
 void GameController::Gyro(int id) {
     m_state.OnGyro(gyro_buf);
-    PushState();
+    PushMotionState();
     // This is called every few milliseconds for every controller, whatever it has to say.
     if (IsFirstController(this)) {
         Core::Vr::Runtime::Instance().PollViewGestures();
@@ -331,7 +335,7 @@ void GameController::UpdateStickTouch() {
 
 void GameController::Acceleration(int id) {
     m_state.OnAccel(accel_buf);
-    PushState();
+    PushMotionState();
 }
 
 void GameController::UpdateGyro(const float gyro[3]) {
@@ -709,6 +713,23 @@ void GameController::SetLastUpdate(std::chrono::steady_clock::time_point lastUpd
 void GameController::PushState() {
     std::lock_guard lg(m_states_queue_mutex);
     m_state.time = Libraries::Kernel::sceKernelGetProcessTime();
+    m_states_queue.Push(m_state);
+}
+
+void GameController::PushMotionState() {
+    std::lock_guard lg(m_states_queue_mutex);
+    m_state.time = Libraries::Kernel::sceKernelGetProcessTime();
+    State* newest = m_states_queue.Newest();
+    const auto same_input = [](const State& a, const State& b) {
+        return a.buttonsState == b.buttonsState && a.axes == b.axes &&
+               a.touchpad[0].state == b.touchpad[0].state && a.touchpad[0].x == b.touchpad[0].x &&
+               a.touchpad[0].y == b.touchpad[0].y && a.touchpad[1].state == b.touchpad[1].state &&
+               a.touchpad[1].x == b.touchpad[1].x && a.touchpad[1].y == b.touchpad[1].y;
+    };
+    if (newest != nullptr && same_input(*newest, m_state)) {
+        *newest = m_state;
+        return;
+    }
     m_states_queue.Push(m_state);
 }
 

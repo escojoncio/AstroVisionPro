@@ -63,6 +63,17 @@ struct ThreadActivity final {
     std::atomic<u64> rsp{};
     std::atomic<u64> rbp{};
     std::atomic<u64> since_ms{}; ///< when the call in progress began, or the last one ended
+    /// The last HLE calls of this thread, for the dump of a crash. Only the thread itself writes
+    /// them, and the dump of its crash is made on that thread.
+    struct RecentCall {
+        u64 sequence{};
+        u64 operation{};
+        u64 result{};
+        bool returned{};
+    };
+    static constexpr u32 RecentCalls = 32;
+    std::array<RecentCall, RecentCalls> recent{};
+    u64 calls_made{};
 };
 
 constexpr std::size_t MaxTrackedThreads = 512;
@@ -109,6 +120,21 @@ public:
         activity->rbp.store(frame.gpr[5], std::memory_order_relaxed);
         activity->since_ms.store(CoarseMilliseconds(), std::memory_order_relaxed);
         activity->operation.store(frame.operation, std::memory_order_relaxed);
+        sequence = ++activity->calls_made;
+        activity->recent[sequence % ThreadActivity::RecentCalls] = {sequence, frame.operation, 0,
+                                                                     false};
+    }
+
+    /// The call returned this value to the guest.
+    void Returned(u64 result) {
+        if (activity == nullptr) {
+            return;
+        }
+        auto& call = activity->recent[sequence % ThreadActivity::RecentCalls];
+        if (call.sequence == sequence) {
+            call.result = result;
+            call.returned = true;
+        }
     }
 
     ~ActivityScope() {
@@ -125,6 +151,7 @@ public:
 
 private:
     ThreadActivity* activity{};
+    u64 sequence{};
     u64 outer_operation{};
     u64 outer_rsp{};
     u64 outer_rbp{};
@@ -303,7 +330,7 @@ Fex::EngineResult<bool> HleGuestBridge::Invoke(HleCallFrame& frame) {
     frame.revoke_host_range = RevokeHostRange;
     frame.host_range_context = this;
     const ActiveHleCallScope active_frame{frame};
-    const ActivityScope activity{frame};
+    ActivityScope activity{frame};
     const auto result = adapter->Invoke(frame);
     if (const auto* failure = std::get_if<HleCallFailure>(&result)) {
         if (trace) {
@@ -323,7 +350,39 @@ Fex::EngineResult<bool> HleGuestBridge::Invoke(HleCallFrame& frame) {
                      static_cast<int>(adapter->Name().size()), adapter->Name().data(),
                      static_cast<unsigned long long>(frame.gpr[0]));
     }
+    activity.Returned(frame.gpr[0]);
     return true;
+}
+
+void PrintRecentHleCalls(std::FILE* out, const char* prefix) {
+    const ThreadActivity* activity = MyActivity;
+    if (activity == nullptr || activity->calls_made == 0) {
+        std::fprintf(out, "%s no HLE calls made by this thread\n", prefix);
+        return;
+    }
+    auto* const names = ActivityNames.load(std::memory_order_relaxed);
+    const u64 made = activity->calls_made;
+    const u64 first = made > ThreadActivity::RecentCalls ? made - ThreadActivity::RecentCalls + 1 : 1;
+    std::fprintf(out, "%s last %llu HLE calls of this thread, oldest first:\n", prefix,
+                 static_cast<unsigned long long>(made - first + 1));
+    for (u64 sequence = first; sequence <= made; ++sequence) {
+        const auto& call = activity->recent[sequence % ThreadActivity::RecentCalls];
+        if (call.sequence != sequence) {
+            continue;
+        }
+        const HleCallAdapter* adapter = names != nullptr ? names->FindForCall(call.operation) : nullptr;
+        const std::string_view name = adapter != nullptr ? adapter->Name() : std::string_view{"?"};
+        if (call.returned) {
+            std::fprintf(out, "%s   #%llu %.*s (operation %llu) = %#llx\n", prefix,
+                         static_cast<unsigned long long>(sequence), static_cast<int>(name.size()),
+                         name.data(), static_cast<unsigned long long>(call.operation),
+                         static_cast<unsigned long long>(call.result));
+        } else {
+            std::fprintf(out, "%s   #%llu %.*s (operation %llu) = not returned\n", prefix,
+                         static_cast<unsigned long long>(sequence), static_cast<int>(name.size()),
+                         name.data(), static_cast<unsigned long long>(call.operation));
+        }
+    }
 }
 
 std::optional<GuestExecutionRange> HleGuestBridge::QueryExecutableRange(
