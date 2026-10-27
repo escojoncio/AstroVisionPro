@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: Copyright 2024 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include "video_core/shadow_record.h"
 #include <algorithm>
 #include <atomic>
 #include <chrono>
@@ -225,6 +226,16 @@ void BufferCache::BindVertexBuffers(const Vulkan::GraphicsPipeline& pipeline) {
     for (const auto& buffer : guest_buffers) {
         if (buffer.GetSize() > 0) {
             ranges.emplace_back(buffer.base_address, buffer.base_address + buffer.GetSize());
+        }
+    }
+    // ASTRO_RENDERER=shadow: the vertex buffers, as the stage that fetches them binds them.
+    if (Shadow::Record* record = Shadow::Current(); record != nullptr) {
+        for (const auto& buffer : guest_buffers) {
+            if (buffer.base_address != 0) {
+                record->vk.buffers.push_back({Shadow::Stage::Vs, buffer.base_address,
+                                              memory->ClampRangeSize(buffer.base_address, buffer.GetSize()),
+                                              buffer.GetStride(), false});
+            }
         }
     }
 

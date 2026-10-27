@@ -198,6 +198,12 @@ SpanCache& spanCache() {
 // A span without a mirror is asked for one again after this long (the host may refuse a vm_remap once;
 // GuestMirror itself does not retry a refused range for 2 s unless its pages changed).
 constexpr u64 kMirrorRetryNs = 16'000'000;
+// The shadow engine (Rasterizer::Mode::Shadow) draws nothing, so no buffer aliases guest memory and no
+// span gets a mirror (a vm_remap of the guest's pages): its regions point at the guest memory itself, read only.
+// It is also what ShadowEndFrame answers to. Set by the rasterizer before the engine starts.
+std::atomic<bool> gShadowEngine{false};
+// Set by ShadowEndFrame (the flip), taken by the shadow's next Flush.
+std::atomic<bool> gShadowFlip{false};
 u64 steadyNs() {
     return u64(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());
 }
@@ -213,6 +219,7 @@ bool spanHasWatches(u64 begin, u64 end) {
 
 bool cachedSpan(u64 address, u64 from, u64 to, u64& begin, u64& end, void*& mirror) {
     SpanCache& c = spanCache();
+    const bool noMirror = gShadowEngine.load(std::memory_order_relaxed);
     u64 gen0 = 0;
     bool stable = false;  // the emulator is not changing the map: what is found may be kept
     unsigned retry = ~0u;  // the entry whose null mirror is asked for again
@@ -239,7 +246,7 @@ bool cachedSpan(u64 address, u64 from, u64 to, u64& begin, u64& end, void*& mirr
             begin = x.begin;
             end = x.end;
             mirror = x.mirror;
-            if (mirror || steadyNs() < x.retryAt) {
+            if (mirror || noMirror || steadyNs() < x.retryAt) {
                 c.hits.fetch_add(1, std::memory_order_relaxed);
                 return true;
             }
@@ -276,12 +283,12 @@ bool cachedSpan(u64 address, u64 from, u64 to, u64& begin, u64& end, void*& mirr
         return false;
     }
     // The span's mirror (made once per span; a span without one is asked again, see kMirrorRetryNs).
-    mirror = GuestMirror(begin, end);
+    mirror = noMirror ? nullptr : GuestMirror(begin, end);
     std::scoped_lock l{c.m};
     c.follow();
     if (!stable || c.gen != gen0) return true;  // the map changed meanwhile: use it this once, keep it out
     const unsigned k = c.used < c.entries.size() ? c.used++ : (c.next++ % unsigned(c.entries.size()));
-    c.entries[k] = {from, to, begin, end, mirror, mirror ? 0 : steadyNs() + kMirrorRetryNs};
+    c.entries[k] = {from, to, begin, end, mirror, mirror || noMirror ? 0 : steadyNs() + kMirrorRetryNs};
     c.last = k;
     return true;
 }
@@ -363,6 +370,12 @@ struct Engine {
     std::recursive_mutex lock;
     vpgpu::metal2::ShaderTable shaders;
     std::unique_ptr<vpgpu::metal2::MetalBackend> backend;
+    // The shadow's backend (instead of `backend`): it takes the recorded frames and drops them.
+    std::unique_ptr<vpgpu::NullBackend> nullBackend;
+    // Set by the rasterizer before start(): this engine is the shadow's (Rasterizer::Mode::Shadow). It has no GPU,
+    // no watchdog, no submit thread, and writes no guest memory: DMA, write backs, labels, occlusion results and
+    // WRITE_DATA are left to the real renderer, the rasterizer's methods for them do nothing here.
+    bool shadow = false;
     std::unique_ptr<vpgpu::Device> device;
     std::unique_ptr<vpps4::Renderer> renderer;
     // When recorded work goes to the GPU, and how DMA / GDS / labels stay ordered with it.
@@ -430,8 +443,11 @@ struct Engine {
         if (all) {
             // Which ranges the CPU wrote is unknown: images ahead of memory are written back (and the GPU waited
             // for) first, so marking everything CPU-written does not drop the content only they hold.
-            if (scheduler) syncForDma(0, ~u64(0));
-            else renderer->syncToMemory(0, ~u64(0));
+            // (The shadow writes nothing back: its images stay ahead of memory.)
+            if (!shadow) {
+                if (scheduler) syncForDma(0, ~u64(0));
+                else renderer->syncToMemory(0, ~u64(0));
+            }
             renderer->invalidate(0, ~u64(0));
             if (scheduler) scheduler->forgetLabelValues(0, ~u64(0));
         }
@@ -441,7 +457,7 @@ struct Engine {
             if (scheduler) scheduler->forgetLabelValues(a, n);
         }
     }
-    bool failed = false;
+    std::atomic<bool> failed{false};  // (the Tee reads it from other threads)
     u64 dmaUnsynced = 0, dmaSynced = 0;  // DMA packets done on the CPU without / after a GPU wait
 
     // Fast clear metadata (CMASK / HTILE) of the targets drawn so far, under `lock` (the same semantics as the
@@ -575,33 +591,46 @@ struct Engine {
         options.renderCache = true;  // PS4 draws repeat state and table buffers; VPKENGINE_RENDER_CACHE=0 turns it off (A/B)
         if (const char* v = std::getenv("VPKENGINE_FRAMES_IN_FLIGHT"); v && *v)
             options.framesInFlight = unsigned(std::clamp(std::atoi(v), 2, 6));
-        LOG_INFO(Render_Vulkan, "VPKENGINE_GPU frames in flight {}", options.framesInFlight);
+        if (!shadow) LOG_INFO(Render_Vulkan, "VPKENGINE_GPU frames in flight {}", options.framesInFlight);
         // What the engine keeps between runs, in the cache folder the app points the emulator at
         // (the VPS4 folder's Cachés), one folder per game: the Metal pipeline archive, the
         // translated shaders and the list of pipelines built (compiled ahead at the next start).
         const std::string serial{Common::ElfInfo::Instance().GameSerial()};
         const std::filesystem::path cacheDir =
             Common::FS::GetUserPath(Common::FS::PathType::CacheDir) / "vpkengine" / (serial.empty() ? "unknown" : serial);
-        {
+        if (!shadow) {
             std::error_code ec;
             std::filesystem::create_directories(cacheDir / "metal", ec);
             if (!ec) options.cacheRoot = cacheDir / "metal";
         }
-        backend = std::make_unique<vpgpu::metal2::MetalBackend>(shaders, [this](const std::string& l) { log(l); },
-                                                               options);
-        if (!backend->ok()) {
-            failed = true;
-            LOG_CRITICAL(Render_Vulkan, "VPKENGINE_GPU no Metal device: nothing can be drawn");
-            return false;
-        }
-        // What the host can sample natively decides the texture plans (BC is absent on visionOS): set before
-        // the first draw builds one.
-        {
+        vpgpu::Backend* base = nullptr;
+        if (shadow) {
+            // No GPU: the null backend takes the frames and drops them. It keeps no history (it would grow for as long
+            // as the game runs) and finishes each frame as it is submitted. BC is not sampled natively, as on the headset.
+            nullBackend = std::make_unique<vpgpu::NullBackend>();
+            nullBackend->record = false;
+            nullBackend->autoComplete = true;
+            base = nullBackend.get();
+            vpps4::FormatCaps fc;
+            fc.bc = false;
+            vpps4::setFormatCaps(fc);
+        } else {
+            backend = std::make_unique<vpgpu::metal2::MetalBackend>(shaders, [this](const std::string& l) { log(l); },
+                                                                   options);
+            if (!backend->ok()) {
+                failed = true;
+                LOG_CRITICAL(Render_Vulkan, "VPKENGINE_GPU no Metal device: nothing can be drawn");
+                return false;
+            }
+            // What the host can sample natively decides the texture plans (BC is absent on visionOS): set before
+            // the first draw builds one.
             vpps4::FormatCaps fc;
             fc.bc = backend->caps().bc;
             vpps4::setFormatCaps(fc);
+            base = backend.get();
         }
-        device = std::make_unique<vpgpu::Device>(*backend, 2, [this](const std::string& l) { log(l); });
+        // (the shadow's pipelines are "built" by the null backend on the spot: no compile workers)
+        device = std::make_unique<vpgpu::Device>(*base, shadow ? 0 : 2, [this](const std::string& l) { log(l); });
         // A guest window the backend cannot wrap (no-copy) has no buffer: the renderer must get no id for it, not one that
         // reads as address 0.
         device->setRefuseFailedBuffers(true);
@@ -633,7 +662,8 @@ struct Engine {
         // vpps4 keeps the mirrored regions this hook returns until the guest's map changes.
         hooks.regionGeneration = [] { return spanCache().generation(); };
         hooks.explainAddress = [](uint64_t address) { return ExplainAddress(address); };
-        hooks.shader = [this](uint64_t id, vpir::Stage, const vpmsl::MslShader& s) { shaders.add(id, toMetal(s)); };
+        // (the shadow has no Metal to give the shaders to; they are still translated)
+        if (!shadow) hooks.shader = [this](uint64_t id, vpir::Stage, const vpmsl::MslShader& s) { shaders.add(id, toMetal(s)); };
         hooks.log = [this](const std::string& l) { log(l); };
         hooks.watchWrites = [this](uint64_t a, uint64_t n) {
             if (watchWrites) watchWrites(a, n);
@@ -642,19 +672,22 @@ struct Engine {
             if (watchOwned) watchOwned(a, n, on);
         };
         // Views of images (another format of the same texel size, a layer range, a cube / array):
-        // lazily resolved handles of the Metal backend.
-        hooks.view = [this](const vpps4::ViewRequest& r) -> vpgpu::TextureId {
-            vpgpu::metal2::MetalBackend::ViewDesc d;
-            d.type = r.type;
-            d.array = r.array;
-            d.format = r.format;
-            d.baseLayer = r.baseLayer;
-            d.layers = r.layers;
-            d.baseMip = r.baseMip;
-            d.mips = r.mips;  // 0: every level from baseMip (the backend resolves it against the base)
-            return backend->createView(r.base, d);
-        };
-        hooks.destroyView = [this](vpgpu::TextureId v) { backend->destroyView(v); };
+        // lazily resolved handles of the Metal backend. (The shadow has none: the renderer falls back to the
+        // image itself and counts a note.)
+        if (!shadow) {
+            hooks.view = [this](const vpps4::ViewRequest& r) -> vpgpu::TextureId {
+                vpgpu::metal2::MetalBackend::ViewDesc d;
+                d.type = r.type;
+                d.array = r.array;
+                d.format = r.format;
+                d.baseLayer = r.baseLayer;
+                d.layers = r.layers;
+                d.baseMip = r.baseMip;
+                d.mips = r.mips;  // 0: every level from baseMip (the backend resolves it against the base)
+                return backend->createView(r.base, d);
+            };
+            hooks.destroyView = [this](vpgpu::TextureId v) { backend->destroyView(v); };
+        }
         // A compute shader that writes metadata without address arithmetic (no xor) clears it: the dispatch is left
         // out and the metadata marked cleared. One that reads metadata is a copy shader and runs.
         // (not asked while no target has metadata: the renderer then prepares nothing for it)
@@ -673,7 +706,7 @@ struct Engine {
         };
         // Opt-in (VPK_SUBMIT_THREAD=1): frame encoding on its own thread. Not on by default: the Metal
         // backend was written for one thread that creates resources and submits.
-        if (const char* t = std::getenv("VPK_SUBMIT_THREAD"); t && *t && *t != '0') device->startSubmitThread(2);
+        if (const char* t = std::getenv("VPK_SUBMIT_THREAD"); !shadow && t && *t && *t != '0') device->startSubmitThread(2);
         // What vpps4 skips / approximates / cannot translate goes to the census.
         vpps4::setReportSink([](void*, const char* cat, const char* key, const char* detail, u64 count) {
             Census::NoteN(cat ? cat : "vpps4", key ? key : "", detail ? detail : "", count);
@@ -700,8 +733,10 @@ struct Engine {
             flushLeftOut();
             report();
         });
-        watchdog = std::thread([this] { watchdogLoop(); });
-        watchdog.detach();
+        if (!shadow) {  // (the shadow has no labels to hurry: the Flush of its batches applies the policy)
+            watchdog = std::thread([this] { watchdogLoop(); });
+            watchdog.detach();
+        }
         // MSAA: the game's targets keep their sample count up to the app's limit (SHADPS4_MAX_MSAA,
         // 1/2/4, default 4; Apple GPUs stop at 4). 1 turns it off: the targets become single-sample
         // and the game's resolves become copies. Foveation (SHADPS4_GAME_FOVEATION=1, default off)
@@ -713,6 +748,10 @@ struct Engine {
         renderer->setFoveation(fov && std::atoi(fov) != 0);
         renderer->setCacheRoot(cacheDir / "vpps4");
         LOG_INFO(Render_Vulkan, "VPKENGINE_GPU persistent caches in {}", cacheDir.string());
+        if (shadow) {
+            LOG_INFO(Render_Vulkan, "VPKENGINE_GPU shadow renderer on (null backend: no GPU, no guest memory written)");
+            return true;
+        }
         LOG_INFO(Render_Vulkan, "VPKENGINE_GPU renderer on (VPKEngine draws everything in Metal; no Vulkan device)");
         // Off the first frame's path: the headset compositing shader is compiled meanwhile.
         if (VpkengineXr::Available()) PrewarmCompose(backend->nativeDevice());
@@ -926,7 +965,11 @@ void describeGeometryDraw(const AmdGpu::Regs& regs) {
 
 struct Rasterizer::Impl {
     AmdGpu::Liverpool* liverpool;
-    VideoCore::PageManager page_manager;
+    // Shadow (Mode::Shadow): protects nothing, writes nothing. Everything below that reaches the page manager
+    // (watches, owned ranges, write backs) is then empty and never runs, so `page_manager` is not dereferenced.
+    const bool shadow;
+    // Null in the shadow: a PageManager keeps one static rasterizer pointer and one fault handler, the Vulkan renderer's.
+    std::unique_ptr<VideoCore::PageManager> page_manager;
     // Guest memory the title mapped for the GPU (MapMemory/UnmapMemory).
     std::mutex mapped_mutex;
     std::map<VAddr, VAddr> mapped;  // start -> end
@@ -955,7 +998,8 @@ struct Rasterizer::Impl {
         return released.Overlaps(a, n, std::chrono::steady_clock::now(), std::chrono::milliseconds(200));
     }
 
-    Impl(Rasterizer* self, AmdGpu::Liverpool* lp) : liverpool{lp}, page_manager{self} {}
+    Impl(Rasterizer* self, AmdGpu::Liverpool* lp, bool shadow_)
+        : liverpool{lp}, shadow{shadow_}, page_manager{shadow_ ? std::unique_ptr<VideoCore::PageManager>{} : std::make_unique<VideoCore::PageManager>(self)} {}
 
     bool isMapped(VAddr addr, u64 size) {
         if (size == 0 || addr > ~u64(0) - size) return false;
@@ -982,10 +1026,10 @@ struct Rasterizer::Impl {
         auto [it, inserted] = watched.try_emplace(a, n);
         if (!inserted) {
             if (it->second == n) return;  // already watched
-            page_manager.UpdatePageWatchers<false>(a, it->second);
+            page_manager->UpdatePageWatchers<false>(a, it->second);
             it->second = n;
         }
-        page_manager.UpdatePageWatchers<true>(a, n);
+        page_manager->UpdatePageWatchers<true>(a, n);
     }
 
     // CPU wrote [a, a + n): textures read from there are refilled, their watches dropped (the
@@ -1005,7 +1049,7 @@ struct Rasterizer::Impl {
                         released.Note(it->first, it->second, std::chrono::steady_clock::now());
                         // (unprotected before watch_mutex is let go: a second thread that finds the range
                         // in `released` finds the page open, not still being opened by this one)
-                        page_manager.UpdatePageWatchers<false>(it->first, it->second);
+                        page_manager->UpdatePageWatchers<false>(it->first, it->second);
                         engine().queueInvalidate(it->first, it->second);
                         it = watched.erase(it);
                     } else {
@@ -1015,7 +1059,7 @@ struct Rasterizer::Impl {
                 if (!any && !recentlyReleased(a, n)) return false;
             }
             // (handled only if the pages are writable now; else the fault is left to show itself)
-            if (!page_manager.IsWriteProtected(a, n)) return true;
+            if (!page_manager->IsWriteProtected(a, n)) return true;
         }
         return any;
     }
@@ -1064,16 +1108,16 @@ struct Rasterizer::Impl {
             // (re-protected: a fault here is a fresh one, not the late arrival of the access that released it)
             for (auto& r : releasedOwned)
                 if (r.size && r.start < a + n && r.start + r.size > a) r.size = 0;
-            page_manager.UpdatePageWatchers<true>(a, n);
-            page_manager.UpdateReadWatchers<true>(a, n);
+            page_manager->UpdatePageWatchers<true>(a, n);
+            page_manager->UpdateReadWatchers<true>(a, n);
         } else {
             auto it = owned.find({a, n});
             if (it == owned.end()) return;
             if (--it->second != 0) return;
             owned.erase(it);
             noteReleasedOwned(a, n);
-            page_manager.UpdateReadWatchers<false>(a, n);
-            page_manager.UpdatePageWatchers<false>(a, n);
+            page_manager->UpdateReadWatchers<false>(a, n);
+            page_manager->UpdatePageWatchers<false>(a, n);
         }
     }
 
@@ -1093,8 +1137,8 @@ struct Rasterizer::Impl {
         for (auto it = owned.begin(); it != owned.end();) {
             if (it->first.first < a + n && it->first.first + it->first.second > a) {
                 // (setOwned adds the watchers once per key, whatever the count: released once)
-                page_manager.UpdateReadWatchers<false>(it->first.first, it->first.second);
-                page_manager.UpdatePageWatchers<false>(it->first.first, it->first.second);
+                page_manager->UpdateReadWatchers<false>(it->first.first, it->first.second);
+                page_manager->UpdatePageWatchers<false>(it->first.first, it->first.second);
                 noteReleasedOwned(it->first.first, it->first.second);
                 it = owned.erase(it);
             } else {
@@ -1111,10 +1155,20 @@ struct Rasterizer::Impl {
     bool resolveOwned(VAddr addr, u64 n, bool write);
 };
 
-Rasterizer::Rasterizer(AmdGpu::Liverpool* liverpool) : impl{std::make_unique<Impl>(this, liverpool)} {
-    liverpool->BindRasterizer(this);
+Rasterizer::Rasterizer(AmdGpu::Liverpool* liverpool, Mode mode)
+    : impl{std::make_unique<Impl>(this, liverpool, mode == Mode::Shadow)} {
+    // (the shadow does not bind itself: the Tee does, to both renderers)
+    if (!impl->shadow) liverpool->BindRasterizer(this);
     Engine& e = engine();
     std::scoped_lock g{e.lock};
+    if (impl->shadow) {
+        // No page watches, no protected host pages, no mirrors: the renderer finds the CPU's writes by content,
+        // and the Tee tells it of the memory manager's (Invalidate, Map, Unmap).
+        e.shadow = true;
+        gShadowEngine.store(true, std::memory_order_release);
+        e.start();
+        return;
+    }
     // Page watches only where the GPU buffers alias a mirror of guest memory (vpkengine_mirror.h):
     // a watched (read-only) guest page cannot be aliased by a no-copy Metal buffer (log 17:49: guest
     // buffer of 0x706c000000 refused, 40 resources missing a frame, black picture), but the mirror
@@ -1127,6 +1181,14 @@ Rasterizer::Rasterizer(AmdGpu::Liverpool* liverpool) : impl{std::make_unique<Imp
     gWatchProbe.store([](void* ctx, u64 a, u64 b) { return static_cast<Impl*>(ctx)->anyWatchIn(a, b); },
                       std::memory_order_release);
     e.start();
+}
+
+bool Rasterizer::Failed() const {
+    return engine().failed;
+}
+
+void ShadowEndFrame() {
+    if (gShadowEngine.load(std::memory_order_acquire)) gShadowFlip.store(true, std::memory_order_release);
 }
 
 Rasterizer::~Rasterizer() {
@@ -1567,6 +1629,13 @@ void Rasterizer::FillBuffer(VAddr address, u32 num_bytes, u32 value, bool is_gds
         return;
     }
     if (e.metas.ClearAll(address)) ++e.metaDma;
+    // The shadow only records the DMA on its own GPU timeline (the null backend drops it): the bytes are the real
+    // renderer's to write, and the shadow's images over the range learn that it changed.
+    if (e.shadow) {
+        e.renderer->fill(address, num_bytes, value);
+        e.noteWork();
+        return;
+    }
     // DMA runs on the CPU, in order: the command processor and the title may read the result
     // right after this packet (e.g. PM4 or shader code assembled by DMA, then an IndirectBuffer),
     // which a blit queued for the end of the frame would not have written yet. Memory is unified,
@@ -1605,20 +1674,30 @@ void Rasterizer::CopyBuffer(VAddr dst, VAddr src, u32 num_bytes, bool dst_gds, b
             if (dst < 0x10000 && readable(src, num_bytes) >= num_bytes)
                 std::memcpy(gb + dst, reinterpret_cast<const void*>(src), std::min<u64>(num_bytes, 0x10000 - dst));
         } else if (src < 0x10000 && readable(dst, num_bytes) >= num_bytes) {
-            std::memcpy(reinterpret_cast<void*>(dst), gb + src, std::min<u64>(num_bytes, 0x10000 - src));
-            impl->invalidate(dst, num_bytes);
+            if (e.shadow) {
+                // GDS into guest memory is the real renderer's write: the shadow only learns that the range changed.
+                e.renderer->invalidate(dst, num_bytes);
+            } else {
+                std::memcpy(reinterpret_cast<void*>(dst), gb + src, std::min<u64>(num_bytes, 0x10000 - src));
+                impl->invalidate(dst, num_bytes);
+            }
         }
         return;
     }
     // A copy of HTILE entries that are mostly cleared (a template the title prepared) is a depth clear: noted,
     // the copy itself is left out.
     if (e.metas.IsHtile(dst)) {
-        e.syncForDma(src, num_bytes);
+        if (!e.shadow) e.syncForDma(src, num_bytes);
         if (readable(src, num_bytes) >= num_bytes &&
             e.metas.TryHtileClear(dst, std::span{reinterpret_cast<const u32*>(src), num_bytes / sizeof(u32)})) {
             ++e.metaDma;
             return;
         }
+    }
+    if (e.shadow) {  // (recorded only, as in FillBuffer)
+        e.renderer->copy(dst, src, num_bytes);
+        e.noteWork();
+        return;
     }
     // On the CPU and in order, for the same reason as FillBuffer (synced only when needed).
     e.syncForDma(src, num_bytes, dst, num_bytes);
@@ -1641,6 +1720,10 @@ u32 Rasterizer::ReadDataFromGds(u32 gds_offset) {
 }
 
 bool Rasterizer::InvalidateMemory(VAddr addr, u64 size) {
+    if (impl->shadow) {  // (nothing is protected or owned here: the renderer only drops what it made from the range)
+        engine().queueInvalidate(addr, std::max<u64>(size, 1));
+        return false;
+    }
     if (!impl->isMapped(addr, std::max<u64>(size, 1))) return false;
     const bool owned = impl->resolveOwned(addr, 1, true);
     return impl->invalidate(addr, std::max<u64>(size, 1)) || owned;
@@ -1704,8 +1787,8 @@ bool Rasterizer::Impl::resolveOwned(VAddr addr, u64 n, bool write) {
                 }
                 aheadSince.erase({s, z});
                 // (one watcher per key, whatever the count: see setOwned)
-                page_manager.UpdateReadWatchers<false>(s, z);
-                page_manager.UpdatePageWatchers<false>(s, z);
+                page_manager->UpdateReadWatchers<false>(s, z);
+                page_manager->UpdatePageWatchers<false>(s, z);
                 owned.erase(it);
                 noteReleasedOwned(s, z);
                 if (write) e.queueInvalidate(s, z);
@@ -1720,8 +1803,8 @@ bool Rasterizer::Impl::resolveOwned(VAddr addr, u64 n, bool write) {
             {
                 std::scoped_lock l{owned_mutex};
                 if (owned.erase({s, z})) {  // (abandonOwners releases through setOwned; this covers a count left over)
-                    page_manager.UpdateReadWatchers<false>(s, z);
-                    page_manager.UpdatePageWatchers<false>(s, z);
+                    page_manager->UpdateReadWatchers<false>(s, z);
+                    page_manager->UpdatePageWatchers<false>(s, z);
                     noteReleasedOwned(s, z);
                 }
             }
@@ -1756,7 +1839,7 @@ void Rasterizer::MapMemory(VAddr addr, u64 size) {
         }
         impl->mapped[start] = end;
     }
-    impl->page_manager.OnGpuMap(addr, size);
+    if (impl->page_manager) impl->page_manager->OnGpuMap(addr, size);
     spanCache().clear();
 }
 
@@ -1767,7 +1850,7 @@ void Rasterizer::UnmapMemory(VAddr addr, u64 size) {
     engine().queueInvalidate(addr, size);
     engine().queueUnmap(addr, size);
     impl->dropOwned(addr, size);
-    impl->page_manager.OnGpuUnmap(addr, size);
+    if (impl->page_manager) impl->page_manager->OnGpuUnmap(addr, size);
     std::scoped_lock l{impl->mapped_mutex};
     const VAddr end = addr + size;
     auto it = impl->mapped.upper_bound(addr);
@@ -1789,6 +1872,7 @@ void Rasterizer::UnmapMemory(VAddr addr, u64 size) {
 // ZPASS_DONE: the renderer counts the samples that pass and writes them when the GPU is done.
 bool Rasterizer::ZPassDone(VAddr address, u32 pairs) {
     Engine& e = engine();
+    if (e.shadow) return false;  // (the results are written into guest memory)
     std::scoped_lock g{e.lock};
     if (!e.start()) return false;
     e.applyPending();
@@ -1799,6 +1883,7 @@ bool Rasterizer::ZPassDone(VAddr address, u32 pairs) {
 // the GPU is finished first (submit + wait, then the results are written).
 bool Rasterizer::SyncGpuWrites(VAddr addr, u64 size, bool wait) {
     Engine& e = engine();
+    if (e.shadow) return true;  // (it writes nothing the command processor could wait for)
     std::scoped_lock g{e.lock};
     if (!e.renderer) return true;
     e.applyPending();
@@ -1848,7 +1933,11 @@ u64 Rasterizer::Flush() {
     // A Liverpool command buffer batch ended (SubmitDone, ~15 a picture): the work stays recorded
     // and joins the picture's frame, which goes to the GPU when it is presented, when the CPU needs
     // it (DMA, GDS, a label wait) or when the policy says it has waited long enough (labels).
-    if (e.scheduler) e.scheduler->flush();
+    // (The shadow's picture ends at the flip, ShadowEndFrame: its frame goes out here, on the thread that records it.)
+    if (e.scheduler) {
+        if (e.shadow && gShadowFlip.exchange(false, std::memory_order_acq_rel)) e.scheduler->present();
+        else e.scheduler->flush();
+    }
     return e.submits.load();
 }
 
@@ -1869,6 +1958,7 @@ void Rasterizer::SyncGds() {
 
 void Rasterizer::ScheduleLabelWrite(void* address, u64 value, u32 size, std::function<void()> then) {
     Engine& e = engine();
+    if (e.shadow) return;  // (the label and its interrupt are the real renderer's)
     std::scoped_lock g{e.lock};
     if (!e.scheduler) {  // no GPU work can exist
         if (address) VideoCore::WriteGuestLabel(address, value, size);
@@ -1903,6 +1993,7 @@ static bool WaitRegMemWants(u32 function, u32 ref, u32 mask, u32 value) {
 
 bool Rasterizer::PrepareLabelWait(const void* address, u32 size, u32 function, u32 ref, u32 mask) {
     Engine& e = engine();
+    if (e.shadow) return false;
     std::scoped_lock g{e.lock};
     if (!e.scheduler) return false;
     // A label write already queued behind work recorded on this in-order queue (EOP / EOS / RELEASE_MEM,
@@ -1918,6 +2009,7 @@ bool Rasterizer::PrepareLabelWait(const void* address, u32 size, u32 function, u
 // A WAIT_REG_MEM poll found nothing: blocks on the frame that produces the value instead of spinning.
 bool Rasterizer::IdleLabelWait(const void* address, u32 size) {
     Engine& e = engine();
+    if (e.shadow) return false;
     uint64_t target = 0;
     {
         std::scoped_lock g{e.lock};
@@ -1938,6 +2030,7 @@ bool Rasterizer::IdleLabelWait(const void* address, u32 size) {
 
 void Rasterizer::WriteDataOrdered(void* address, const void* data, u32 size) {
     Engine& e = engine();
+    if (e.shadow) return;  // (guest memory is the real renderer's to write)
     {
         std::scoped_lock g{e.lock};
         // After the GPU work that reads or writes this memory, and after label writes pending for it.

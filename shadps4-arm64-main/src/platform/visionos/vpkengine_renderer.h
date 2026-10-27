@@ -5,6 +5,11 @@
 // in the compositor's Metal textures (core/vr/openxr_host_visionos.mm); vpkengine_presenter.h hands
 // them to videoout/driver.cpp.
 // There is no Vulkan device: KosmicKrisp and MoltenVK are not used.
+// Rasterizer::Mode::Shadow (ASTRO_RENDERER=shadow, behind video_core/tee_rasterizer.h): the same renderer
+// built on VPKEngine's null backend, beside the Vulkan one that draws and presents. It has no GPU and
+// no Metal device, and never writes guest memory (no DMA, write back, label, occlusion result or
+// WRITE_DATA), never protects host pages (the page manager is the Vulkan renderer's alone: a second
+// one would take over its fault handler) and never mirrors guest memory.
 //
 // Log lines: "VPKENGINE_GPU ..." (draws run / skipped and why, encoders, GPU ms per frame),
 // "VPKENGINE_PRESENT ..." (headset frames).
@@ -36,8 +41,13 @@ namespace VpkengineRenderer {
 
 class Rasterizer final : public VideoCore::RasterizerInterface {
 public:
-    explicit Rasterizer(AmdGpu::Liverpool* liverpool);
+    enum class Mode { Primary, Shadow };
+    /// Primary binds itself to `liverpool`; the shadow does not (the Tee does, to both).
+    explicit Rasterizer(AmdGpu::Liverpool* liverpool, Mode mode = Mode::Primary);
     ~Rasterizer() override;
+
+    /// The engine could not start (no Metal device): nothing is drawn. The Tee switches a failed shadow off.
+    bool Failed() const;
 
     void Draw(bool is_indexed, u32 index_offset = 0) override;
     void DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u32 size, u32 max_count,
@@ -83,6 +93,10 @@ private:
     VAddr pendingIndirect = 0;  // set while DrawIndirect runs Draw for one set of arguments
     std::unique_ptr<Impl> impl;
 };
+
+/// Shadow only: the picture was flipped (videoout Flip, headset frames included). The frame the shadow has
+/// recorded goes to its null backend at its next Flush; this only sets a flag, it takes no lock.
+void ShadowEndFrame();
 
 // The headset's frames (used by vpkengine_presenter.cpp, which hands them to videoout/driver.cpp):
 // what is drawn goes into one of the compositor's Metal textures; a slot index stands for it,

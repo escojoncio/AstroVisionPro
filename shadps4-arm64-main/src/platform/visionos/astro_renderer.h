@@ -2,8 +2,9 @@
 // ASTRO_RENDERER (the app's «Motor gráfico», AstroSettings.swift):
 //   vpkengine  VPKEngine's own Metal renderer (the default).
 //   vulkan     shadPS4's Vulkan renderer on KosmicKrisp (MoltenVK when it is not in the app).
-//   shadow     Vulkan is the renderer that draws, writes memory and presents; VPKEngine runs beside
-//              it (gnmdriver.cpp RegisterLib: the Tee is still to be made, it is Vulkan alone).
+//   shadow     Vulkan is the renderer that draws, writes memory and presents; VPKEngine follows it on
+//              its null backend (no GPU, no guest memory written, nothing presented) behind
+//              video_core/tee_rasterizer.h (gnmdriver.cpp RegisterLib, vpkengine_renderer.h Mode::Shadow).
 // Both renderers are always compiled in (SHADPS4_VPKENGINE_RENDERER); without VPKEngine's sources
 // the build has Vulkan alone and that is what this answers.
 #pragma once
