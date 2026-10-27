@@ -3,6 +3,7 @@
 #include <mach/mach.h>
 #include <mach/vm_map.h>
 
+#include <atomic>
 #include <chrono>
 #include <map>
 #include <mutex>
@@ -30,6 +31,8 @@ struct Failure {
     uint64_t end = 0, signature = 0;
     Clock::time_point at;
 };
+
+std::atomic<uint64_t> gLookups{0}, gRegionCalls{0};
 
 std::mutex& mutex() {
     static std::mutex& m = *new std::mutex;
@@ -80,6 +83,7 @@ uint64_t signatureOf(uint64_t begin, uint64_t end) {
         natural_t depth = 0;
         vm_region_submap_info_data_64_t info{};
         mach_msg_type_number_t count = VM_REGION_SUBMAP_INFO_COUNT_64;
+        gRegionCalls.fetch_add(1, std::memory_order_relaxed);
         if (vm_region_recurse_64(mach_task_self(), &base, &size, &depth, reinterpret_cast<vm_region_recurse_info_t>(&info),
                                  &count) != KERN_SUCCESS ||
             base > at || size == 0)
@@ -120,6 +124,7 @@ void reap() {
 
 void* GuestMirror(uint64_t begin, uint64_t end) {
     if (end <= begin || (begin | end) & (vm_page_size - 1)) return nullptr;
+    gLookups.fetch_add(1, std::memory_order_relaxed);
     const uint64_t signature = signatureOf(begin, end);
     std::scoped_lock l{mutex()};
     reap();
@@ -168,6 +173,10 @@ void* GuestMirror(uint64_t begin, uint64_t end) {
     }
     mirrors()[begin] = {end, signature, reinterpret_cast<void*>(target)};
     return reinterpret_cast<void*>(target);
+}
+
+GuestMirrorStats TakeGuestMirrorStats() {
+    return {gLookups.exchange(0, std::memory_order_relaxed), gRegionCalls.exchange(0, std::memory_order_relaxed)};
 }
 
 } // namespace VpkengineRenderer

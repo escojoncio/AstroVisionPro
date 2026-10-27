@@ -55,6 +55,9 @@ void PrewarmCompose(void* nativeDevice);  // (defined with PresentState)
 // no-copy MTLBuffer can exceed the device's maximum buffer length.
 constexpr u64 kWindow = 64ull << 20;
 
+// vm_region_64 calls made by mappedSpan (reported by Engine::report).
+std::atomic<u64> gVmRegionCalls{0};
+
 // The mapped span of [from, to) that contains `address`, walking the VM entries (guest memory is
 // many entries with different protections); false if `address` is not mapped.
 bool mappedSpan(u64 address, u64 from, u64 to, u64& begin, u64& end) {
@@ -67,6 +70,7 @@ bool mappedSpan(u64 address, u64 from, u64 to, u64& begin, u64& end) {
         vm_region_basic_info_data_64_t info{};
         mach_msg_type_number_t count = VM_REGION_BASIC_INFO_COUNT_64;
         mach_port_t object = MACH_PORT_NULL;
+        gVmRegionCalls.fetch_add(1, std::memory_order_relaxed);
         if (vm_region_64(mach_task_self(), &base, &size, VM_REGION_BASIC_INFO_64,
                          reinterpret_cast<vm_region_info_t>(&info), &count, &object) != KERN_SUCCESS)
             break;
@@ -105,6 +109,7 @@ bool mappedSpan(u64 address, u64 from, u64 to, u64& begin, u64& end) {
         vm_region_basic_info_data_64_t info{};
         mach_msg_type_number_t count = VM_REGION_BASIC_INFO_COUNT_64;
         mach_port_t object = MACH_PORT_NULL;
+        gVmRegionCalls.fetch_add(1, std::memory_order_relaxed);
         if (vm_region_64(mach_task_self(), &base, &size, VM_REGION_BASIC_INFO_64,
                          reinterpret_cast<vm_region_info_t>(&info), &count, &object) != KERN_SUCCESS ||
             base > probe - 1 || base + size < probe || !(info.max_protection & VM_PROT_READ))
@@ -117,29 +122,74 @@ bool mappedSpan(u64 address, u64 from, u64 to, u64& begin, u64& end) {
 
 // mappedSpan answers cached: it walks the VM map with vm_region_64 syscalls (often tens per call)
 // and is asked for every buffer binding of every draw. The span of an address inside a window is
-// unique, so (window, span) pairs are kept until the GPU mappings change (MapMemory/UnmapMemory).
+// unique, so (window, span) pairs are kept for as long as the guest's map does not change. The map
+// changes only through the emulator's MemoryManager (map, unmap, protect, commit: each one counts
+// in MappingGeneration(), odd while it is in progress) and through Map/UnmapMemory of the rasterizer
+// (the PRT area is mapped without a mutation): the cache follows both, nothing else empties it.
+// Answers are kept too when there is no span ("not mapped") and when the span has no mirror yet
+// (asked again for the mirror only, after kMirrorRetryNs).
 struct SpanCache {
     struct Entry {
         u64 from = 0, to = 0, begin = 0, end = 0;
         void* mirror = nullptr;  // the second mapping of [begin, end) the GPU buffers alias (null: none)
+        u64 retryAt = 0;         // steady-clock ns after which a null mirror is asked for again (0: never)
+    };
+    struct Unmapped {  // `address` (a 4 KiB page of it) has no span in the window [from, to)
+        u64 from = 0, to = 0, page = 0;
     };
     std::mutex m;
     std::array<Entry, 128> entries{};
     unsigned used = 0, next = 0, last = 0;
-    u64 gen = 0;  // bumped by clear(): a span looked up before it is not inserted after it
-    // The same count readable without the lock: what was checked readable at one value of it is
-    // still mapped at the same value (the draw adapter keeps fetch subroutines by it).
+    std::array<Unmapped, 32> unmapped{};
+    unsigned unmappedUsed = 0, unmappedNext = 0;
+    u64 gen = 0;  // bumped by every emptying: a span looked up before it is not inserted after it
+    // The emulator's MappingGeneration() the entries were made at (written under the lock).
+    std::atomic<u64> seen{0};
+    // `gen` readable without the lock: what was checked readable at one value of it is still mapped
+    // at the same value (the draw adapter keeps fetch subroutines by it, vpps4 keeps its regions).
     std::atomic<u64> mapGen{0};
-    void clear() {
-        std::scoped_lock l{m};
+    // Counters printed by Engine::report (VPKENGINE_GPU cpu region caches).
+    std::atomic<u64> hits{0}, misses{0}, unmappedHits{0}, mirrorRetries{0}, bumps{0};
+
+    static u64 emulatorGeneration() { return Core::Memory::Instance()->MappingGeneration(); }
+    void reset() {  // (under the lock)
         used = next = last = 0;
+        unmappedUsed = unmappedNext = 0;
         ++gen;
         mapGen.store(gen, std::memory_order_release);
+        bumps.fetch_add(1, std::memory_order_relaxed);
+    }
+    // (under the lock) Empties the cache if the emulator changed the map since the entries were made.
+    // Read inside the lock, so that an older reading never takes over from a newer one.
+    void follow() {
+        const u64 now = emulatorGeneration();
+        if (now == seen.load(std::memory_order_relaxed)) return;
+        reset();
+        seen.store(now, std::memory_order_release);
+    }
+    void clear() {
+        std::scoped_lock l{m};
+        reset();
+    }
+    // The generation of the guest's map, current: takes the lock only when the emulator changed it.
+    u64 generation() {
+        if (emulatorGeneration() != seen.load(std::memory_order_acquire)) {
+            std::scoped_lock l{m};
+            follow();
+        }
+        return mapGen.load(std::memory_order_acquire);
     }
 };
 SpanCache& spanCache() {
     static SpanCache& c = *new SpanCache;
     return c;
+}
+
+// A span without a mirror is asked for one again after this long (the host may refuse a vm_remap once;
+// GuestMirror itself does not retry a refused range for 2 s unless its pages changed).
+constexpr u64 kMirrorRetryNs = 16'000'000;
+u64 steadyNs() {
+    return u64(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());
 }
 
 // Whether any page of [begin, end) is protected for the renderer (owned or watched ranges): set by the
@@ -154,36 +204,74 @@ bool spanHasWatches(u64 begin, u64 end) {
 bool cachedSpan(u64 address, u64 from, u64 to, u64& begin, u64& end, void*& mirror) {
     SpanCache& c = spanCache();
     u64 gen0 = 0;
+    bool stable = false;  // the emulator is not changing the map: what is found may be kept
+    unsigned retry = ~0u;  // the entry whose null mirror is asked for again
     {
         std::scoped_lock l{c.m};
+        c.follow();
         gen0 = c.gen;
+        stable = !(c.seen.load(std::memory_order_relaxed) & 1);
         const auto hit = [&](const SpanCache::Entry& x) {
             return x.from == from && x.to == to && address >= x.begin && address < x.end;
         };
+        unsigned found = ~0u;
         if (c.used && hit(c.entries[c.last])) {
-            begin = c.entries[c.last].begin;
-            end = c.entries[c.last].end;
-            mirror = c.entries[c.last].mirror;
-            return true;
+            found = c.last;
+        } else {
+            for (unsigned k = 0; k < c.used; ++k)
+                if (hit(c.entries[k])) {
+                    c.last = found = k;
+                    break;
+                }
         }
-        for (unsigned k = 0; k < c.used; ++k)
-            if (hit(c.entries[k])) {
-                c.last = k;
-                begin = c.entries[k].begin;
-                end = c.entries[k].end;
-                mirror = c.entries[k].mirror;
+        if (found != ~0u) {
+            const SpanCache::Entry& x = c.entries[found];
+            begin = x.begin;
+            end = x.end;
+            mirror = x.mirror;
+            if (mirror || steadyNs() < x.retryAt) {
+                c.hits.fetch_add(1, std::memory_order_relaxed);
                 return true;
             }
+            retry = found;
+        } else {
+            for (unsigned k = 0; k < c.unmappedUsed; ++k) {
+                const SpanCache::Unmapped& x = c.unmapped[k];
+                if (x.from == from && x.to == to && x.page == address >> 12) {
+                    c.unmappedHits.fetch_add(1, std::memory_order_relaxed);
+                    return false;
+                }
+            }
+        }
     }
-    if (!mappedSpan(address, from, to, begin, end)) return false;  // (misses are not cached)
-    // The span's mirror (made once per span, checked again whenever the span is looked up afresh:
-    // every ~8 ms at most, see Engine::submit).
+    if (retry != ~0u) {
+        c.mirrorRetries.fetch_add(1, std::memory_order_relaxed);
+        mirror = GuestMirror(begin, end);
+        std::scoped_lock l{c.m};
+        c.follow();
+        SpanCache::Entry& x = c.entries[retry];
+        if (c.gen == gen0 && x.from == from && x.to == to && x.begin == begin) {
+            x.mirror = mirror;
+            x.retryAt = mirror ? 0 : steadyNs() + kMirrorRetryNs;
+        }
+        return true;
+    }
+    c.misses.fetch_add(1, std::memory_order_relaxed);
+    if (!mappedSpan(address, from, to, begin, end)) {
+        if (stable) {
+            std::scoped_lock l{c.m};
+            c.follow();
+            if (c.gen == gen0) c.unmapped[c.unmappedUsed < c.unmapped.size() ? c.unmappedUsed++ : (c.unmappedNext++ % c.unmapped.size())] = {from, to, address >> 12};
+        }
+        return false;
+    }
+    // The span's mirror (made once per span; a span without one is asked again, see kMirrorRetryNs).
     mirror = GuestMirror(begin, end);
-    if (!mirror && spanHasWatches(begin, end)) return true;  // (looked up again next time: the mirror may come)
     std::scoped_lock l{c.m};
-    if (c.gen != gen0) return true;  // the map changed meanwhile: use it this once, keep it out
+    c.follow();
+    if (!stable || c.gen != gen0) return true;  // the map changed meanwhile: use it this once, keep it out
     const unsigned k = c.used < c.entries.size() ? c.used++ : (c.next++ % unsigned(c.entries.size()));
-    c.entries[k] = {from, to, begin, end, mirror};
+    c.entries[k] = {from, to, begin, end, mirror, mirror ? 0 : steadyNs() + kMirrorRetryNs};
     c.last = k;
     return true;
 }
@@ -333,7 +421,6 @@ struct Engine {
     using Clock = std::chrono::steady_clock;
     std::atomic<u64> adapterNs{0}, adapterCalls{0};
     Clock::time_point lastReport = Clock::now();
-    Clock::time_point lastSpanClear = Clock::now();
     static u64 nsSince(Clock::time_point t) {
         return u64(std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now() - t).count());
     }
@@ -393,6 +480,18 @@ struct Engine {
                  "constant copy+memcmp {:.1f}, uploads {:.1f}, argument table/other {:.1f}",
                  t.bindDescMs / s, t.bindTexMs / s, t.bindBufMs / s, t.bindCbMs / s, t.bindUploadMs / s,
                  (t.bindMs - t.bindDescMs - t.bindTexMs - t.bindBufMs - t.bindCbMs - t.bindUploadMs) / s);
+        {
+            SpanCache& sc = spanCache();
+            const VpkengineRenderer::GuestMirrorStats ms = VpkengineRenderer::TakeGuestMirrorStats();
+            LOG_INFO(Render_Vulkan,
+                     "VPKENGINE_GPU cpu region caches (per s): cachedSpan {:.0f} hits, {:.0f} misses, {:.0f} unmapped hits, "
+                     "{:.0f} mirror retries; vm_region_64 {:.0f}, vm_region_recurse_64 {:.0f} ({:.0f} GuestMirror lookups); "
+                     "span cache emptied {:.0f}; vpps4 region cache {:.0f} hits, {:.0f} misses",
+                     double(take(sc.hits)) / s, double(take(sc.misses)) / s, double(take(sc.unmappedHits)) / s,
+                     double(take(sc.mirrorRetries)) / s, double(take(gVmRegionCalls)) / s, double(ms.regionCalls) / s,
+                     double(ms.lookups) / s, double(take(sc.bumps)) / s, double(t.regionHits) / s,
+                     double(t.regionMisses) / s);
+        }
         if (scheduler) LOG_INFO(Render_Vulkan, "VPKENGINE_GPU {}", scheduler->takeSummary());
     }
 
@@ -460,6 +559,8 @@ struct Engine {
             out = {begin, end - begin, mirror ? mirror : reinterpret_cast<void*>(begin), mirror != nullptr};
             return true;
         };
+        // vpps4 keeps the mirrored regions this hook returns until the guest's map changes.
+        hooks.regionGeneration = [] { return spanCache().generation(); };
         hooks.explainAddress = [](uint64_t address) { return ExplainAddress(address); };
         hooks.shader = [this](uint64_t id, vp4ir::Stage, const vp4msl::MslShader& s) { shaders.add(id, toMetal(s)); };
         hooks.log = [this](const std::string& l) { log(l); };
@@ -493,13 +594,6 @@ struct Engine {
         scheduler = std::make_unique<vpps4::Scheduler>(*renderer, *device, vp4gpu::SubmitPolicy{}, [] { return msNow(); });
         scheduler->setSubmitHook([this] {
             ++submits;
-            // Guest mappings can change without Map/UnmapMemory (a munmap or protection change of
-            // the title's): spans are looked up again (vm_region syscalls, tens per span). Once per
-            // ~8 ms rather than at each submit.
-            if (nsSince(lastSpanClear) > 8'000'000) {
-                spanCache().clear();
-                lastSpanClear = Clock::now();
-            }
             if (submits % kEvery == 1)
                 LOG_INFO(Render_Vulkan, "VPKENGINE_GPU dma: {} packets without a GPU wait, {} after one (so far)",
                          dmaUnsynced, dmaSynced);
@@ -1142,7 +1236,7 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
         if (const u64 fa = e.fetchAddresses.address(st.code, st.userData, st.userSgprs)) {
             Engine::FetchBody& body = e.fetchBodies[(fa >> 2) % e.fetchBodies.size()];
             const auto* p = reinterpret_cast<const uint32_t*>(fa);
-            const u64 generation = spanCache().mapGen.load(std::memory_order_acquire);
+            const u64 generation = spanCache().generation();
             if (body.address == fa && body.generation == generation && body.words &&
                 std::memcmp(p, body.code.data(), 4ull * body.words) == 0) {
                 st.fetch = std::span<const uint32_t>(p, body.words);
@@ -1153,7 +1247,7 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
                     st.fetch = std::span<const uint32_t>(p, n);
                     if (n <= body.code.size()) {
                         body.address = fa;
-                        body.generation = generation;  // (read before readable(): a later clear() leaves it stale)
+                        body.generation = generation;  // (read before readable(): a later change of the map leaves it stale)
                         body.words = u32(n);
                         std::memcpy(body.code.data(), p, 4 * n);
                     }
@@ -1841,6 +1935,9 @@ kernel void vp_eye_stats(texture2d<float, access::read> t [[texture(0)]], device
         if (stats_busy.exchange(true)) return;
         const auto pso = stats_pso;
         const auto bufs = stats_buf;
+        // The reduction goes after the frames submitted before it: with the submit thread, they must
+        // have reached the backend (as in compose()).
+        e.device->drain();
         bool queued = false;
         e.device->withBackend([&] { queued = e.backend->encodeInterop(
             [&](void* cbp) {
