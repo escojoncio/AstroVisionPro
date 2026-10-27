@@ -1,46 +1,49 @@
 # Bitácora — AstroVisionPro
 
-ASTRO BOT Rescue Mission (CUSA12392) y KITCHEN (CUSA06799), PSVR, en Apple Vision Pro (visionOS 27). Base shadPS4 ARM64 + FEX (JIT) + VPKEngine (único renderer en visionOS). App en `visionos/`, release `visionos-latest/AstroQuest.ipa`.
-Detalle anterior a 2026-10-27 en `git log -p bitacora.md`.
+ASTRO BOT Rescue Mission (CUSA12392) y KITCHEN (CUSA06799), PSVR, en Apple Vision Pro (visionOS 27). Base shadPS4 ARM64 (HLE, cargador, kernel, PM4/Liverpool) + FEX (CPU, JIT) + VPKEngine (toda la GPU; único renderer en visionOS). App en `visionos/`, release `visionos-latest/AstroQuest.ipa`.
+Detalle anterior en `git log -p bitacora.md`. Detalle técnico estable de la ruta GPU PS4: `notas/vpkengine-ps4.md`.
 
 ## Last done
-- 2026-10-27 (VPKEngine unify/engine 7c1f1cf; ref → 7c1f1cf): ruta PS4 sobre el motor compartido de main (gpu/core, gpu/metal2, gpu/shader/{ir,msl,gcn}); `gpu/ps4/engine/` eliminado. Lo de PS4 entra en core/metal2 aditivo e inerte por defecto (LabelQueue, SubmitPolicy, hilo de envío, hold de dos regímenes con setters, expandedBy, completedFrames/waitFramesBelow/waitAll/encodeInterop/notifyFrameDone, caché de estado de render `MetalOptions::renderCache`). vpps4: keepSamples=true en todo StoreAndResolve, `constTables=false`, base_level de T# con vista [base..last] (`ViewRequest::baseMip/mips`; `ViewDesc::mips==0` = todos), sondas `vpps4.texprobe`/`vpps4.texfail` (300 primeros submits). 447 tests Linux.
-- 2026-10-27 (app): `vpkengine_renderer.mm` sobre vpgpu/metal2 (renderCache on, hold 12 ms/120 frames por setters, view copia baseMip/mips); watcher de `owned` liberado una vez por clave (crash KITCHEN page_manager.cpp:91); `HostMapGeneration()` separada (Protect/NameVirtualRange/SetDirectMemoryType ya no vacían la SpanCache; contadores por tipo en `cpu region caches`); FEX CreateThread/DestroyThread bajo GetCodeInvalidationMutex, `L2Pointer==~0` → ENOMEM, línea `BACHATA_FEX_THREAD` (live, process_va_mb); `fex-darwin.patch`: VirtualMemSize 1<<35 (crash ASTRO MicrophoneThread: mmap de LookupCache fallido, unverified); CMake y huella de CI con gpu/core, metal2, ps4, shader; `-framework ImageIO`.
-- 2026-10-27 (VPKEngine c7737aa; ref → c7737aa): `gpu/ps4/src/renderer.cpp` `Impl::resolve()`: clear pendiente del destino (o su compañero MS) se descarta si el resolve lo cubre entero, si no `flushClear(*to)` antes de resolver (antes se emitía después y borraba el resolve → ojos negros con MSAA; con MSAA 1x había imagen); origen del resolve prefiere target MS solo en empate de `lastUse`; contadores `resolveDestClearDropped/Flushed`; 5 tests en `tests/msaa_tests.cpp`.
-- 2026-10-27 (app 71acabd): ASTRO_CRASH también al log del emulador (`Common::Log::WriteRaw`, fd del sink), «last HLE syscall» frente a «guest rip at fault» (`BachataQueryGuestRipAtHostPc` → FEX `RestoreRIPFromHostPC`, límites de `JitArena`), dladdr en código host, HLE en curso, guarda de reentrada; `sceSystemServiceReportAbnormalTermination` registra registros + `DumpGuestState` (3 primeras), sigue devolviendo OK (no hay salida limpia del juego en visionOS).
-- 2026-10-27 (VPKEngine ps4/integration 119e02a..f33783c; `visionos/vpkengine-gpu.ref` → f33783c): anillo GSVS al layout de hardware (`gcn/src/lift.cpp` liftRing/gsEmit: planos de 64 B, grupos de 16 lanes; test `gcn.geom.astro` con palabras reales) → causa de ojos negros de ASTRO (posición (x,0,0,0)); caché de 8 regiones en vpps4 `Impl::region()`; hold en dos regímenes (`core/src/device.cpp` takeFrame: calentamiento 1500 ms/120 frames/10 s, estable `VPKENGINE_HOLD_MS`=12 ms solo draws; Dispatch/ES/GS siempre completo; `Draw::expandedBy` → `expansion_pending`); port metal2 de main 48ba0cf, c06a96a, f6f2de5 (parcial), a7136b6, d2ab444 (parcial); sondas `backingAt`/`DrawProbe`.
-- 2026-10-27 (app): `vpkengine_renderer.mm`: SpanCache por `MappingGeneration()` (sin vaciado cada 8 ms; negativos cacheados; reintento de mirror 16 ms), `framesInFlight` 3 (`VPKENGINE_FRAMES_IN_FLIGHT`), líneas `cpu region caches` y `cpu submit phases`, drain antes de EYE_STATS, sondas `EYE_CHAIN` (siempre) / `EYE_PS`, `EYE_GS` (diagnóstico).
-- 2026-10-27 (app): pad `ReadStates` → `DrainNewest` (sin backlog de 64), `PushMotionState`, sonda `CrossProbe` (flanco de Cross → entrega, ms); `hmd_setup_dialog_state.h`: máquina de estados real (sin Open nunca FINISHED; VrServiceDialog sin cambio); `signals.cpp` `DescribeGuest` (GPR, código guest ±0x40 con módulo+offset) + anillo de 32 HLE por hilo (`fex_hle_bridge.cpp`).
-- 2026-10-27: bitácora compactada; mapa estable a `notas/mapa.md`.
-- 2026-10-20: `ps4/integration` une ramas state, coherence, tiling, msaa, gs, cpucost, submit, pm4 (VPKEngine `PROGRESS-integration.md`).
+- 2026-10-27 build 51cfaae (CI OK): primera build con la ruta PS4 sobre el VPKEngine unificado (rama `unify/engine` 7c1f1cf, NO fusionada en main de VPKEngine; `visionos/vpkengine-gpu.ref` → 7c1f1cf).
+- 2026-10-27 VPKEngine `unify/engine`: vpps4 (`gpu/ps4`) usa `gpu/core`, `gpu/metal2`, `gpu/shader/{ir,msl,gcn}` de main; `gpu/ps4/engine/` borrado. Funciones de PS4 añadidas a core/metal2 aditivas e INERTES por defecto (VPVulkan/Alyx/VQP sin cambio; test `gpu_core.defaults`). 447 tests Linux OK. Detalle en notas.
+- 2026-10-27 app: watcher de `owned` una vez por clave (crash KITCHEN `page_manager.cpp:91` «Not enough watchers»); `HostMapGeneration()` (SpanCache ya no se vacía con Protect/NameVirtualRange/SetDirectMemoryType: antes 750 vaciados/s en ASTRO); FEX `CreateThread`/`DestroyThread` bajo `GetCodeInvalidationMutex`, `L2Pointer==~0` → ENOMEM, línea `BACHATA_FEX_THREAD`; `fex-darwin.patch` VirtualMemSize 1<<35; hook `view` copia `baseMip`/`mips`.
+- 2026-10-27 vpps4: `Impl::resolve()` vuelca/descarta el clear pendiente del destino ANTES del resolve (antes lo borraba después → ojos negros con MSAA); anillo GSVS con layout de hardware (antes posición (x,0,0,0)); caché de 8 regiones; base_level de T# con vista [base..last]; sondas `vpps4.texprobe`/`vpps4.texfail`.
+- 2026-10-27 app: pad sin backlog (`DrainNewest`; Cross llega en 3–172 ms); `HmdSetupDialog` con máquina de estados real; ASTRO_CRASH completo al log del emulador (rip guest real vía FEX `RestoreRIPFromHostPC`, dladdr, últimas 32 HLE); `ReportAbnormalTermination` registra estado (sigue devolviendo OK).
 
-## Current state
-- Funciona: arranque bajo FEX, menús de ASTRO BOT con VPKEngine (historial), audio, mando, pantalla plana en el visor, diálogos VR HLE.
-- Diagnóstico log 2026-10-27 (antes de los arreglos): ASTRO en VR ~10 fps, todos los draws hechos, target de ojo a ceros (bug GSVS); `buffer lookup` ~487 ms/s (vm_region tras vaciados de caché); KITCHEN presenta pantalla plana y cae a los ~5 s con null en código del juego (eboot+0x1acd37e) tras UpdateStatus sin Open; `gpu-hang-*.metal` de otra ejecución (VS raymarch con bucle hasta vp_guard 65536).
-- Build 51cfaae (CI OK, primera build sobre VPKEngine unificado 7c1f1cf; release 13:19Z): pendiente de probar con MSAA 4x (EYE_CHAIN, vpps4.texprobe/texfail, BACHATA_FEX_THREAD, map mutations).
-- Build fd86995 probada (logs 12:55, MSAA 1x): logo de Sony repetido 3-4 veces; crash KITCHEN page_manager.cpp:91; crash ASTRO en FEX LookupCache (MicrophoneThread).
-- Build b707d90 probada (logs 10:31–10:46): Cross llega en 3–172 ms; KITCHEN pasa el diálogo, muestra 2D y cae (ReportAbnormalTermination de WorkerThread → nulo colateral en GameThread); ASTRO ojos negros con MSAA 4x (EYE_CHAIN: fuente = resolve de `color_*_ms` a 0), con imagen con MSAA 1x y crash en código host al crear MicrophoneThread (HLE sin identificar).
-- Reunificación con VPKEngine main: plan hecho (fase 1 core+metal2+vpps4+app, fase 2 ir/msl/gcn); base común real 7db7cd2; a metal2 de main le faltan completedFrames/waitFramesBelow/waitAll/encodeInterop/notify de frame; riesgo de doble decisión memoryless/stores (vpps4 lifetime frente a core de main).
-- Auditoría GCN/MSL (sin cambios): `gpu-hang-*.metal` vienen del camino SPIR-V/Vulkan (`gpu/shader/spirv/src/lower.cpp`, guard 65536 `gpu/vulkan/src/recipes.h:87`), no del lifter GCN. Pendientes (unverified): `int(x)` sin saturar en `lower.cpp:3151-3168`; `max/min` en vez de `fmax/fmin` (`ps4/engine/msl/src/msl.cpp:921`) con `MTLMathModeFast`; guard por etapa; CB sin alinear copiado al grabar (`gpu/ps4/src/renderer.cpp:3243`, `alignedConstantCopy` :584) no ve escrituras GPU del mismo frame (320/frame en ASTRO) → posible constante vieja.
-- Retraso de entrada de 30–60 s: cola de pad explica ~0,5 s; resto probablemente carga lenta (primer frame a ~27 s) (unverified).
-- VPKEngine vp4 (`gpu/ps4/engine/*`) es copia aislada de `gpu/metal2` (merge-base `7db7cd2`); core vp4 divergido ~800 líneas (label_queue, submit_policy, Scheduler). No portado de main: 7538816 (choca con RenderCache vp4), 308ccb2, memoria/MSAA (política en core), 51b78be. Reunificación completa: siguiente paso si hay imagen.
-- No existe caché en disco de MTLLibrary (newLibraryWithSource en cada arranque, ms_max 252); opción: cachear el MSL traducido.
-- Ramas `ps4/*` en este repo y en VPKEngine: integradas en `ps4/integration`; main de este repo apunta a ese ref.
-- Sin implementar: PS Move; posición del mando sin manos; ImGui (diálogos del sistema no se ven con VPKEngine).
+## Current state (log Registros_9, build 51cfaae, 2026-10-27 15:00 — SIN ANALIZAR aún)
+- Logs en el adjunto `Registros_9.zip` del usuario (7 ficheros consola-*/emulador-* 14:59–15:03). Análisis pendiente: hacerlo primero.
+- MSAA 4x: sin imagen y crash (ASTRO y KITCHEN). Causa unverified.
+- MSAA 1x: ASTRO dibuja la intro 3D (logo PlayStation VR) con geometría e iluminación, pero corrupción masiva: copias de la geometría acumuladas y superpuestas, «TM» repetido, bandas/dientes, ojos mezclados. Captura del usuario lo confirma.
+- Hipótesis principal (unverified): los clears no llegan → cada frame se pinta encima del anterior. Candidatos, por orden:
+  1. Fast clears CMASK/HTILE: `EliminateFastClear` y `FmaskDecompress` son no-op en `vpkengine_renderer.mm`; si el título borra con fast clear + eliminate, el color nunca se borra.
+  2. Semántica cambiada por la unificación: `memValid` de core de main convierte Load de contenido «indefinido» en DontCare; `placeTiles`/TileLocal/memoryless/HeavyGeometry de main frente a la política de `gpu/ps4/src/lifetime.cpp`; comparar decisiones load/store/clear con vp4 (VPKEngine `ps4/integration` c7737aa, `gpu/ps4/engine/{core,metal}`).
+  3. Descarte de clear pendiente en `Impl::resolve()` (nuevo hoy) cuando el destino se reutiliza.
+  4. Ojos mezclados: comprobar si ambos ojos acaban en el mismo target o `ComposeEyes` lee mal (`PRESENT eye`, `EYE_CHAIN`).
+- Reproducir offline con NullBackend/CaptureBackend: frame con clear + draws dos veces seguidas, mirar acciones load/store.
+- Logo de Sony repetido 3–4 veces (build fd86995, MSAA 1x): causa no confirmada; la build 51cfaae trae `vpps4.texprobe`/`texfail` para cerrarla. Tiling revisado contra shadPS4 sin fallos.
+- Rendimiento (fd86995, MSAA 1x): ASTRO ~12 fps, KITCHEN ~8 fps a 100 Hz. `backend submit` 111–241 ms/s; GPU no medida aún con el motor unificado.
+- Crash ASTRO MicrophoneThread: FEX LookupCache con `L1Pointer=0xfffffff` = mmap fallido (~272 MB VA por hilo FEX); mitigado (ENOMEM, VA 208 MB/hilo); confirmar con `BACHATA_FEX_THREAD` (process_va_mb, live, errno). Entitlements extended-virtual-addressing/increased-memory-limit presentes en `AstroQuest.entitlements` (unverified si la firma SideStore los conserva).
+- KITCHEN: tras arreglar el diálogo y el watcher, comprobar si sigue cayendo.
+
+## Pendiente (orden)
+1. Analizar Registros_9: crash 4x, corrupción 1x (clears), ojos mezclados, texprobe del logo, `cpu submit phases`, `cpu region caches` (map mutations), `BACHATA_FEX_THREAD`.
+2. Arreglos generales → revisión adversarial → una build.
+3. Rendimiento GPU: memoryless/MSAA del core de main, caché de MTLLibrary en disco (no existe: `newLibraryWithSource` en cada arranque), coste de `backend submit`, CB sin alinear copiados al grabar (`gpu/ps4/src/renderer.cpp` `alignedConstantCopy`, 320/frame).
+4. Fusionar `unify/engine` en main de VPKEngine solo cuando la ruta PS4 funcione (otras sesiones trabajan en main para Alyx/VQP).
+5. Futuro (decidido: seguir con shadPS4 mientras el rendimiento sea suficiente): PM4/Gnm/VideoOut en VPKEngine; CPU AOT de VPKEngine (variante sin JIT, aparcada desde 2026-10-09) solo si la CPU limita.
 
 ## Decisions
-- VPKEngine es el único renderer en visionOS; KosmicKrisp/MoltenVK fuera (código Vulkan aún enlazado).
-- Arreglos generales de GPU PS4, nunca por juego; KITCHEN y ASTRO son pruebas del mismo emulador.
-- No más cambios en KosmicKrisp.
-- Diagnóstico solo con «Modo diagnóstico»; lo medido va fijo en `AstroSettings.environment`.
-- Builds solo visionOS (`xros` + simulador), nunca macOS.
+- VPKEngine es el único renderer en visionOS; KosmicKrisp/MoltenVK descartados (KK no era jugable: ~10 fps).
+- Arreglos generales de GPU PS4, nunca por juego, dirección ni hash.
+- Lo de PS4 en el motor compartido entra opt-in (setters/env); defaults = comportamiento de main.
+- `constTables=false` para PS4 hasta tener imagen estable; `MetalOptions::renderCache=true` solo para PS4.
+- shadPS4 se mantiene para HLE/kernel/PM4 mientras rinda.
+- Diagnóstico solo con «Modo diagnóstico» salvo EYE_STATS/EYE_CHAIN; builds solo visionOS.
 
 ## Files in play
-- `shadps4-arm64-main/src/platform/visionos/vpkengine_renderer.{h,mm}`, `vpkengine_mirror.cpp`, `vpkengine_presenter.{h,cpp}`
-- `shadps4-arm64-main/src/video_core/amdgpu/liverpool.cpp`, `video_core/rasterizer_interface.h`, `core/libraries/hmd/hmd_reprojection.cpp`
-- `shadps4-arm64-main/src/core/vr/openxr_host_visionos.mm`, `visionos/App/Render/GameRenderer.swift`
-- `visionos/vpkengine-gpu.ref`, `.github/workflows/visionos-app.yml`, `shadps4-arm64-main/CMakeLists.txt` (bloque `VPKENGINE_GPU_DIR`)
-- VPKEngine: `gpu/ps4/engine/metal/src/metal_backend.mm` (vp4) frente a `gpu/metal2/src/metal_backend.mm` (main)
+- App: `shadps4-arm64-main/src/platform/visionos/vpkengine_renderer.mm`, `core/fex/fex_guest_engine.cpp`, `core/memory.{h,cpp}`, `core/signals.cpp`, `shadps4-arm64-main/CMakeLists.txt` (bloque `VPKENGINE_GPU_DIR`), `visionos/vpkengine-gpu.ref`, `visionos/patches/fex-darwin.patch`, `.github/workflows/visionos-app.yml`.
+- VPKEngine (`unify/engine`): `gpu/ps4/src/{renderer,lifetime,msaa}.cpp`, `gpu/core/src/{device,frame_compiler}.cpp`, `gpu/metal2/src/metal_backend.mm`.
 
 ## Module index
-- `notas/mapa.md`: cadena CPU/GPU/presentación, dónde está cada función, logs de VPKEngine, app, CI y comprobación local.
+- `notas/mapa.md`: cadena CPU/GPU/presentación, dónde está cada función, logs, app, CI.
+- `notas/vpkengine-ps4.md`: ruta GPU PS4 sobre el motor unificado, causas ya resueltas, sondas, cómo medir, ramas y repos.
