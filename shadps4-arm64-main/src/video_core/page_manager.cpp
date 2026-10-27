@@ -232,23 +232,15 @@ struct PageManager::Impl {
     static bool GuestFaultSignalHandler(void* context, void* fault_address) {
         const auto addr = reinterpret_cast<VAddr>(fault_address);
         const bool is_write = Common::IsWriteError(context);
-        bool handled =
-            is_write ? rasterizer->InvalidateMemory(addr, 8) : rasterizer->ReadMemory(addr, 8);
 #if defined(SHADPS4_VISIONOS)
-        // The caches let go of the 4 KB page that was touched, but the host protects the whole
-        // 16 KB page around it, and that stays protected while any of its other 4 KB pages is
-        // still watched: the access would fault again, forever. They let go of all of them.
+        // The host protects the whole 16 KB page around the access, and that stays protected while
+        // anything in it is still watched, wherever in the page: the access would fault again,
+        // forever. The caches let go of everything in the page.
         const VAddr host_page = addr & ~static_cast<VAddr>(PM_PAGE_SIZE - 1);
-        const VAddr touched = addr & ~static_cast<VAddr>(TRACKED_PAGE_SIZE - 1);
-        for (VAddr sub = host_page; sub < host_page + PM_PAGE_SIZE; sub += TRACKED_PAGE_SIZE) {
-            if (sub == touched) {
-                continue;
-            }
-            handled |= is_write ? rasterizer->InvalidateMemory(sub, 8)
-                                : rasterizer->ReadMemory(sub, 8);
-        }
+        return rasterizer->InvalidateHostPage(host_page, PM_PAGE_SIZE, is_write);
+#else
+        return is_write ? rasterizer->InvalidateMemory(addr, 8) : rasterizer->ReadMemory(addr, 8);
 #endif
-        return handled;
     }
 #endif
 
@@ -439,6 +431,20 @@ struct PageManager::Impl {
     }
 #endif
 
+    bool IsWriteProtected(VAddr addr, u64 size) {
+        if (size == 0) {
+            return false;
+        }
+        for (size_t page = addr >> PM_PAGE_BITS; page <= (addr + size - 1) >> PM_PAGE_BITS;
+             ++page) {
+            std::scoped_lock lk(locks[page / PAGES_PER_LOCK]);
+            if (cached_pages[page].num_write_watchers != 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     std::array<PageState, NUM_ADDRESS_PAGES> cached_pages{};
 #ifdef PTHREAD_ADAPTIVE_MUTEX_INITIALIZER_NP
     using LockType = Common::AdaptiveMutex;
@@ -459,6 +465,10 @@ void PageManager::OnGpuMap(VAddr address, size_t size) {
 
 void PageManager::OnGpuUnmap(VAddr address, size_t size) {
     impl->OnUnmap(address, size);
+}
+
+bool PageManager::IsWriteProtected(VAddr addr, u64 size) const {
+    return impl->IsWriteProtected(addr, size);
 }
 
 template <bool track>

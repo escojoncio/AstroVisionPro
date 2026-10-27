@@ -39,6 +39,11 @@ public:
     virtual u32 ReadDataFromGds(u32 gsd_offset) = 0;
     virtual bool InvalidateMemory(VAddr addr, u64 size) = 0;
     virtual bool ReadMemory(VAddr addr, u64 size) = 0;
+    /// A CPU access faulted on the host page [page, page + size) (visionOS: 16 KB, protected whole).
+    /// Everything the renderer protects anywhere in the page is let go of. True if the access is retried.
+    virtual bool InvalidateHostPage(VAddr page, u64 size, bool write) {
+        return write ? InvalidateMemory(page, size) : ReadMemory(page, size);
+    }
     virtual bool IsMapped(VAddr addr, u64 size) = 0;
     virtual void MapMemory(VAddr addr, u64 size) = 0;
     virtual void UnmapMemory(VAddr addr, u64 size) = 0;

@@ -39,10 +39,13 @@
 #include "video_core/amdgpu/regs.h"
 #include "video_core/amdgpu/resource.h"
 #include "video_core/page_manager.h"
+#include "video_core/recent_ranges.h"
+#include "video_core/surface_metas.h"
 #include "vpgpu/core/device.h"
 #include "vpgpu/metal2/metal_backend.h"
 #include "vpps4/fetch.h"
 #include "vpps4/formats.h"
+#include "vpps4/msaa.h"
 #include "vpps4/renderer.h"
 #include "vpps4/scheduler.h"
 #include "vpgpu/core/submit_policy.h"
@@ -382,6 +385,14 @@ struct Engine {
     // whole address space is invalidated when they are applied. Dropping them would leave stale
     // textures and owners.
     bool pendingAll = false;
+    // Unmapped ranges: the surface metadata registered there is forgotten (applied with the invalidations, under the
+    // engine lock that `metas` is under; UnmapMemory cannot take it).
+    std::vector<std::pair<u64, u64>> pendingUnmaps;
+    void queueUnmap(u64 a, u64 n) {
+        while (pendingLock.test_and_set(std::memory_order_acquire)) {}
+        pendingUnmaps.push_back({a, n});
+        pendingLock.clear(std::memory_order_release);
+    }
     void queueInvalidate(u64 a, u64 n) {
         while (pendingLock.test_and_set(std::memory_order_acquire)) {}
         if (pendingAll) {
@@ -399,9 +410,12 @@ struct Engine {
         while (pendingLock.test_and_set(std::memory_order_acquire)) {}
         std::vector<std::pair<u64, u64>> work;
         work.swap(pending);
+        std::vector<std::pair<u64, u64>> unmapped;
+        unmapped.swap(pendingUnmaps);
         const bool all = pendingAll;
         pendingAll = false;
         pendingLock.clear(std::memory_order_release);
+        for (auto [a, n] : unmapped) metas.EraseRange(a, a + n);
         if (!renderer) return;
         if (all) {
             // Which ranges the CPU wrote is unknown: images ahead of memory are written back (and the GPU waited
@@ -419,6 +433,14 @@ struct Engine {
     }
     bool failed = false;
     u64 dmaUnsynced = 0, dmaSynced = 0;  // DMA packets done on the CPU without / after a GPU wait
+
+    // Fast clear metadata (CMASK / HTILE) of the targets drawn so far, under `lock` (the same semantics as the
+    // Vulkan backend's TextureCache::surface_metas). The host keeps no compression metadata: a title that
+    // clears a target by writing its metadata gets a real clear before the next draw into the target.
+    VideoCore::SurfaceMetas metas;
+    // Totals for the "vpps4.meta" line: metadata cleared by a compute shader / by DMA, FCE passes that found
+    // the target still cleared, clears applied (colour, depth) and the RectList draws that carried them out.
+    u64 metaCs = 0, metaDma = 0, metaEliminates = 0, metaColorClears = 0, metaDepthClears = 0, metaClearDraws = 0;
 
     // CPU time of the GPU thread, in ns, printed every ~2 s (VPKENGINE_GPU cpu:). Atomics: the
     // presenter submits too, and draw timers stop after the engine lock is released.
@@ -620,6 +642,22 @@ struct Engine {
             return backend->createView(r.base, d);
         };
         hooks.destroyView = [this](vpgpu::TextureId v) { backend->destroyView(v); };
+        // A compute shader that writes metadata without address arithmetic (no xor) clears it: the dispatch is left
+        // out and the metadata marked cleared. One that reads metadata is a copy shader and runs.
+        // (not asked while no target has metadata: the renderer then prepares nothing for it)
+        hooks.computeBuffersWanted = [this] { return !metas.Empty(); };
+        hooks.computeBuffers = [this](std::span<const vpps4::ComputeBuffer> buffers, bool usesXor, bool complete) {
+            if (!complete) return false;  // (it may touch memory the span does not say: it runs)
+            for (const vpps4::ComputeBuffer& b : buffers)
+                if (!b.written && metas.IsMeta(b.address)) return false;
+            if (usesXor) return false;
+            for (const vpps4::ComputeBuffer& b : buffers)
+                if (b.written && metas.ClearAll(b.address)) {
+                    ++metaCs;
+                    return true;
+                }
+            return false;
+        };
         // Opt-in (VPK_SUBMIT_THREAD=1): frame encoding on its own thread. Not on by default: the Metal
         // backend was written for one thread that creates resources and submits.
         if (const char* t = std::getenv("VPK_SUBMIT_THREAD"); t && *t && *t != '0') device->startSubmitThread(2);
@@ -636,6 +674,16 @@ struct Engine {
                 LOG_INFO(Render_Vulkan, "VPKENGINE_GPU dma: {} packets without a GPU wait, {} after one (so far)",
                          dmaUnsynced, dmaSynced);
             renderer->drainOcclusion(false);  // ZPASS_DONE results of frames that finished
+            if (submits % 600 == 1) {
+                const auto& handled = renderer->stats().handled;
+                const auto rect = handled.find("rect list clear");
+                const u64 rectDraws = rect == handled.end() ? 0 : rect->second;
+                LOG_INFO(Render_Vulkan,
+                         "VPKENGINE_GPU vpps4.meta cs_meta_writes={} dma_meta_writes={} eliminates={} color_clears={} "
+                         "depth_clears={} rect_list_clears={} (totals)",
+                         metaCs, metaDma, metaEliminates, metaColorClears, metaDepthClears,
+                         rectDraws > metaClearDraws ? rectDraws - metaClearDraws : 0);
+            }
             flushLeftOut();
             report();
         });
@@ -712,6 +760,13 @@ vpps4::ColorTarget colorTarget(const AmdGpu::Regs& regs, unsigned i) {
     c.fastClear = cb.info.fast_clear;
     c.clearWord = {cb.clear_word0, cb.clear_word1};
     return c;
+}
+
+// Whether the clear words of a target decode to the colour it clears to (fastClearColor; not for every format).
+bool fastClearDecodes(const vpps4::ColorTarget& c) {
+    bool exact = true;
+    vpps4::fastClearColor(c.format, c.numberType, c.compSwap, c.clearWord, exact);
+    return exact;
 }
 
 // Counts of draws left out before the renderer, by reason (logged the first time each). Reasons are
@@ -879,14 +934,12 @@ struct Rasterizer::Impl {
             if (it->first + it->second > a) return true;
         return false;
     }
-    // Ranges let go of lately: a second thread faulting on the same page finds the watch gone
-    // already, and its access must still count as handled.
-    std::array<std::pair<VAddr, u64>, 64> released{};
-    u32 released_next = 0;
+    // Ranges let go of lately (watch_mutex): a second thread faulting on the same page finds the watch
+    // gone already, and its access counts as handled if the page can be written now. Kept for a short
+    // time only (like releasedOwned), so an access that faults for another reason is not retried for ever.
+    VideoCore::RecentRanges<64> released;
     bool recentlyReleased(VAddr a, u64 n) {
-        for (const auto& [s, z] : released)
-            if (z && s < a + n && s + z > a) return true;
-        return false;
+        return released.Overlaps(a, n, std::chrono::steady_clock::now(), std::chrono::milliseconds(200));
     }
 
     Impl(Rasterizer* self, AmdGpu::Liverpool* lp) : liverpool{lp}, page_manager{self} {}
@@ -900,16 +953,24 @@ struct Rasterizer::Impl {
         return addr >= it->first && addr + size <= it->second;
     }
 
+    // Whether any of [addr, addr + size) is mapped.
+    bool anyMapped(VAddr addr, u64 size) {
+        std::scoped_lock l{mapped_mutex};
+        auto it = mapped.upper_bound(addr);
+        if (it != mapped.begin() && std::prev(it)->second > addr) return true;
+        return it != mapped.end() && it->first < addr + size;
+    }
+
     void watch(VAddr a, u64 n) {
         if (!isMapped(a, n)) return;
-        {
-            std::scoped_lock l{watch_mutex};
-            auto [it, inserted] = watched.try_emplace(a, n);
-            if (!inserted) {
-                if (it->second == n) return;  // already watched
-                page_manager.UpdatePageWatchers<false>(a, it->second);
-                it->second = n;
-            }
+        // (entry and protection change together under watch_mutex, the order invalidate takes the locks in:
+        // it cannot release an entry whose page is not protected yet, nor leave a watcher without an entry)
+        std::scoped_lock l{watch_mutex};
+        auto [it, inserted] = watched.try_emplace(a, n);
+        if (!inserted) {
+            if (it->second == n) return;  // already watched
+            page_manager.UpdatePageWatchers<false>(a, it->second);
+            it->second = n;
         }
         page_manager.UpdatePageWatchers<true>(a, n);
     }
@@ -917,28 +978,33 @@ struct Rasterizer::Impl {
     // CPU wrote [a, a + n): textures read from there are refilled, their watches dropped (the
     // pages are written freely until a texture is filled from them again).
     bool invalidate(VAddr a, u64 n) {
-        std::vector<std::pair<VAddr, u64>> hit;
-        {
-            std::scoped_lock l{watch_mutex};
-            // (a texture starts at most 1 GiB below what it spans)
-            auto it = watched.lower_bound(a > (1ull << 30) ? a - (1ull << 30) : 0);
-            while (it != watched.end() && it->first < a + n) {
-                if (it->first + it->second > a) {
-                    hit.push_back(*it);
-                    released[released_next++ % released.size()] = *it;
-                    it = watched.erase(it);
-                } else {
-                    ++it;
+        bool any = false;
+        // (a second round if the page is still protected: a watch added after the first one, by a texture filled
+        // from the same page, is released too, the CPU is writing there)
+        for (int round = 0; round < 2; ++round) {
+            {
+                std::scoped_lock l{watch_mutex};
+                // (a texture starts at most 1 GiB below what it spans)
+                auto it = watched.lower_bound(a > (1ull << 30) ? a - (1ull << 30) : 0);
+                while (it != watched.end() && it->first < a + n) {
+                    if (it->first + it->second > a) {
+                        any = true;
+                        released.Note(it->first, it->second, std::chrono::steady_clock::now());
+                        // (unprotected before watch_mutex is let go: a second thread that finds the range
+                        // in `released` finds the page open, not still being opened by this one)
+                        page_manager.UpdatePageWatchers<false>(it->first, it->second);
+                        engine().queueInvalidate(it->first, it->second);
+                        it = watched.erase(it);
+                    } else {
+                        ++it;
+                    }
                 }
+                if (!any && !recentlyReleased(a, n)) return false;
             }
+            // (handled only if the pages are writable now; else the fault is left to show itself)
+            if (!page_manager.IsWriteProtected(a, n)) return true;
         }
-        for (auto [s, z] : hit) {
-            page_manager.UpdatePageWatchers<false>(s, z);
-            engine().queueInvalidate(s, z);
-        }
-        if (!hit.empty()) return true;
-        std::scoped_lock l{watch_mutex};
-        return recentlyReleased(a, n);
+        return any;
     }
 
     // ---- Memory an image on the GPU is ahead of --------------------------------------------------
@@ -968,11 +1034,11 @@ struct Rasterizer::Impl {
     void noteReleasedOwned(VAddr a, u64 n) {  // owned_mutex held
         releasedOwned[releasedOwnedNext++ % releasedOwned.size()] = {a, n, std::chrono::steady_clock::now()};
     }
-    bool recentlyReleasedOwned(VAddr addr) {
+    bool recentlyReleasedOwned(VAddr addr, u64 n) {
         std::scoped_lock l{owned_mutex};
         const auto now = std::chrono::steady_clock::now();
         for (const auto& r : releasedOwned)
-            if (r.size && addr >= r.start && addr < r.start + r.size && now - r.at < std::chrono::milliseconds(200)) return true;
+            if (r.size && r.start < addr + n && r.start + r.size > addr && now - r.at < std::chrono::milliseconds(200)) return true;
         return false;
     }
 
@@ -998,12 +1064,12 @@ struct Rasterizer::Impl {
         }
     }
 
-    // The owned ranges that contain `addr`.
-    std::vector<std::pair<VAddr, u64>> ownedAt(VAddr addr) {
+    // The owned ranges that overlap [addr, addr + n).
+    std::vector<std::pair<VAddr, u64>> ownedIn(VAddr addr, u64 n) {
         std::vector<std::pair<VAddr, u64>> hit;
         std::scoped_lock l{owned_mutex};
         auto it = owned.lower_bound({addr > (1ull << 30) ? addr - (1ull << 30) : 0, 0});
-        for (; it != owned.end() && it->first.first <= addr; ++it)
+        for (; it != owned.end() && it->first.first < addr + n; ++it)
             if (addr < it->first.first + it->first.second) hit.push_back(it->first);
         return hit;
     }
@@ -1027,8 +1093,9 @@ struct Rasterizer::Impl {
     // The CPU touched memory an image is ahead of (`write`: it is about to write it). The renderer
     // writes the images over it back, the GPU finishes that, and the pages are released; a CPU write
     // then changes bytes the image does not have, so the images are told (they are filled again).
-    // True if the access belonged to an owned range (the access is retried).
-    bool resolveOwned(VAddr addr, bool write);
+    // True if the access belonged to an owned range (the access is retried). The access is the
+    // bytes [addr, addr + n).
+    bool resolveOwned(VAddr addr, u64 n, bool write);
 };
 
 Rasterizer::Rasterizer(AmdGpu::Liverpool* liverpool) : impl{std::make_unique<Impl>(this, liverpool)} {
@@ -1066,10 +1133,11 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
     const auto& regs = impl->liverpool->regs;
     using Mode = AmdGpu::ColorControl::OperationMode;
     switch (regs.color_control.mode) {
-    // No-ops by design: the host keeps no CMASK/FMASK compression (a fast clear is a real clear, an FMask
-    // read is the identity map), so there is nothing to eliminate or decompress.
-    case Mode::EliminateFastClear:
+    // No-op by design: the host keeps no FMASK compression (an FMask read is the identity map).
     case Mode::FmaskDecompress: return;
+    // The host keeps no CMASK either: eliminating the fast clear is the clear itself, done below with the targets
+    // (when the title cleared the metadata and no draw has used the target since).
+    case Mode::EliminateFastClear: break;
     case Mode::Resolve: {
         if (!regs.color_buffers[0] || !regs.color_buffers[1]) return;
         Engine& e = engine();
@@ -1086,6 +1154,7 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
     }
     default: break;
     }
+    const bool eliminate = regs.color_control.mode == Mode::EliminateFastClear;
     if (regs.primitive_type == AmdGpu::PrimitiveType::None) return;
     auditContextRegs(regs);
     // Pipeline kinds: VS only, ES+GS+copy VS (run by VPKEngine as compute + a normal draw). LS/HS
@@ -1111,7 +1180,10 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
     e.applyPending();
     vpps4::DrawState d;
 
-    // Targets.
+    // Targets. The ones a title cleared by writing their fast clear metadata (see Engine::metas) are cleared
+    // before this draw, as the Vulkan backend does with the load action of the pass.
+    std::array<bool, 8> clearColor{};
+    bool clearDepth = false;
     if (regs.color_control.mode != Mode::Disable)
         for (unsigned i = 0; i < 8; ++i) {
             const auto& cb = regs.color_buffers[i];
@@ -1139,6 +1211,14 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
             bl.alphaDst = uint8_t(b.alpha_dst_factor);
             bl.alphaFunc = uint8_t(b.alpha_func);
             bl.disableRop3 = b.disable_rop3;
+            if (cb.info.fast_clear && cb.CmaskAddress()) e.metas.Register(VideoCore::SurfaceMetas::Type::CMask, cb.CmaskAddress());
+            if (cb.info.compression && cb.FmaskAddress()) e.metas.Register(VideoCore::SurfaceMetas::Type::FMask, cb.FmaskAddress());
+            // (a clear colour that cannot be decoded is not applied, and the metadata is left alone: the target is
+            // drawn as it was before the host tracked fast clears, not cleared to a colour that is not the title's)
+            if (!eliminate && fastClearDecodes(c)) {
+                clearColor[i] = e.metas.IsCleared(cb.CmaskAddress(), cb.BaseSlice());
+                e.metas.Touch(cb.CmaskAddress(), cb.BaseSlice(), false);
+            }
         }
     d.rop3 = uint8_t(regs.color_control.rop3);
     d.degamma = regs.color_control.degamma_enable;
@@ -1184,6 +1264,13 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
         d.depth.boundsMax = regs.depth_bounds_max;
         d.depth.depthCopy = regs.depth_render_control.depth_copy;
         d.depth.copySample = uint8_t(regs.depth_render_control.copy_sample);
+        if (!eliminate) {
+            const VAddr htile = regs.depth_htile_data_base.GetAddress();
+            const u32 slice = regs.depth_view.slice_start;
+            if (db.z_info.tile_surface_enable && htile) e.metas.Register(VideoCore::SurfaceMetas::Type::HTile, htile);
+            clearDepth = db.DepthValid() && !d.depth.depthClear && e.metas.IsCleared(htile, slice);
+            e.metas.Touch(htile, slice, false);
+        }
     }
     const auto& dc = regs.depth_control;
     d.depthStencil.depthTest = dc.depth_enable;
@@ -1203,6 +1290,41 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
                            uint8_t(sc.stencil_zfail_back), regs.stencil_ref_back.stencil_test_val,
                            regs.stencil_ref_back.stencil_mask, regs.stencil_ref_back.stencil_write_mask,
                            regs.stencil_ref_back.stencil_op_val};
+
+    // The clears the metadata asks for, as a RectList draw of the same targets (vpps4 turns it into the load action
+    // of the next pass into them): a fast clear to the target's clear words, a depth clear to DB_DEPTH_CLEAR (the
+    // depth plane only). An FCE pass clears colour target 0 alone, every slice, and draws nothing else.
+    if (eliminate) {
+        const auto& cb = regs.color_buffers[0];
+        clearColor = {};
+        if (cb && cb.info.fast_clear && fastClearDecodes(d.color[0]) && e.metas.IsCleared(cb.CmaskAddress(), cb.view.slice_start)) {
+            for (u32 slice = cb.view.slice_start; slice <= cb.view.slice_max; ++slice)
+                e.metas.Touch(cb.CmaskAddress(), slice, false);
+            clearColor[0] = true;
+            ++e.metaEliminates;
+        }
+    }
+    if (clearDepth || std::any_of(clearColor.begin(), clearColor.end(), [](bool b) { return b; })) {
+        vpps4::DrawState clear = d;
+        clear.primitive = vpps4::PrimitiveType::RectList;
+        clear.count = 3;
+        clear.instances = 1;
+        for (unsigned i = 0; i < 8; ++i) {
+            clear.color[i].fastClear = clearColor[i];
+            if (clearColor[i]) clear.color[i].writeMask = 0xF;  // (an FCE shader exports nothing: its mask may be empty)
+            e.metaColorClears += clearColor[i];
+        }
+        clear.depth.depthClear = clearDepth;
+        clear.depth.stencilClear = false;
+        clear.depth.depthCopy = false;
+        e.metaDepthClears += clearDepth;
+        ++e.metaClearDraws;
+        e.renderer->draw(clear);
+    }
+    if (eliminate) {
+        e.noteWork();
+        return;
+    }
 
     // Rasterizer state.
     const auto& vp = regs.viewports[0];
@@ -1425,6 +1547,13 @@ void Rasterizer::FillBuffer(VAddr address, u32 num_bytes, u32 value, bool is_gds
         }
         return;
     }
+    // A fill of HTILE with cleared entries is a depth clear: noted, the fill itself is left out. Any other fill
+    // of a metadata surface marks it cleared (and is done).
+    if (value != 0 && e.metas.TryHtileClear(address, std::span{&value, 1})) {
+        ++e.metaDma;
+        return;
+    }
+    if (e.metas.ClearAll(address)) ++e.metaDma;
     // DMA runs on the CPU, in order: the command processor and the title may read the result
     // right after this packet (e.g. PM4 or shader code assembled by DMA, then an IndirectBuffer),
     // which a blit queued for the end of the frame would not have written yet. Memory is unified,
@@ -1468,6 +1597,16 @@ void Rasterizer::CopyBuffer(VAddr dst, VAddr src, u32 num_bytes, bool dst_gds, b
         }
         return;
     }
+    // A copy of HTILE entries that are mostly cleared (a template the title prepared) is a depth clear: noted,
+    // the copy itself is left out.
+    if (e.metas.IsHtile(dst)) {
+        e.syncForDma(src, num_bytes);
+        if (readable(src, num_bytes) >= num_bytes &&
+            e.metas.TryHtileClear(dst, std::span{reinterpret_cast<const u32*>(src), num_bytes / sizeof(u32)})) {
+            ++e.metaDma;
+            return;
+        }
+    }
     // On the CPU and in order, for the same reason as FillBuffer (synced only when needed).
     e.syncForDma(src, num_bytes, dst, num_bytes);
     if (readable(src, num_bytes) < num_bytes || readable(dst, num_bytes) < num_bytes) {
@@ -1490,8 +1629,18 @@ u32 Rasterizer::ReadDataFromGds(u32 gds_offset) {
 
 bool Rasterizer::InvalidateMemory(VAddr addr, u64 size) {
     if (!impl->isMapped(addr, std::max<u64>(size, 1))) return false;
-    const bool owned = impl->resolveOwned(addr, true);
+    const bool owned = impl->resolveOwned(addr, 1, true);
     return impl->invalidate(addr, std::max<u64>(size, 1)) || owned;
+}
+
+// A CPU access faulted on the host page [page, page + size): the host protects it whole, so
+// everything watched or owned anywhere in it is let go of (a watch that starts elsewhere in the page
+// than the access keeps the page protected, and the access faults for ever). Letting go of more than
+// the access touched costs a refill of the texture, not a wrong picture.
+bool Rasterizer::InvalidateHostPage(VAddr page, u64 size, bool write) {
+    if (!impl->anyMapped(page, size)) return false;
+    const bool owned = impl->resolveOwned(page, size, write);
+    return (write && impl->invalidate(page, size)) || owned;
 }
 
 // The CPU read memory that an image on the GPU is ahead of (render targets are not written back by
@@ -1499,13 +1648,13 @@ bool Rasterizer::InvalidateMemory(VAddr addr, u64 size) {
 // read is retried.
 bool Rasterizer::ReadMemory(VAddr addr, u64 size) {
     if (!impl->isMapped(addr, std::max<u64>(size, 1))) return false;
-    return impl->resolveOwned(addr, false);
+    return impl->resolveOwned(addr, 1, false);
 }
 
-bool Rasterizer::Impl::resolveOwned(VAddr addr, bool write) {
-    const auto hit = ownedAt(addr);
+bool Rasterizer::Impl::resolveOwned(VAddr addr, u64 n, bool write) {
+    const auto hit = ownedIn(addr, n);
     // (another thread resolved this page between the fault and here: the access is retried)
-    if (hit.empty()) return recentlyReleasedOwned(addr);
+    if (hit.empty()) return recentlyReleasedOwned(addr, n);
     Engine& e = engine();
     bool stillAhead = false;
     {
@@ -1603,6 +1752,7 @@ void Rasterizer::UnmapMemory(VAddr addr, u64 size) {
     // The memory is gone whatever was watched there: the tracker forgets what it knew (stale owners
     // included) and textures made from it are refilled if the range is mapped again.
     engine().queueInvalidate(addr, size);
+    engine().queueUnmap(addr, size);
     impl->dropOwned(addr, size);
     impl->page_manager.OnGpuUnmap(addr, size);
     std::scoped_lock l{impl->mapped_mutex};

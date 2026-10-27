@@ -47,6 +47,9 @@ public:
     template <bool track>
     void UpdateReadWatchers(VAddr addr, u64 size) const;
 
+    /// Whether a host page touching [addr, addr + size) has write watchers (is not writable).
+    bool IsWriteProtected(VAddr addr, u64 size) const;
+
     /// Updates watches in the pages touching the specified region using a mask.
     template <bool track, bool is_read = false>
     void UpdatePageWatchersForRegion(VAddr base_addr, RegionBits& mask) const;
