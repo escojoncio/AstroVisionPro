@@ -38,16 +38,19 @@ std::mutex& mutex() {
     static std::mutex& m = *new std::mutex;
     return m;
 }
-std::map<uint64_t, Mirror>& mirrors() {
-    static auto& m = *new std::map<uint64_t, Mirror>;
+// Keyed by (begin, end): spans that start at the same place but end at another (a window cut at 64 MiB and one widened to
+// hold a range that crosses it) coexist, each with its own mirror; one mirror per begin would retire the other's.
+using SpanKey = std::pair<uint64_t, uint64_t>;
+std::map<SpanKey, Mirror>& mirrors() {
+    static auto& m = *new std::map<SpanKey, Mirror>;
     return m;
 }
 std::vector<Retired>& retired() {
     static auto& r = *new std::vector<Retired>;
     return r;
 }
-std::map<uint64_t, Failure>& failures() {
-    static auto& f = *new std::map<uint64_t, Failure>;
+std::map<SpanKey, Failure>& failures() {
+    static auto& f = *new std::map<SpanKey, Failure>;
     return f;
 }
 
@@ -128,13 +131,13 @@ void* GuestMirror(uint64_t begin, uint64_t end) {
     const uint64_t signature = signatureOf(begin, end);
     std::scoped_lock l{mutex()};
     reap();
-    auto it = mirrors().find(begin);
+    auto it = mirrors().find({begin, end});
     // A transient failure (the VM map could not be walked, vm_remap refused once) keeps the mirror
     // this span had: the caller must not fall back to the guest addresses, which may be page-protected
     // by now. The old pages are the right ones unless the mapping was replaced, which the next
     // successful lookup finds out.
     const auto previous = [&]() -> void* {
-        if (it == mirrors().end() || it->second.end != end) return nullptr;
+        if (it == mirrors().end()) return nullptr;
         Mirror& m = it->second;
         const auto now = Clock::now();
         if (m.staleSince == Clock::time_point{}) m.staleSince = now;
@@ -142,14 +145,13 @@ void* GuestMirror(uint64_t begin, uint64_t end) {
     };
     if (!signature) return previous();
     if (it != mirrors().end()) {
-        if (it->second.end == end && it->second.signature == signature) {
+        if (it->second.signature == signature) {
             it->second.staleSince = {};
             return it->second.base;
         }
     }
-    if (auto f = failures().find(begin);
-        f != failures().end() && f->second.end == end && f->second.signature == signature &&
-        Clock::now() - f->second.at < kRetryAfter)
+    if (auto f = failures().find({begin, end});
+        f != failures().end() && f->second.signature == signature && Clock::now() - f->second.at < kRetryAfter)
         return previous();
     vm_address_t target = 0;
     vm_prot_t current = 0, maximum = 0;
@@ -163,15 +165,29 @@ void* GuestMirror(uint64_t begin, uint64_t end) {
         ok = false;
     }
     if (!ok) {
-        failures()[begin] = {end, signature, Clock::now()};
+        failures()[{begin, end}] = {end, signature, Clock::now()};
         return previous();
     }
-    failures().erase(begin);
+    failures().erase(SpanKey{begin, end});
     if (it != mirrors().end()) {
-        release(it->second, begin);  // other pages (or another extent) now: the old mirror retires
+        release(it->second, begin);  // other pages now: the old mirror retires
         mirrors().erase(it);
     }
-    mirrors()[begin] = {end, signature, reinterpret_cast<void*>(target)};
+    // Spans keyed apart that overlap this one and whose pages changed (or can no longer be walked) would otherwise
+    // stay mapped for good: nothing asks for them again.
+    for (auto o = mirrors().begin(); o != mirrors().end();) {
+        const bool overlaps = o->first.first < end && begin < o->first.second;
+        if (overlaps && o->first != SpanKey{begin, end}) {
+            const uint64_t now = signatureOf(o->first.first, o->first.second);
+            if (now == 0 || now != o->second.signature) {
+                release(o->second, o->first.first);
+                o = mirrors().erase(o);
+                continue;
+            }
+        }
+        ++o;
+    }
+    mirrors()[{begin, end}] = {end, signature, reinterpret_cast<void*>(target)};
     return reinterpret_cast<void*>(target);
 }
 

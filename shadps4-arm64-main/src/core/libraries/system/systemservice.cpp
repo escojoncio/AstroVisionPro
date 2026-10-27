@@ -2026,11 +2026,16 @@ int PS4_SYSV_ABI sceSystemServiceReportAbnormalTermination() {
     // (the first times) the guest's state with its callers and last HLE calls.
     static std::atomic<u32> reports{0};
     constexpr u32 FullReports = 3;
+    // The strings the game has just formatted (its error message) are on its stack or in r12.
+    constexpr u32 TextReports = 8;
     const u32 count = reports.fetch_add(1, std::memory_order_relaxed) + 1;
     if (count > FullReports) {
         LOG_CRITICAL(Lib_SystemService,
                      "The game reports an abnormal termination again (report {}, thread {})",
                      count, Common::GetCurrentThreadName());
+        if (count <= TextReports) {
+            Core::DumpGuestText("ASTRO_ABNORMAL_TEXT");
+        }
         return ORBIS_OK;
     }
     LOG_CRITICAL(Lib_SystemService,
@@ -2046,6 +2051,7 @@ int PS4_SYSV_ABI sceSystemServiceReportAbnormalTermination() {
     }
 #endif
     Core::DumpGuestState("ASTRO_ABNORMAL_TERMINATION");
+    Core::DumpGuestText("ASTRO_ABNORMAL_TEXT");
     return ORBIS_OK;
 }
 
