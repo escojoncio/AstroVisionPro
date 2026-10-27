@@ -4,16 +4,19 @@ ASTRO BOT Rescue Mission (CUSA12392) y KITCHEN (CUSA06799), PSVR, en Apple Visio
 Detalle anterior a 2026-10-27 en `git log -p bitacora.md`.
 
 ## Last done
-- 2026-10-27: bitácora compactada (377 → <100 líneas); mapa estable a `notas/mapa.md`. Logs del visor 02:54 y 02:55 (Registros_5/2) recibidos: 14 volcados `gpu-hang-*.metal`.
-- 2026-10-25: `.claude/agents/{coder,reader,Explore}.md`; `CLAUDE.md` línea 1 (cumplir el rol).
-- 2026-10-20: `fix-device3`: `report()` con `VPKENGINE_GPU cpu bind phases`; ref VPKEngine → `b2a447b` (ps4/integration).
-- 2026-10-20: `fix-device1`: `PrepareLabelWait`/`IdleLabelWait` en `WaitRegMem` (sin bucle caliente), `EYE_STATS`, `ExplainAddress`, prewarm del pipeline de composición.
-- 2026-10-20: `ps4/integration` une ramas state, coherence, tiling, msaa, gs, cpucost, submit, pm4 (VPKEngine `PROGRESS-integration.md`); revisión adversarial (`resolveOwned` 200 ms, `GuestMirror` 5 s).
+- 2026-10-27 (VPKEngine ps4/integration 09ebfc6..b2497ac): anillo GSVS al layout de hardware (`gcn/src/lift.cpp` liftRing/gsEmit: planos de 64 B, grupos de 16 lanes; test `gcn.geom.astro` con palabras reales) → causa de ojos negros de ASTRO (posición (x,0,0,0)); caché de 8 regiones en vpps4 `Impl::region()`; hold en dos regímenes (`core/src/device.cpp` takeFrame: calentamiento 1500 ms/120 frames/10 s, estable `VPKENGINE_HOLD_MS`=12 ms solo draws; Dispatch/ES/GS siempre completo; `Draw::expandedBy` → `expansion_pending`); port metal2 de main 48aa108, ed942c7, e8f76b6 (parcial), 1e652a6, 0f1dd39 (parcial); sondas `backingAt`/`DrawProbe`.
+- 2026-10-27 (app): `vpkengine_renderer.mm`: SpanCache por `MappingGeneration()` (sin vaciado cada 8 ms; negativos cacheados; reintento de mirror 16 ms), `framesInFlight` 3 (`VPKENGINE_FRAMES_IN_FLIGHT`), líneas `cpu region caches` y `cpu submit phases`, drain antes de EYE_STATS, sondas `EYE_CHAIN` (siempre) / `EYE_PS`, `EYE_GS` (diagnóstico).
+- 2026-10-27 (app): pad `ReadStates` → `DrainNewest` (sin backlog de 64), `PushMotionState`, sonda `CrossProbe` (flanco de Cross → entrega, ms); `hmd_setup_dialog_state.h`: máquina de estados real (sin Open nunca FINISHED; VrServiceDialog sin cambio); `signals.cpp` `DescribeGuest` (GPR, código guest ±0x40 con módulo+offset) + anillo de 32 HLE por hilo (`fex_hle_bridge.cpp`).
+- 2026-10-27: bitácora compactada; mapa estable a `notas/mapa.md`.
+- 2026-10-20: `ps4/integration` une ramas state, coherence, tiling, msaa, gs, cpucost, submit, pm4 (VPKEngine `PROGRESS-integration.md`).
 
 ## Current state
 - Funciona: arranque bajo FEX, menús de ASTRO BOT con VPKEngine (historial), audio, mando, pantalla plana en el visor, diálogos VR HLE.
-- Roto (build actual, log 2026-10-27): ASTRO BOT ojos negros + fps pésimo + entrada con 30–60 s de retraso; KITCHEN sin imagen. GPU hangs volcados. Causa raíz: pendiente de análisis (unverified).
-- VPKEngine vp4 (`gpu/ps4/engine/*`) es copia aislada de `gpu/metal2` desde 2026-10-20 (merge-base `f18e8a6`); ninguna mejora de main posterior llega a PS4 (memoryless/MSAA, slots VP_CB_ORDER, prioridad PSO, elisión de estado por draw, unpack nativo, etc.).
+- Diagnóstico log 2026-10-27 (antes de los arreglos): ASTRO en VR ~10 fps, todos los draws hechos, target de ojo a ceros (bug GSVS); `buffer lookup` ~487 ms/s (vm_region tras vaciados de caché); KITCHEN presenta pantalla plana y cae a los ~5 s con null en código del juego (eboot+0x1acd37e) tras UpdateStatus sin Open; `gpu-hang-*.metal` de otra ejecución (VS raymarch con bucle hasta vp_guard 65536).
+- Pendiente de verificar en visor (build del 2026-10-27): ojos con imagen, `cpu region caches`, `cpu submit phases`, desfase de Cross, KITCHEN pasa del diálogo; si negro → `EYE_CHAIN`/`EYE_GS`.
+- Retraso de entrada de 30–60 s: cola de pad explica ~0,5 s; resto probablemente carga lenta (primer frame a ~27 s) (unverified).
+- VPKEngine vp4 (`gpu/ps4/engine/*`) es copia aislada de `gpu/metal2` (merge-base `f18e8a6`); core vp4 divergido ~800 líneas (label_queue, submit_policy, Scheduler). No portado de main: 585261b (choca con RenderCache vp4), 44c9785, memoria/MSAA (política en core), fd90770. Reunificación completa: siguiente paso si hay imagen.
+- No existe caché en disco de MTLLibrary (newLibraryWithSource en cada arranque, ms_max 252); opción: cachear el MSL traducido.
 - Ramas `ps4/*` en este repo y en VPKEngine: integradas en `ps4/integration`; main de este repo apunta a ese ref.
 - Pendiente: imagen en ojos (ASTRO: ojos = slices de target array producidos por draws ES/LS/GS); KITCHEN luz plana (sombras por copias en bruto) — histórico KK, sin verificar con VPKEngine.
 - Sin implementar: PS Move; posición del mando sin manos; ImGui (diálogos del sistema no se ven con VPKEngine).
