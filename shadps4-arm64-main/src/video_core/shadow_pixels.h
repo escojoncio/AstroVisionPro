@@ -424,6 +424,13 @@ public:
         }
     }
 
+    /// A captured draw the shadow did not answer (it threw, or was switched off): counted, with the reason.
+    void Unanswered(const std::string& reason) {
+        std::scoped_lock lock{mutex};
+        ++draws;
+        ++skipped[reason];
+    }
+
     /// The capture is over: its summary.
     void End() {
         std::scoped_lock lock{mutex};

@@ -235,6 +235,10 @@ void BufferCache::BindVertexBuffers(const Vulkan::GraphicsPipeline& pipeline) {
                 record->vk.buffers.push_back({Shadow::Stage::Vs, buffer.base_address,
                                               memory->ClampRangeSize(buffer.base_address, buffer.GetSize()),
                                               buffer.GetStride(), false});
+                if (record->pixels && record->pixels->vkSkip.empty() && buffer.GetSize() > 0 &&
+                    IsRegionGpuModified(buffer.base_address, buffer.GetSize())) {
+                    record->pixels->vkSkip = "buffer written by GPU";  // (guest memory is stale there)
+                }
             }
         }
     }

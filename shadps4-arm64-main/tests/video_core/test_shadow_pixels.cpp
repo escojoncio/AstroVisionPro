@@ -209,6 +209,15 @@ TEST(ShadowPixelAggregator, ARectangleAtAnotherPlaceIsNotCompared) {
     EXPECT_TRUE(lines.size() == 1 && lines[0].find("compared=0 equal=0 diverged=0 skipped=1(size_differs=1)") != std::string::npos);
 }
 
+TEST(ShadowPixelAggregator, ADrawTheShadowDidNotAnswerIsCounted) {
+    std::vector<std::string> lines;
+    PixelAggregator agg([&](const std::string& l) { lines.push_back(l); });
+    agg.Begin();
+    agg.Unanswered("shadow threw or off");
+    agg.End();
+    EXPECT_TRUE(lines.size() == 1 && lines[0].find("draws=1 compared=0 equal=0 diverged=0 skipped=1(shadow_threw_or_off=1)") != std::string::npos);
+}
+
 TEST(ShadowPixelAggregator, LineCapAndRestartPerCapture) {
     std::vector<std::string> lines;
     PixelAggregator agg([&](const std::string& l) { lines.push_back(l); }, 3);
