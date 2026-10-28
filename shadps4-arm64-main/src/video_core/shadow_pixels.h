@@ -147,8 +147,12 @@ inline float HalfToFloat(uint16_t h) {
     return out;
 }
 
+/// The steps of a 16-bit normalised channel that count as the same (a rounding of the two renderers' arithmetic, not
+/// the 8-bit tolerance: 2/255 would be 514 steps).
+inline constexpr double kUnorm16Steps = 16;
+
 /// Compares two images of the same rectangle and format, rows tight. A texel differs when a channel is off by
-/// more than 2/255 (normalised 8 / 16 bit), by more than 1e-3 relative (float; a difference under 1e-6 is none),
+/// more than 2/255 (normalised 8 bit), by more than 2 * 16 / 65535 (normalised 16 bit), by more than 1e-3 relative (float; a difference under 1e-6 is none),
 /// or at all (any other layout).
 inline PixelStats ComparePixels(const PixelFormat& f, const uint8_t* a, const uint8_t* b, uint32_t width,
                                 uint32_t height) {
@@ -198,7 +202,7 @@ inline PixelStats ComparePixels(const PixelFormat& f, const uint8_t* a, const ui
                     std::memcpy(&ux, pa + c * 2, 2);
                     std::memcpy(&uy, pb + c * 2, 2);
                     error = std::fabs(double(ux) - double(uy)) / 65535.0;
-                    tolerance = 2.0 / 255.0;
+                    tolerance = 2.0 * kUnorm16Steps / 65535.0;
                 }
                 differs |= error > tolerance;
                 stats.maxError = std::max(stats.maxError, error);
@@ -458,7 +462,8 @@ private:
             why = "format differs";
             return std::nullopt;
         }
-        if (t.post.width != t.vpkPost.width || t.post.height != t.vpkPost.height ||
+        if (t.post.x != t.vpkPost.x || t.post.y != t.vpkPost.y || t.post.width != t.vpkPost.width ||
+            t.post.height != t.vpkPost.height ||
             t.post.texels.size() != size_t(t.post.width) * t.post.height * a->bytes ||
             t.vpkPost.texels.size() != t.post.texels.size()) {
             why = "size differs";

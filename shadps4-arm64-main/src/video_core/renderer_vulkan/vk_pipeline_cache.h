@@ -82,6 +82,12 @@ public:
 
     const GraphicsPipeline* GetGraphicsPipeline();
 
+    /// The last GetGraphicsPipeline returned nothing because the pipeline is still being made on
+    /// a worker (and not because its key or its compile failed): the draw is left out for now.
+    bool PipelineCompiling() const {
+        return pipeline_compiling;
+    }
+
     /// The colour targets (a bit each) that the graphics pipelines asked for from now on leave
     /// out, as if the draw had nothing bound there. For a draw that has one surface bound as
     /// more than one of its targets, which is drawn once for each (Rasterizer::Draw).
@@ -214,6 +220,7 @@ private:
     void ReportPreloadsIfDone();
     bool async_pipelines{};
     u32 skipped_draws{};
+    bool pipeline_compiling{};
     tsl::robin_map<GraphicsPipelineKey, std::shared_ptr<PendingGraphicsPipeline>>
         pending_graphics_pipelines;
     // Last: its threads are stopped before anything they use goes away.

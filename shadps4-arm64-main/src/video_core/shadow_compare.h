@@ -99,15 +99,20 @@ inline std::string NormalizeFormat(std::string_view name) {
 
 /// Whether two different host formats give a shader the same bits: a depth image sampled as the colour format of the
 /// same width and kind (D32Sfloat / R32Float, D16Unorm / R16Unorm), and, for storage images (read and written as raw
-/// words), integer formats of the same texel size. Anything else that differs stays a difference.
+/// words), 32-bit-per-channel integer formats of the same layout (narrower ones sign-extend a signed channel and
+/// zero-extend an unsigned one: other values). Anything else that differs stays a difference.
 inline bool BitIdenticalView(std::string_view vk, std::string_view vpk, bool storage) {
     const std::string a = NormalizeFormat(vk), b = NormalizeFormat(vpk);
     const auto pair = [&](const char* x, const char* y) { return (a == x && b == y) || (a == y && b == x); };
     if (!storage) {
         return pair("d32", "32b1c:float") || pair("d16", "16b1c:unorm");
     }
-    const auto integer = [](const std::string& n) { return n.ends_with(":uint") || n.ends_with(":sint"); };
-    return integer(a) && integer(b) && a.substr(0, a.find(':')) == b.substr(0, b.find(':'));
+    const auto integer32 = [](const std::string& n) {
+        unsigned bits = 0, channels = 0;
+        return (n.ends_with(":uint") || n.ends_with(":sint")) && std::sscanf(n.c_str(), "%ub%uc", &bits, &channels) == 2 &&
+               channels != 0 && bits == 32 * channels;
+    };
+    return integer32(a) && integer32(b) && a.substr(0, a.find(':')) == b.substr(0, b.find(':'));
 }
 
 struct Diff {
@@ -149,9 +154,10 @@ inline std::string StatusText(const Side& side) {
 }
 
 /// Vulkan left the call out because its pipeline was not built yet (compiled on another thread): the host's timing,
-/// nothing the title asked for.
+/// nothing the title asked for. "no graphics pipeline" (key or compile failed) and "no compute pipeline" stay real
+/// differences: only a job that was still pending is the host's timing.
 inline bool IsHostSkip(const Side& vk) {
-    return vk.status == Status::Skipped && (vk.reason == "no graphics pipeline" || vk.reason == "no compute pipeline");
+    return vk.status == Status::Skipped && vk.reason == "pipeline compiling";
 }
 
 inline uint64_t MainHash(const Side& s) {
@@ -269,7 +275,8 @@ inline std::string Signature(const SamplerBinding& s) {
 }
 
 /// Buffers reached by an address alone (no V#) are not bindings of Vulkan, which loads through the pointer: they are
-/// compared when both sides list them and otherwise left out.
+/// compared when both sides list them and otherwise left out; except one with size 0, which the engine could not map
+/// (unmapped memory), a real difference.
 inline std::vector<BufferBinding> WithoutUnmatchedPointers(const std::vector<BufferBinding>& list,
                                                            const std::vector<BufferBinding>& other) {
     std::vector<BufferBinding> out;
@@ -277,7 +284,7 @@ inline std::vector<BufferBinding> WithoutUnmatchedPointers(const std::vector<Buf
         const bool matched = std::any_of(other.begin(), other.end(), [&](const BufferBinding& o) {
             return o.stage == buffer.stage && o.address == buffer.address;
         });
-        if (!buffer.pointer || matched) {
+        if (!buffer.pointer || matched || buffer.size == 0) {
             out.push_back(buffer);
         }
     }

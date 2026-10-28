@@ -48,6 +48,15 @@ TEST(ShadowPixels, UnormErrorIsTwoOver255)
     EXPECT_TRUE(s.Psnr() > 30 && s.Psnr() < 60);
 }
 
+TEST(ShadowPixels, Unorm16ErrorIsInSixteenBitSteps) {
+    const PixelFormat f = *ParsePixelFormat("R16Unorm");
+    uint16_t a[2] = {30000, 30000}, b[2] = {30032, 30033};  // 32 steps: inside; 33: out
+    EXPECT_TRUE(ComparePixels(f, reinterpret_cast<uint8_t*>(a), reinterpret_cast<uint8_t*>(b), 1, 1).differing == 0);
+    EXPECT_TRUE(ComparePixels(f, reinterpret_cast<uint8_t*>(a + 1), reinterpret_cast<uint8_t*>(b + 1), 1, 1).differing == 1);
+    uint16_t c = 30000 + 400;  // 400 steps (under 2/255 of the range, which the 8-bit rule would accept)
+    EXPECT_TRUE(ComparePixels(f, reinterpret_cast<uint8_t*>(a), reinterpret_cast<uint8_t*>(&c), 1, 1).differing == 1);
+}
+
 TEST(ShadowPixels, FloatErrorIsRelative) {
     const PixelFormat f = *ParsePixelFormat("R32Float");
     float a[3] = {1000.0f, 0.0f, 1.0f}, b[3] = {1000.5f, 1e-7f, 1.01f};
@@ -187,6 +196,17 @@ TEST(ShadowPixelAggregator, DifferentFormatsAreSkippedNotCompared) {
     agg.Submit(r);
     agg.End();
     EXPECT_TRUE(lines.size() == 1 && lines[0].find("compared=0 equal=0 diverged=0 skipped=1(format_differs=1)") != std::string::npos);
+}
+
+TEST(ShadowPixelAggregator, ARectangleAtAnotherPlaceIsNotCompared) {
+    std::vector<std::string> lines;
+    PixelAggregator agg([&](const std::string& l) { lines.push_back(l); });
+    agg.Begin();
+    Record r = CapturedDraw(1, 0x1000, 1, 1);
+    r.pixels->color[0].vpkPost.x = 2;
+    agg.Submit(r);
+    agg.End();
+    EXPECT_TRUE(lines.size() == 1 && lines[0].find("compared=0 equal=0 diverged=0 skipped=1(size_differs=1)") != std::string::npos);
 }
 
 TEST(ShadowPixelAggregator, LineCapAndRestartPerCapture) {
