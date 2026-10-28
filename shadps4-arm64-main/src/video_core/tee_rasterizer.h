@@ -41,7 +41,7 @@ namespace VideoCore {
 /// seconds a capture frame, in which each Draw gets a PixelCapture in its Record, filled by the primary with the
 /// pixels of its targets and used by the shadow to draw the same draw from them on a real backend. It is the only
 /// time the shadow does more than follow: the primary reads its images back (the call waits for the GPU), only for
-/// the draws of the thread that began the capture, for at most ASTRO_SHADOW_PIXELS_BUDGET_MS (default 2000) of the
+/// the draws of the thread that began the capture, for at most ASTRO_SHADOW_PIXELS_BUDGET_MS (default 500) of the
 /// picture; the primary's output does not change.
 /// Calls from different command processor threads (graphics and compute queues) are not serialised here:
 /// each reaches the primary and the shadow in its own order, as it would reach one renderer.
@@ -286,7 +286,7 @@ private:
         }
         auto capture = std::make_shared<Shadow::PixelCapture>();
         capture->captureId = pixel_schedule.Id();
-        capture->holdMs = uint32_t(std::min(250.0, pixel_schedule.Remaining(now) * 1000.0));
+        capture->holdMs = uint32_t(std::min(100.0, pixel_schedule.Remaining(now) * 1000.0));
         return capture;
     }
 
@@ -325,7 +325,7 @@ private:
     const double pixel_interval = Shadow::CaptureSchedule::ParseInterval(std::getenv("ASTRO_SHADOW_PIXELS"));
     const bool pixels_enabled = pixel_interval > 0;
     Shadow::CaptureSchedule pixel_schedule{
-        pixel_interval, Shadow::CaptureSchedule::ParseInterval(std::getenv("ASTRO_SHADOW_PIXELS_BUDGET_MS"), 2000.0) / 1000.0};
+        pixel_interval, Shadow::CaptureSchedule::ParseInterval(std::getenv("ASTRO_SHADOW_PIXELS_BUDGET_MS"), 500.0) / 1000.0};
     Shadow::PixelAggregator pixel_results{[](const std::string& line) { LOG_INFO(Render_Vulkan, "{}", line); }};
     std::mutex pixel_mutex;
     std::thread::id pixel_thread;
