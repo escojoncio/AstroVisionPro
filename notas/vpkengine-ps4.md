@@ -38,3 +38,10 @@
 - Indirectos → HeavyGeometry en main (memoria real en vez de memoryless).
 - CB sin alinear copiado al grabar: no ve escrituras GPU del mismo frame.
 - `max/min` frente a `fmax/fmin` con fast math; `int(x)` sin saturar en el camino SPIR-V.
+
+## BC por software y sombra de píxeles (2026-10-28)
+- `gCaps.bc` sale de `[device supportsBCTextureCompression]` (metal_backend.mm) y se copia al `FormatCaps` en `vpkengine_renderer.mm`; con `false` los BC1-7 se decodifican (formats.cpp ya no los rechaza). Destinos: BC1/2/3/7 RGBA8(Srgb si num_format 9), BC4 R8, BC5 RG8 (snorm si con signo), BC6H RGBA16F.
+- Decodificador único: `gpu/ps4/include/vpps4/bc_block.h` (C++ y MSL; macros `BC_T`, `BC_CONST`, `BC_DEV`). Kernel `bcdecode` en `gpu_tiler.cpp` (detile fusionado, un hilo por bloque 4x4, stores de 32 bits cuando alineado); goldens en `gpu/ps4/tests/kernels` (test `vpps4.gpu_tiler` falla si difieren; `VPPS4_UPDATE_KERNELS=1` regenera).
+- Orden en `fillSoftBlock`: kernel GPU listo → GPU por nivel sucio; NotReady → draw omitido; Unsupported/fallo → CPU con presupuesto. `setMemoryLimits(staging, scratch, bcBytesPorFrame)`.
+- Sombra de píxeles: ver bitacora.md. Hooks opt-in en `vpps4/renderer.h` (`Hooks::seed`, `setGuestReadOnly`, `dropGuestBuffers`). Seguridad de no escribir en el guest = ventanas mmap privadas + guardas; el hardware no pasa por mprotect.
+- `programKeyCached`: clave (puntero, palabras, fetch, hash de contenido ≤4 KiB completo, si no extremos + muestras); shader reescrito en el mismo sitio ya no devuelve el programa viejo.
