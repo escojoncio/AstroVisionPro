@@ -967,6 +967,11 @@ if (NOT SHADPS4_VISIONOS)
     target_compile_features(shadps4_census_test PRIVATE cxx_std_23)
     add_test(NAME shadps4_census COMMAND shadps4_census_test)
 
+    add_executable(shadps4_cb_extent_test video_core/test_cb_extent.cpp)
+    target_include_directories(shadps4_cb_extent_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+    target_compile_features(shadps4_cb_extent_test PRIVATE cxx_std_23)
+    add_test(NAME shadps4_cb_extent COMMAND shadps4_cb_extent_test)
+
     add_executable(shadps4_reg_audit_test video_core/test_reg_audit.cpp)
     target_include_directories(shadps4_reg_audit_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
     target_compile_features(shadps4_reg_audit_test PRIVATE cxx_std_23)

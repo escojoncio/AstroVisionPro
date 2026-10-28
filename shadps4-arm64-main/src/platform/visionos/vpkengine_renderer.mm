@@ -32,6 +32,7 @@
 #include "common/path_util.h"
 #include "core/libraries/videoout/buffer.h"
 #include "core/memory.h"
+#include "vpkengine_extent.h"
 #include "vpkengine_mirror.h"
 #include "vpkengine_census.h"
 #include "vpkengine_xr.h"
@@ -612,13 +613,15 @@ struct Engine {
         vpgpu::Backend* base = nullptr;
         if (shadow) {
             // No GPU: the null backend takes the frames and drops them. It keeps no history (it would grow for as long
-            // as the game runs) and finishes each frame as it is submitted. BC is not sampled natively, as on the headset.
+            // as the game runs) and finishes each frame as it is submitted.
             nullBackend = std::make_unique<vpgpu::NullBackend>();
             nullBackend->record = false;
             nullBackend->autoComplete = true;
             base = nullBackend.get();
+            // What the device reports, as in the other mode (the formats it plans are compared with the real renderer's).
             vpps4::FormatCaps fc;
-            fc.bc = false;
+            id<MTLDevice> mtl = MTLCreateSystemDefaultDevice();
+            fc.bc = mtl != nil && [mtl supportsBCTextureCompression];
             vpps4::setFormatCaps(fc);
         } else {
             backend = std::make_unique<vpgpu::metal2::MetalBackend>(shaders, [this](const std::string& l) { log(l); },
@@ -779,6 +782,8 @@ struct Engine {
     };
     bool probeArmed = false;
     std::vector<ResolveNote> resolves;
+    // The size each colour target was set up with, by address (see vpkengine_extent.h). Under `lock`.
+    VpkengineRenderer::TargetExtents extents;
     void armProbes(bool on) {
         if (!renderer) return;
         probeArmed = on;
@@ -1204,6 +1209,17 @@ vpps4::ColorTarget colorTarget(const AmdGpu::Regs& regs, unsigned i) {
     return c;
 }
 
+// The colour target at the size the title set it up with (SetRenderTarget's extent), not the tile-aligned pitch and height:
+// sizes, viewports and later reads of the target agree with the title's. Draws and resolves both go through here, or the
+// engine finds no target of the resolve's size at the address. Under the engine lock (`extents`).
+vpps4::ColorTarget sizedColorTarget(Engine& e, const AmdGpu::Regs& regs, const AmdGpu::CbDbExtent& ext, unsigned i,
+                                    VpkengineRenderer::TargetExtents::Source* how = nullptr) {
+    vpps4::ColorTarget c = colorTarget(regs, i);
+    const auto source = e.extents.Apply(c.address, ext.Valid(), ext.width, ext.height, c.width, c.height);
+    if (how) *how = source;
+    return c;
+}
+
 // Whether the clear words of a target decode to the colour it clears to (fastClearColor; not for every format).
 bool fastClearDecodes(const vpps4::ColorTarget& c) {
     bool exact = true;
@@ -1617,11 +1633,25 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
         std::scoped_lock g{e.lock};
         if (!e.start()) return;
         e.applyPending();
-        e.renderer->resolve(colorTarget(regs, 0), colorTarget(regs, 1));
-        if (e.probeArmed && e.resolves.size() < 16) {
-            const vpps4::ColorTarget dst = colorTarget(regs, 1);
-            e.resolves.push_back({dst.address, dst.width, dst.height, dst.pitch});
+        const auto& ext = impl->liverpool->last_cb_extent;
+        VpkengineRenderer::TargetExtents::Source how0{}, how1{};
+        const vpps4::ColorTarget src = sizedColorTarget(e, regs, ext[0], 0, &how0);
+        const vpps4::ColorTarget dst = sizedColorTarget(e, regs, ext[1], 1, &how1);
+        // P1: what the resolve is told (hint = the title's extent, cache = the one last drawn at the address, none = the CB's
+        // pitch and height); first 40 resolves, then one in 600.
+        static std::atomic<u64> p1{0};
+        if (const u64 n = p1++; n < 40 || n % 600 == 0) {
+            static constexpr const char* names[] = {"none", "hint", "cache"};
+            const auto& cb0 = regs.color_buffers[0];
+            const auto& cb1 = regs.color_buffers[1];
+            LOG_INFO(Render_Vulkan,
+                     "VPKENGINE_PROBE P1 resolve n={} ext0={}/{}x{} ext1={}/{}x{} src {:#x} {}x{} (pitch {} height {}) via {} dst {:#x} {}x{} (pitch {} height {}) via {}",
+                     n, ext[0].Valid(), u32(ext[0].width), u32(ext[0].height), ext[1].Valid(), u32(ext[1].width), u32(ext[1].height),
+                     src.address, src.width, src.height, cb0.Pitch(), cb0.Height(), names[int(how0)], dst.address, dst.width,
+                     dst.height, cb1.Pitch(), cb1.Height(), names[int(how1)]);
         }
+        e.renderer->resolve(src, dst);
+        if (e.probeArmed && e.resolves.size() < 16) e.resolves.push_back({dst.address, dst.width, dst.height, dst.pitch});
         e.noteWork();
         return;
     }
@@ -1671,13 +1701,7 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
             const auto& cb = regs.color_buffers[i];
             if (!cb) continue;
             vpps4::ColorTarget& c = d.color[i];
-            c = colorTarget(regs, i);
-            // The size the title set the target up with (SetRenderTarget's extent), not the tile-aligned
-            // pitch and height: sizes, viewports and later reads of the target agree with the title's.
-            if (const auto& ext = impl->liverpool->last_cb_extent[i]; ext.Valid() && ext.width <= c.width && ext.height <= c.height) {
-                c.width = ext.width;
-                c.height = ext.height;
-            }
+            c = sizedColorTarget(e, regs, impl->liverpool->last_cb_extent[i], i);
             c.writeMask = uint8_t(regs.color_target_mask.GetMask(i) & regs.color_shader_mask.GetMask(i));
             c.forceDstAlpha1 = cb.attrib.force_dst_alpha_1;
             c.blendClamp = cb.info.blend_clamp;
@@ -3116,6 +3140,16 @@ int ComposeEyes(std::span<const AmdGpu::Image, 2> eye_textures, const Core::Vr::
         if (impl->frames % 600 == 0)
             LOG_INFO(Render_Vulkan, "VPKENGINE_PRESENT eye {} overlaps:{}", k,
                      e.renderer->describeAt(d.address, u64(std::max(d.pitch, d.width)) * d.height * 4));
+        // P6: the same overlaps (target id and the pass that last drew it) and the texture the T# resolves to; first 40
+        // pictures, then one in 600.
+        if (impl->frames < 40 || impl->frames % 600 == 0) {
+            uint16_t backLayer = 0;
+            std::string backKind;
+            const vpgpu::TextureId back = e.renderer->backingAt(d, backLayer, backKind);
+            LOG_INFO(Render_Vulkan, "VPKENGINE_PROBE P6 eye {} {:#x} {}x{} backing={} tex={}/{} layer={} overlaps:{}", k, d.address,
+                     d.width, d.height, backKind, back.index, back.generation, backLayer,
+                     e.renderer->describeAt(d.address, u64(std::max(d.pitch, d.width)) * d.height * 4));
+        }
     }
     // The eyes' drawing is submitted first: the composition runs after it on the same queue.
     e.present();
