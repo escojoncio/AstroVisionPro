@@ -170,7 +170,7 @@ struct PixelTexture {
 /// `vpkSkip` means that side could not take part: the draw is counted skipped, not compared.
 struct PixelCapture {
     uint64_t captureId = 0;
-    uint32_t holdMs = 0;  // how long VPKEngine may wait for a pipeline it has not built: what is left of the capture's budget, 250 ms at most
+    uint32_t holdMs = 0;  // how long VPKEngine may wait for a pipeline it has not built: what is left of the capture's budget, 100 ms at most
     std::array<PixelTarget, 8> color;
     PixelTarget depth;  // `pre` only: the depth test starts from it
     std::vector<PixelTexture> textures;

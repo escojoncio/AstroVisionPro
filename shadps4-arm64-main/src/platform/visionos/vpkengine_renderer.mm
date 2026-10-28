@@ -1065,7 +1065,7 @@ struct PixelEngine {
         }
         captureThread = std::this_thread::get_id();
         // (a pipeline new to this renderer is made within the draw, not left for a later frame: for what is left of the
-        // capture's budget, at most 250 ms; the GPU is idle here, every draw waited for it)
+        // capture's budget, at most 100 ms; the GPU is idle here, every draw waited for it)
         device->setHoldMs(pc.holdMs);
         ++epoch;
         seeds.clear();
