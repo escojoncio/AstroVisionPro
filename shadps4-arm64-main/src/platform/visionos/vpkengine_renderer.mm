@@ -1215,7 +1215,7 @@ vpps4::ColorTarget colorTarget(const AmdGpu::Regs& regs, unsigned i) {
 vpps4::ColorTarget sizedColorTarget(Engine& e, const AmdGpu::Regs& regs, const AmdGpu::CbDbExtent& ext, unsigned i,
                                     VpkengineRenderer::TargetExtents::Source* how = nullptr) {
     vpps4::ColorTarget c = colorTarget(regs, i);
-    const auto source = e.extents.Apply(c.address, ext.Valid(), ext.width, ext.height, c.width, c.height);
+    const auto source = e.extents.Apply(c.address, c.format, ext.Valid(), ext.width, ext.height, c.width, c.height);
     if (how) *how = source;
     return c;
 }
