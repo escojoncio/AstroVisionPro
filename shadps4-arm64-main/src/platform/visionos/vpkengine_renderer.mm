@@ -836,7 +836,7 @@ void shadowResolved(const vpps4::Resolved& r) {
     side->depth = {z.used, z.zAddress, z.stencilAddress, z.width, z.height, z.zFormat, z.stencilFormat, z.tileMode, z.samples,
                    z.hostFormat, z.depthClear, z.stencilClear};
     side->buffers.clear();
-    for (const vpps4::ResolvedBuffer& b : r.buffers) side->buffers.push_back({shadowStage(b.stage), b.address, b.size, b.stride, b.write});
+    for (const vpps4::ResolvedBuffer& b : r.buffers) side->buffers.push_back({shadowStage(b.stage), b.address, b.size, b.stride, b.write, b.pointer});
     side->textures.clear();
     for (const vpps4::ResolvedTexture& t : r.textures) {
         const vpps4::ImageDesc& i = t.image;
@@ -1652,6 +1652,14 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
         }
     }
     e.renderer->draw(d);
+    if (VideoCore::Shadow::Side* side = shadowSide()) {
+        // The definitions of Vulkan's half (shadow_record.h): `cleared` is the target's CMASK metadata state at the
+        // draw (the register bit FAST_CLEAR only says the target has one), the depth target is used when the draw
+        // tests or writes it. Kept to what the renderer reports: a target it does not hold stays unused.
+        for (unsigned i = 0; i < 8; ++i)
+            if (side->color[i].used) side->color[i].cleared = clearColor[i];
+        side->depth.used = side->depth.used && ((dc.depth_enable && db.DepthValid()) || (dc.stencil_enable && db.StencilValid()));
+    }
     e.noteWork();
 }
 

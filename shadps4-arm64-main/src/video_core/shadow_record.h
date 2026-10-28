@@ -76,6 +76,7 @@ struct BufferBinding {
     uint64_t size = 0;
     uint32_t stride = 0;
     bool write = false;
+    bool pointer = false;  // reached by an address (a pointer the shader loads from), with no V#: Vulkan binds nothing for it
 };
 
 struct TextureBinding {
