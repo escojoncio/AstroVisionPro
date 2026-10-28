@@ -550,6 +550,7 @@ static bool WaitForJob(Job& job) {
 
 const GraphicsPipeline* PipelineCache::GetGraphicsPipeline() {
     const auto started = std::chrono::steady_clock::now();
+    pipeline_compiling = false;
     if (!RefreshGraphicsKey()) {
         return nullptr;
     }
@@ -571,6 +572,7 @@ const GraphicsPipeline* PipelineCache::GetGraphicsPipeline() {
             }
             if (!WaitForJob(*pending->second)) {
                 ++skipped_draws;
+                pipeline_compiling = true;
                 return nullptr;
             }
             const auto job = pending->second;
@@ -606,6 +608,7 @@ const GraphicsPipeline* PipelineCache::GetGraphicsPipeline() {
             return FinishPendingGraphicsPipeline(*ready_job);
         }
         ++skipped_draws;
+        pipeline_compiling = true;
         return nullptr;
     }
 

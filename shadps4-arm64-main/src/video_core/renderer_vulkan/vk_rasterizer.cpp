@@ -1344,6 +1344,9 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
     ShadowStatus(VideoCore::Shadow::Status::Skipped, "no graphics pipeline");
     const auto& regs = liverpool->regs;
     const GraphicsPipeline* pipeline = pipeline_cache.GetGraphicsPipeline();
+    if (pipeline == nullptr && pipeline_cache.PipelineCompiling()) {
+        ShadowStatus(VideoCore::Shadow::Status::Skipped, "pipeline compiling");
+    }
     if (pipeline != nullptr && !in_target_passes) {
         if (const auto passes = SharedTargetPasses(pipeline->GetGraphicsKey().mrt_mask);
             passes.size() > 1) {
@@ -1878,6 +1881,9 @@ void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u3
     ShadowStatus(VideoCore::Shadow::Status::Skipped, "no graphics pipeline");
     const GraphicsPipeline* pipeline = pipeline_cache.GetGraphicsPipeline();
     if (!pipeline) {
+        if (pipeline_cache.PipelineCompiling()) {
+            ShadowStatus(VideoCore::Shadow::Status::Skipped, "pipeline compiling");
+        }
         return;
     }
     NoteVpkengineDraw(pipeline);

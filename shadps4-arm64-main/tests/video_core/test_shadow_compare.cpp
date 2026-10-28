@@ -201,21 +201,24 @@ TEST(ShadowCompare, DispatchAndDma) {
 TEST(ShadowCompare, VulkanSkippedForItsPipelineIsNotADifference) {
     Record r = DrawRecord();
     r.vk.status = Status::Skipped;
-    r.vk.reason = "no graphics pipeline";  // compiling on another thread
+    r.vk.reason = "pipeline compiling";  // compiling on another thread
     r.vk.hash = {};
     Outcome o = Compare(r);
     EXPECT_TRUE(o.compared && o.hostSkipped && o.diffs.empty());
     r.vk.reason = "resources could not be bound";  // a real difference
     o = Compare(r);
     EXPECT_TRUE(!o.hostSkipped && o.diffs.size() == 1);
-    r.vk.reason = "no graphics pipeline";
+    r.vk.reason = "no graphics pipeline";  // key or compile failed: not the host's timing
+    o = Compare(r);
+    EXPECT_TRUE(!o.hostSkipped && o.diffs.size() == 1);
+    r.vk.reason = "pipeline compiling";
     r.vpk.status = Status::Skipped;
     o = Compare(r);
     EXPECT_TRUE(o.bothSkipped && !o.hostSkipped);
     Aggregator agg([](const std::string&) {});
     r = DrawRecord();
     r.vk.status = Status::Skipped;
-    r.vk.reason = "no compute pipeline";
+    r.vk.reason = "pipeline compiling";
     agg.Submit(r);
     const Totals t = agg.Snapshot();
     EXPECT_TRUE(t.skippedVk == 1 && t.hostSkipVk == 1 && t.compared == 0 && t.different == 0);
@@ -231,8 +234,12 @@ TEST(ShadowCompare, TheProgramHashIsComparedAsGiven) {
 
 TEST(ShadowCompare, BuffersReachedByAPointerAreOnlyComparedWhenBothListThem) {
     Record r = DrawRecord();
-    r.vpk.buffers.push_back({Stage::Ps, 0x7000, 0, 0, false, true});  // s_load through a pointer: Vulkan binds nothing
+    r.vpk.buffers.push_back({Stage::Ps, 0x7000, 256, 0, false, true});  // s_load through a pointer: Vulkan binds nothing
     EXPECT_TRUE(Compare(r).diffs.empty());
+    r.vpk.buffers.push_back({Stage::Ps, 0x7800, 0, 0, false, true});  // a pointer into unmapped memory (size 0): a real bug
+    Outcome u = Compare(r);
+    EXPECT_TRUE(Has(u, "buf.ps.only_vpk") && u.diffs.size() == 1);
+    r.vpk.buffers.pop_back();
     r.vpk.buffers.push_back({Stage::Ps, 0x7100, 64, 0, false, false});  // a V# one is a binding: Vulkan lacks it
     Outcome o = Compare(r);
     EXPECT_TRUE(Has(o, "buf.ps.only_vpk") && o.diffs.size() == 1);
@@ -251,6 +258,9 @@ TEST(ShadowCompare, FormatsThatGiveTheShaderTheSameBitsAreEqualTheOthersStayDiff
     EXPECT_TRUE(!BitIdenticalView("R8G8B8A8Unorm", "RGBA8Srgb", false));
     EXPECT_TRUE(!BitIdenticalView("A2B10G10R10UnormPack32", "R32Uint", true));
     EXPECT_TRUE(BitIdenticalView("R32Sint", "R32Uint", true));
+    EXPECT_TRUE(BitIdenticalView("R32G32Sint", "R32G32Uint", true));
+    EXPECT_TRUE(!BitIdenticalView("R16Sint", "R16Uint", true));  // sign extension
+    EXPECT_TRUE(!BitIdenticalView("R8G8B8A8Sint", "R8G8B8A8Uint", true));
     EXPECT_TRUE(!BitIdenticalView("R16G16Uint", "R32Uint", true));
     Record r = DrawRecord();
     r.vk.textures = {{Stage::Ps, 0x9000, 4, 7, 9, 13, 0, 0, 64, 64, {4, 5, 6, 7}, false, true, "D32Sfloat", 64, 64}};
