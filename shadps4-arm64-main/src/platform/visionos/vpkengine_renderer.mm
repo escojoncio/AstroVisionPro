@@ -3,6 +3,7 @@
 
 #import <Metal/Metal.h>
 #include <mach/mach.h>
+#include <sys/mman.h>
 
 #include <algorithm>
 #include <array>
@@ -17,6 +18,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <set>
 #include <span>
 #include <string>
@@ -50,6 +52,7 @@
 #include "vpps4/scheduler.h"
 #include "vpgpu/core/submit_policy.h"
 #include "vpps4/report.h"
+#include "video_core/shadow_pixels.h"
 #include "video_core/shadow_record.h"
 
 namespace VpkengineRenderer {
@@ -863,6 +866,230 @@ void shadowResolved(const vpps4::Resolved& r) {
     for (size_t i = 0; i < 8; ++i) side->blend[i].enable = r.blendEnable[i];
 }
 
+// ASTRO_SHADOW_PIXELS (video_core/shadow_pixels.h): the second renderer. The shadow's own renderer is on the null backend and
+// draws nothing; for the draws of a capture frame this one draws for real, on Metal, one draw at a time from the pixels
+// Vulkan had before it (PixelCapture), and its targets are read back. It must never write guest memory, so:
+//  - Renderer::setGuestReadOnly: no write back, DMA, ZPASS_DONE or dispatch, and no draw that writes a V# buffer;
+//  - the memory it is given is a private copy (windows of anonymous memory refreshed from the guest at every draw), so
+//    even a shader storing through a raw pointer writes the copy;
+//  - no page watches, no mirrors, no presentation: it has no hooks for any of them.
+// It is created at the first captured draw and switched off for good (PixelsAvailable) if it cannot start or throws.
+struct PixelEngine {
+    static constexpr u64 kPage = 16384, kGrid = 1ull << 20, kWindowBytes = 256ull << 20;
+    struct Window {
+        u64 base = 0, size = 0;
+        void* host = nullptr;
+        u64 copiedAt = 0;
+    };
+    struct Seed {
+        u64 address = 0;
+        vpps4::SeedRequest::Kind kind = vpps4::SeedRequest::Kind::Color;
+        const VideoCore::Shadow::PixelImage* image = nullptr;
+        bool used = false;
+    };
+    vpgpu::metal2::ShaderTable shaders;
+    std::unique_ptr<vpgpu::metal2::MetalBackend> backend;
+    std::unique_ptr<vpgpu::Device> device;
+    std::unique_ptr<vpps4::Renderer> renderer;
+    bool failed = false;
+    unsigned errorLines = 0;
+    std::vector<Window> windows;
+    u64 windowBytes = 0;
+    u64 epoch = 0;       // one per draw
+    u64 captureId = 0;
+    // The draw in progress.
+    bool drawing = false;
+    std::vector<Seed> seeds;
+    std::vector<std::pair<u64, u64>> seeded;  // (address, bytes) given to the renderer: invalidated after the draw
+    std::string seedFail;
+    std::vector<uint8_t> scratch;
+    vpps4::Resolved last;
+    bool haveLast = false;
+
+    void log(const std::string& line) {
+        if ((line.rfind("gpu.err", 0) == 0 || line.rfind("vpps4.shader error", 0) == 0) && errorLines++ < 50)
+            LOG_WARNING(Render_Vulkan, "ASTRO_PIXEL vpk {}", line);
+    }
+
+    // The private copy of the guest memory around [address, +size) (see the comment above). False: not offered, as the
+    // shadow's own region hook does not offer what the host has page-protected.
+    bool region(u64 address, u64 size, vpps4::GuestRegion& out) {
+        if (!drawing || address < 0x10000) return false;
+        const u64 from = address & ~(kWindow - 1);
+        const u64 to = std::max(from + kWindow, (address + size + kWindow - 1) & ~(kWindow - 1));
+        u64 begin, end;
+        void* mirror = nullptr;
+        if (!cachedSpan(address, from, to, begin, end, mirror) || address + size > end || mirror) return false;
+        if (begin % kPage || end % kPage) return false;
+        const u64 lo = std::max(begin, address & ~(kGrid - 1));
+        const u64 hi = std::min(end, std::max(lo + kGrid, (address + size + kGrid - 1) & ~(kGrid - 1)));
+        Window* w = nullptr;
+        for (Window& x : windows)
+            if (x.base == lo && x.size == hi - lo) w = &x;
+        if (!w) {
+            if (windowBytes + (hi - lo) > kWindowBytes) return false;
+            void* host = ::mmap(nullptr, hi - lo, PROT_READ | PROT_WRITE, MAP_ANON | MAP_PRIVATE, -1, 0);
+            if (host == MAP_FAILED || reinterpret_cast<uintptr_t>(host) % kPage) return false;
+            windowBytes += hi - lo;
+            windows.push_back({lo, hi - lo, host, 0});
+            w = &windows.back();
+        }
+        if (w->copiedAt != epoch) {
+            if (spanHasWatches(lo, hi)) return false;
+            std::memcpy(w->host, reinterpret_cast<const void*>(lo), hi - lo);
+            w->copiedAt = epoch;
+        }
+        out = {w->base, w->size, w->host, false};
+        return true;
+    }
+
+    // Hooks::seed: the texels Vulkan had for the surface, if the draw has them and they are the same layout.
+    bool seed(const vpps4::SeedRequest& q, vpps4::SeedImage& out) {
+        using VideoCore::Shadow::ParsePixelFormat;
+        for (Seed& s : seeds) {
+            if (s.used || s.address != q.address) continue;
+            if (s.kind != q.kind && s.kind != vpps4::SeedRequest::Kind::Texture) continue;
+            const auto vpkFormat = ParsePixelFormat(vpgpu::formatInfo(q.format).name);
+            const auto vkFormat = ParsePixelFormat(s.image->format);
+            if (!vpkFormat || !vkFormat || !VideoCore::Shadow::SameLayout(*vkFormat, *vpkFormat)) {
+                seedFail = std::string("format ") + s.image->format + " / " + vpgpu::formatInfo(q.format).name;
+                return false;
+            }
+            if (q.width != s.image->surfaceWidth || q.height != s.image->surfaceHeight) {
+                seedFail = "size";
+                return false;
+            }
+            const bool whole = s.image->width == s.image->surfaceWidth && s.image->height == s.image->surfaceHeight;
+            if (whole) {
+                out.data = s.image->texels.data();
+            } else {
+                scratch = VideoCore::Shadow::ExpandRect(*s.image, vkFormat->bytes);
+                out.data = scratch.data();
+            }
+            out.rowBytes = 0;
+            s.used = true;
+            seeded.push_back({q.address, u64(q.width) * q.height * vkFormat->bytes});
+            return true;
+        }
+        return false;
+    }
+
+    bool start() {
+        if (renderer) return true;
+        if (failed) return false;
+        failed = true;  // (until it is up)
+        vpgpu::metal2::MetalOptions options;
+        options.framesInFlight = 2;
+        backend = std::make_unique<vpgpu::metal2::MetalBackend>(shaders, [this](const std::string& l) { log(l); }, options);
+        if (!backend->ok()) return false;
+        device = std::make_unique<vpgpu::Device>(*backend, 2, [this](const std::string& l) { log(l); });
+        device->setRefuseFailedBuffers(true);
+        vpps4::Hooks hooks;
+        hooks.region = [this](u64 a, u64 n, vpps4::GuestRegion& g) { return region(a, n, g); };
+        hooks.shader = [this](u64 id, vpir::Stage, const vpmsl::MslShader& m) { shaders.add(id, toMetal(m)); };
+        hooks.log = [this](const std::string& l) { log(l); };
+        hooks.resolved = [this](const vpps4::Resolved& r) { last = r, haveLast = true; };
+        hooks.seed = [this](const vpps4::SeedRequest& q, vpps4::SeedImage& i) { return seed(q, i); };
+        renderer = std::make_unique<vpps4::Renderer>(*device, std::move(hooks));
+        renderer->setMaxSamples(1);
+        renderer->setGuestReadOnly(true);
+        failed = false;
+        LOG_INFO(Render_Vulkan, "ASTRO_PIXEL second renderer on (Metal, private copy of guest memory, guest read-only)");
+        return true;
+    }
+
+    // Draws `clear` (when the metadata asked for a clear) and `d` from the pixels in `pc`, and reads the colour targets.
+    void draw(VideoCore::Shadow::PixelCapture& pc, const vpps4::DrawState* clear, const vpps4::DrawState& d) {
+        using namespace VideoCore::Shadow;
+        if (!start()) {
+            PixelsAvailable().store(false, std::memory_order_relaxed);
+            pc.vpkSkip = "second renderer unavailable";
+            LOG_WARNING(Render_Vulkan, "ASTRO_PIXEL disabled reason=the second renderer could not start");
+            return;
+        }
+        if (pc.captureId != captureId) {  // a new capture: nothing it held is trusted
+            captureId = pc.captureId;
+            renderer->abandonOwners(0, 1ull << 47);
+            renderer->invalidate(0, 1ull << 47);
+        }
+        ++epoch;
+        seeds.clear();
+        seeded.clear();
+        seedFail.clear();
+        haveLast = false;
+        for (unsigned i = 0; i < 8; ++i)
+            if (pc.color[i].used) seeds.push_back({pc.color[i].address, vpps4::SeedRequest::Kind::Color, &pc.color[i].pre, false});
+        if (pc.depth.used) seeds.push_back({pc.depth.address, vpps4::SeedRequest::Kind::Depth, &pc.depth.pre, false});
+        for (const PixelTexture& t : pc.textures) seeds.push_back({t.address, vpps4::SeedRequest::Kind::Texture, &t.image, false});
+        drawing = true;
+        if (clear) renderer->draw(*clear);
+        haveLast = false;
+        renderer->draw(d);
+        std::vector<vpgpu::TextureId> targets(8);
+        const bool drawn = haveLast && last.status == vpps4::Resolved::Status::Drawn;
+        if (drawn)
+            for (unsigned i = 0; i < 8; ++i)
+                if (pc.color[i].used) targets[i] = renderer->colorTargetAt(pc.color[i].address);  // (kept: its pass stores it)
+        renderer->submit();
+        const bool idle = device->waitIdle(5'000'000'000ull);
+        const vpps4::CpuTimes times = renderer->takeCpuTimes();
+        drawing = false;
+        for (const auto& [address, bytes] : seeded) renderer->invalidate(address, bytes);  // (the next draw is seeded again, or reads memory)
+        if (!haveLast) {
+            pc.vpkSkip = "no answer";
+        } else if (last.status != vpps4::Resolved::Status::Drawn) {
+            pc.vpkSkip = (last.status == vpps4::Resolved::Status::Skipped ? "skipped: " : "handled: ") + last.reason;
+        } else if (!seedFail.empty()) {
+            pc.vpkSkip = "seed " + seedFail;
+        } else if (!idle) {
+            // (the GPU may still read the windows the next draw would refresh: no more captures)
+            PixelsAvailable().store(false, std::memory_order_relaxed);
+            LOG_WARNING(Render_Vulkan, "ASTRO_PIXEL disabled reason=the second renderer's GPU did not finish in 5 s");
+            pc.vpkSkip = "gpu timeout";
+        } else if (times.holdTimeouts != 0) {
+            pc.vpkSkip = "pipeline compiling";
+        } else {
+            readTargets(pc, targets);
+        }
+    }
+
+    void readTargets(VideoCore::Shadow::PixelCapture& pc, const std::vector<vpgpu::TextureId>& targets) {
+        using namespace VideoCore::Shadow;
+        for (unsigned i = 0; i < 8 && pc.vpkSkip.empty(); ++i) {
+            PixelTarget& t = pc.color[i];
+            if (!t.used) continue;
+            const vpps4::ResolvedTarget& rt = last.color[i];
+            const auto format = ParsePixelFormat(rt.hostFormat);
+            if (!rt.used || !targets[i] || !format) {
+                pc.vpkSkip = "no target " + std::to_string(i);
+                break;
+            }
+            if (rt.width != t.post.surfaceWidth || rt.height != t.post.surfaceHeight) {
+                pc.vpkSkip = "target size";
+                break;
+            }
+            vpgpu::TextureSpan span;
+            span.texture = targets[i];
+            span.width = rt.width;
+            span.height = rt.height;
+            std::vector<uint8_t> bytes;
+            if (backend->readTexture(span, bytes) != vpgpu::ReadResult::Ok ||
+                bytes.size() != size_t(rt.width) * rt.height * format->bytes) {
+                pc.vpkSkip = "readback";
+                break;
+            }
+            t.vpkPost = t.post;
+            t.vpkPost.format = rt.hostFormat;
+            t.vpkPost.texels = CropRect(bytes.data(), rt.width, format->bytes, {t.post.x, t.post.y, t.post.width, t.post.height});
+        }
+    }
+};
+
+PixelEngine& pixelEngine() {
+    static PixelEngine& p = *new PixelEngine;  // never destroyed, like the engine
+    return p;
+}
+
 // The program of a stage as the renderer wants it: code (whole binary), user data, address.
 void fillStage(vpps4::Stage& st, const AmdGpu::ShaderProgram& program) {
     const auto params = AmdGpu::GetParams(program);
@@ -1341,6 +1568,11 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
     if (!e.start()) return;
     e.applyPending();
     vpps4::DrawState d;
+    // A draw of a capture frame (ASTRO_SHADOW_PIXELS) that Vulkan read back: it is also drawn for real below.
+    VideoCore::Shadow::Record* shadowRecord = VideoCore::Shadow::Current();
+    VideoCore::Shadow::PixelCapture* pixels =
+        shadowRecord != nullptr && shadowRecord->pixels && shadowRecord->pixels->vkSkip.empty() ? shadowRecord->pixels.get() : nullptr;
+    std::optional<vpps4::DrawState> pixelClear;
 
     // Targets. The ones a title cleared by writing their fast clear metadata (see Engine::metas) are cleared
     // before this draw, as the Vulkan backend does with the load action of the pass.
@@ -1482,6 +1714,7 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
         e.metaDepthClears += clearDepth;
         ++e.metaClearDraws;
         e.renderer->draw(clear);
+        if (pixels) pixelClear = clear;
     }
     if (eliminate) {
         e.noteWork();
@@ -1659,6 +1892,15 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
         for (unsigned i = 0; i < 8; ++i)
             if (side->color[i].used) side->color[i].cleared = clearColor[i];
         side->depth.used = side->depth.used && ((dc.depth_enable && db.DepthValid()) || (dc.stencil_enable && db.StencilValid()));
+    }
+    if (pixels && VideoCore::Shadow::PixelsAvailable().load(std::memory_order_relaxed)) {
+        try {
+            pixelEngine().draw(*pixels, pixelClear ? &*pixelClear : nullptr, d);
+        } catch (const std::exception& ex) {
+            VideoCore::Shadow::PixelsAvailable().store(false, std::memory_order_relaxed);
+            pixels->vpkSkip = "exception";
+            LOG_ERROR(Render_Vulkan, "ASTRO_PIXEL disabled reason={}", ex.what());
+        }
     }
     e.noteWork();
 }

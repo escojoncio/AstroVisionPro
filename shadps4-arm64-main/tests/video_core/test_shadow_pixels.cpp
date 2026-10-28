@@ -166,6 +166,18 @@ TEST(ShadowPixelAggregator, DivergentDrawsAreLoggedWithTheirRecordDiffAndTheFirs
     EXPECT_TRUE(lines[3] == "ASTRO_PIXEL summary draws=5 compared=3 equal=1 diverged=2 skipped=2(vk:msaa=1,vpk:pipeline_compiling=1)");
 }
 
+TEST(ShadowPixelAggregator, ADrawOneSideDidNotDrawIsSkippedWithItsReason) {
+    std::vector<std::string> lines;
+    PixelAggregator agg([&](const std::string& l) { lines.push_back(l); });
+    agg.Begin();
+    Record r = CapturedDraw(1, 0x1000, 1, 200);
+    r.vpk.status = Status::Skipped;
+    r.vpk.reason = "texture unavailable";
+    agg.Submit(r);
+    agg.End();
+    EXPECT_TRUE(lines.size() == 1 && lines[0].find("skipped=1(vpk:skip_texture_unavailable=1)") != std::string::npos);
+}
+
 TEST(ShadowPixelAggregator, DifferentFormatsAreSkippedNotCompared) {
     std::vector<std::string> lines;
     PixelAggregator agg([&](const std::string& l) { lines.push_back(l); });

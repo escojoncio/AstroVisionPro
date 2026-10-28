@@ -216,6 +216,25 @@ private:
     boost::container::static_vector<vk::DescriptorBufferInfo, Shader::NUM_BUFFERS> buffer_infos;
     boost::container::small_vector<VideoCore::ImageId, Shader::NUM_IMAGES> bound_images;
 
+    /// ASTRO_SHADOW_PIXELS (video_core/shadow_pixels.h): what a captured draw reads back. Jobs are the images copied to
+    /// `shadow_pixel_staging` before the draw (`pre_offset`) and, for the colour targets, after it (`post_offset`).
+    struct ShadowPixelJob {
+        VideoCore::ImageId image;
+        u32 color_index{};
+        bool depth{};
+        bool texture{};
+        u64 address{};
+        u32 width{}, height{}, texel_bytes{};
+        u64 pre_offset{}, post_offset{};
+        std::string format;
+    };
+    std::vector<ShadowPixelJob> shadow_pixel_jobs;
+    /// The images the draw samples that the GPU made (noted by BindTextures while a draw is captured).
+    std::vector<VideoCore::ImageId> shadow_pixel_textures;
+    std::unique_ptr<VideoCore::Buffer> shadow_pixel_staging;
+    void ShadowPixelsBefore(const GraphicsPipeline* pipeline);
+    void ShadowPixelsAfter();
+
     u32 set_write_index{};
     Pipeline::DescriptorWrites set_writes;
     Pipeline::BufferBarriers buffer_barriers;
