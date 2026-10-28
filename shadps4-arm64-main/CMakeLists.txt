@@ -1473,8 +1473,12 @@ if (SHADPS4_VISIONOS)
             file(READ ${VPKENGINE_PS4_DIR}/include/vpps4/tiling_addr.h VPT_ADDR_TEXT)
             set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${VPKENGINE_PS4_DIR}/include/vpps4/tiling_addr.h)
             configure_file(${VPKENGINE_PS4_DIR}/src/tiling_addr_text.cpp.in ${CMAKE_CURRENT_BINARY_DIR}/vpps4_tiling_addr_text.cpp @ONLY)
+            file(READ ${VPKENGINE_PS4_DIR}/include/vpps4/bc_block.h VPT_BC_TEXT)
+            set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${VPKENGINE_PS4_DIR}/include/vpps4/bc_block.h)
+            configure_file(${VPKENGINE_PS4_DIR}/src/bc_block_text.cpp.in ${CMAKE_CURRENT_BINARY_DIR}/vpps4_bc_block_text.cpp @ONLY)
             target_sources(shadps4 PRIVATE ${VPKENGINE_CORE_SOURCES}
                 ${VPKENGINE_METAL_DIR}/src/metal_backend.mm
+                ${VPKENGINE_PS4_DIR}/src/bc_decode.cpp
                 ${VPKENGINE_PS4_DIR}/src/fixed_function.cpp
                 ${VPKENGINE_PS4_DIR}/src/formats.cpp
                 ${VPKENGINE_PS4_DIR}/src/renderer.cpp
@@ -1486,6 +1490,7 @@ if (SHADPS4_VISIONOS)
                 ${VPKENGINE_PS4_DIR}/src/tiling.cpp
                 ${VPKENGINE_PS4_DIR}/src/gpu_tiler.cpp
                 ${CMAKE_CURRENT_BINARY_DIR}/vpps4_tiling_addr_text.cpp
+                ${CMAKE_CURRENT_BINARY_DIR}/vpps4_bc_block_text.cpp
                 ${VPKENGINE_PS4_DIR}/src/fetch.cpp
                 ${VPKENGINE_PS4_DIR}/src/memory_tracker.cpp
                 src/platform/visionos/vpkengine_mirror.h
