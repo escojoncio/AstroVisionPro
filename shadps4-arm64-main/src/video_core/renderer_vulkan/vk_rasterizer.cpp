@@ -17,6 +17,7 @@
 #include "video_core/renderer_vulkan/vk_rasterizer.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
 #include "video_core/renderer_vulkan/vk_shader_hle.h"
+#include "video_core/shadow_pixels.h"
 #include "video_core/shadow_record.h"
 #ifdef SHADPS4_VPKENGINE_SHADER_CHECK
 #include "vpkengine_shader_check.h"
@@ -1108,6 +1109,224 @@ void NoteVpkengineDraw(const Vulkan::GraphicsPipeline*) {}
 #endif
 } // namespace
 
+// ---- ASTRO_SHADOW_PIXELS: the Vulkan half of a captured draw (video_core/shadow_pixels.h) --------------------------
+
+/// Why an image cannot take part in the pixel comparison / be copied to VPKEngine's renderer (empty: it can): one
+/// sample, one layer and level, a format both renderers read the same way.
+static std::string ShadowPixelImageSkip(const VideoCore::ImageInfo& info, bool whole_image) {
+    if (info.num_samples > 1) {
+        return "msaa";
+    }
+    if (info.resources.layers > 1 || info.size.depth > 1 || (whole_image && info.resources.levels > 1)) {
+        return "layers or mips";
+    }
+    if (!VideoCore::Shadow::ParsePixelFormat(vk::to_string(info.pixel_format))) {
+        return "format " + vk::to_string(info.pixel_format);
+    }
+    return {};
+}
+
+/// Before the draw's pass: the whole images the draw starts from (its colour targets and depth, and the GPU-made
+/// textures it samples) are copied into one host-visible buffer, on the GPU timeline, in order with everything
+/// before. Nothing waits here: ShadowPixelsAfter does, once. Does nothing for a draw that is not captured.
+void Rasterizer::ShadowPixelsBefore(const GraphicsPipeline* pipeline) {
+    shadow_pixel_jobs.clear();
+    auto* record = VideoCore::Shadow::Current();
+    if (record == nullptr || !record->pixels) {
+        shadow_pixel_textures.clear();
+        return;
+    }
+    VideoCore::Shadow::PixelCapture& pc = *record->pixels;
+    const auto skip = [&](std::string why) {
+        pc.vkSkip = std::move(why);
+        shadow_pixel_jobs.clear();
+        shadow_pixel_textures.clear();
+    };
+    if (in_target_passes) {
+        return skip("draw in several passes");
+    }
+    const auto& regs = liverpool->regs;
+    constexpr u64 kMaxStaging = u64{192} << 20;
+    u64 total = 0;
+    const auto add = [&](VideoCore::ImageId id, u32 color_index, bool depth, bool texture,
+                         u64 address) -> std::string {
+        const VideoCore::Image& image = texture_cache.GetImage(id);
+        std::string why = ShadowPixelImageSkip(image.info, texture);
+        if (why.empty() && depth && image.info.pixel_format != vk::Format::eD32Sfloat &&
+            image.info.pixel_format != vk::Format::eD16Unorm) {
+            why = "depth format " + vk::to_string(image.info.pixel_format);
+        }
+        if (!why.empty()) {
+            return why;
+        }
+        ShadowPixelJob job;
+        job.image = id;
+        job.color_index = color_index;
+        job.depth = depth;
+        job.texture = texture;
+        job.address = address;
+        job.width = image.info.size.width;
+        job.height = image.info.size.height;
+        job.texel_bytes = VideoCore::Shadow::ParsePixelFormat(vk::to_string(image.info.pixel_format))->bytes;
+        job.format = vk::to_string(image.info.pixel_format);
+        const u64 bytes = u64{job.width} * job.height * job.texel_bytes;
+        job.pre_offset = Common::AlignUp(total, 256);
+        total = job.pre_offset + bytes;
+        if (!depth && !texture) {
+            job.post_offset = Common::AlignUp(total, 256);
+            total = job.post_offset + bytes;
+        }
+        shadow_pixel_jobs.push_back(std::move(job));
+        return {};
+    };
+    const auto& key = pipeline->GetGraphicsKey();
+    for (s32 cb = 0; cb < std::bit_width(key.mrt_mask); ++cb) {
+        const auto image_id = cb_descs[cb].first;
+        if (!image_id) {
+            continue;
+        }
+        if (const auto why = add(image_id, u32(cb), false, false, regs.color_buffers[cb].Address());
+            !why.empty()) {
+            return skip(why);
+        }
+    }
+    if (db_desc.first) {
+        // (the depth test starts from it: one VPKEngine cannot take is a draw it cannot reproduce)
+        if (const auto why = add(db_desc.first, 0, true, false, regs.depth_buffer.DepthAddress());
+            !why.empty()) {
+            return skip("depth: " + why);
+        }
+    }
+    std::vector<VideoCore::ImageId> seen;
+    for (const auto image_id : shadow_pixel_textures) {
+        if (std::ranges::find(seen, image_id) != seen.end()) {
+            continue;
+        }
+        seen.push_back(image_id);
+        const bool is_target = std::ranges::any_of(
+            shadow_pixel_jobs, [&](const ShadowPixelJob& job) { return job.image == image_id; });
+        if (is_target) {
+            return skip("samples a target it draws to");
+        }
+        if (const auto why = add(image_id, 0, false, true, texture_cache.GetImage(image_id).info.guest_address);
+            !why.empty()) {
+            return skip("texture: " + why);
+        }
+    }
+    shadow_pixel_textures.clear();
+    if (shadow_pixel_jobs.empty()) {
+        return skip("no target");
+    }
+    if (total > kMaxStaging) {
+        return skip("images too large");
+    }
+    if (!shadow_pixel_staging || shadow_pixel_staging->mapped_data.size() < total) {
+        shadow_pixel_staging.reset();
+        auto staging = std::make_unique<VideoCore::Buffer>(instance, scheduler,
+                                                           VideoCore::MemoryUsage::Download, 0,
+                                                           vk::BufferUsageFlagBits::eTransferDst,
+                                                           std::max<u64>(total, u64{1} << 20));
+        if (staging->mapped_data.size() < total) {
+            return skip("no host-visible staging buffer");
+        }
+        shadow_pixel_staging = std::move(staging);
+    }
+    for (const ShadowPixelJob& job : shadow_pixel_jobs) {
+        VideoCore::Image& image = texture_cache.GetImage(job.image);
+        const vk::BufferImageCopy copy{
+            .bufferOffset = job.pre_offset,
+            .bufferRowLength = job.width,
+            .bufferImageHeight = job.height,
+            .imageSubresource =
+                {
+                    .aspectMask = image.info.props.is_depth ? vk::ImageAspectFlagBits::eDepth
+                                                            : vk::ImageAspectFlagBits::eColor,
+                    .mipLevel = 0,
+                    .baseArrayLayer = 0,
+                    .layerCount = 1,
+                },
+            .imageOffset = {0, 0, 0},
+            .imageExtent = {job.width, job.height, 1},
+        };
+        image.Download({&copy, 1}, shadow_pixel_staging->Handle(), job.pre_offset,
+                       u64{job.width} * job.height * job.texel_bytes);
+    }
+}
+
+/// After the draw: the colour targets are copied again, the GPU is waited for (once), and the rectangle the draw
+/// can reach (viewport and scissor) of each is cut out of the buffer, with the "before" images, into the record.
+void Rasterizer::ShadowPixelsAfter() {
+    auto* record = VideoCore::Shadow::Current();
+    if (shadow_pixel_jobs.empty() || record == nullptr || !record->pixels) {
+        shadow_pixel_jobs.clear();
+        return;
+    }
+    VideoCore::Shadow::PixelCapture& pc = *record->pixels;
+    for (const ShadowPixelJob& job : shadow_pixel_jobs) {
+        if (job.texture || job.depth) {
+            continue;
+        }
+        VideoCore::Image& image = texture_cache.GetImage(job.image);
+        const vk::BufferImageCopy copy{
+            .bufferOffset = job.post_offset,
+            .bufferRowLength = job.width,
+            .bufferImageHeight = job.height,
+            .imageSubresource =
+                {
+                    .aspectMask = vk::ImageAspectFlagBits::eColor,
+                    .mipLevel = 0,
+                    .baseArrayLayer = 0,
+                    .layerCount = 1,
+                },
+            .imageOffset = {0, 0, 0},
+            .imageExtent = {job.width, job.height, 1},
+        };
+        image.Download({&copy, 1}, shadow_pixel_staging->Handle(), job.post_offset,
+                       u64{job.width} * job.height * job.texel_bytes);
+    }
+    scheduler.Finish();
+    if (!shadow_pixel_staging->is_coherent) {
+        vmaInvalidateAllocation(instance.GetAllocator(), shadow_pixel_staging->buffer.allocation, 0,
+                                VK_WHOLE_SIZE);
+    }
+    using namespace VideoCore::Shadow;
+    const u8* mapped = shadow_pixel_staging->mapped_data.data();
+    const Side& side = record->vk;
+    const float viewport[4] = {side.viewport[0], side.viewport[1], side.viewport[2], side.viewport[3]};
+    for (const ShadowPixelJob& job : shadow_pixel_jobs) {
+        PixelImage whole;
+        whole.surfaceWidth = whole.width = job.width;
+        whole.surfaceHeight = whole.height = job.height;
+        whole.format = job.format;
+        if (job.texture) {
+            whole.texels.assign(mapped + job.pre_offset,
+                                mapped + job.pre_offset + u64{job.width} * job.height * job.texel_bytes);
+            pc.textures.push_back({job.address, std::move(whole)});
+            continue;
+        }
+        const PixelRect rect = DrawRegion(side.viewportValid, viewport, side.scissorValid, side.scissor,
+                                          job.width, job.height);
+        if (rect.empty()) {
+            pc.vkSkip = "empty region";
+            continue;
+        }
+        const auto cut = [&](u64 offset) {
+            PixelImage image = whole;
+            image.x = rect.x, image.y = rect.y, image.width = rect.w, image.height = rect.h;
+            image.texels = CropRect(mapped + offset, job.width, job.texel_bytes, rect);
+            return image;
+        };
+        PixelTarget& target = job.depth ? pc.depth : pc.color[job.color_index];
+        target.used = true;
+        target.address = job.address;
+        target.pre = cut(job.pre_offset);
+        if (!job.depth) {
+            target.post = cut(job.post_offset);
+        }
+    }
+    shadow_pixel_jobs.clear();
+}
+
 void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
     RENDERER_TRACE;
 
@@ -1225,6 +1444,7 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
     ShadowStages(pipeline);
     ShadowGeometry(regs, is_indexed, index_offset, memory);
     ShadowStatus(VideoCore::Shadow::Status::Skipped, "resources could not be bound");
+    shadow_pixel_textures.clear();
     PrepareRenderState(pipeline);
     if (!BindResources(pipeline)) {
         if (trace) {
@@ -1233,6 +1453,7 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
         return;
     }
     ShadowStatus(VideoCore::Shadow::Status::Drawn);
+    ShadowPixelsBefore(pipeline);
     const auto state = BeginRendering(pipeline);
 
     buffer_cache.BindVertexBuffers(*pipeline);
@@ -1294,6 +1515,7 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
 
     ResetBindings();
     RetireIsolatedReadConstSnapshots();
+    ShadowPixelsAfter();
 }
 
 std::string Rasterizer::DescribeDrawState(const GraphicsPipeline* pipeline) const {
@@ -2482,6 +2704,10 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
                 t.hostWidth = image->info.size.width;
                 t.hostHeight = image->info.size.height;
                 side->textures.push_back(std::move(t));
+            }
+            if (side != nullptr && i == 0 && VideoCore::Shadow::Current()->pixels &&
+                True(image->flags & VideoCore::ImageFlagBits::GpuModified)) {
+                shadow_pixel_textures.push_back(image_id);  // (a captured draw starts VPKEngine from it too)
             }
             if (image->binding.is_bound) {
                 // The image is already bound. In case if it is about to be used as storage we

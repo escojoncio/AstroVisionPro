@@ -5,6 +5,8 @@
 //   shadow     Vulkan is the renderer that draws, writes memory and presents; VPKEngine follows it on
 //              its null backend (no GPU, no guest memory written, nothing presented) behind
 //              video_core/tee_rasterizer.h (gnmdriver.cpp RegisterLib, vpkengine_renderer.h Mode::Shadow).
+//              ASTRO_SHADOW_PIXELS=<seconds|0> (default 10) adds a pixel comparison of one picture every N seconds
+//              (video_core/shadow_pixels.h): VPKEngine then draws that picture's draws for real, on Metal.
 // Both renderers are always compiled in (SHADPS4_VPKENGINE_RENDERER); without VPKEngine's sources
 // the build has Vulkan alone and that is what this answers.
 #pragma once

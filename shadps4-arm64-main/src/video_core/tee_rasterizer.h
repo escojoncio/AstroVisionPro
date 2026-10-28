@@ -4,12 +4,18 @@
 #pragma once
 
 #include <atomic>
+#include <chrono>
+#include <cstdlib>
 #include <exception>
 #include <functional>
+#include <memory>
+#include <mutex>
+#include <thread>
 
 #include "common/logging/log.h"
 #include "video_core/rasterizer_interface.h"
 #include "video_core/shadow_compare.h"
+#include "video_core/shadow_pixels.h"
 
 namespace VideoCore {
 
@@ -31,6 +37,12 @@ namespace VideoCore {
 /// Draw, DrawIndirect, Dispatch*, FillBuffer and CopyBuffer are also compared (shadow_compare.h): each gets a
 /// sequence number and a Shadow::Record, the primary and then the shadow fill their half of it with what they
 /// resolved, and the differences are logged after the shadow (`ASTRO_SHADOW diff ...`, `ASTRO_SHADOW summary`).
+/// Pixel comparison (shadow_pixels.h): ASTRO_SHADOW_PIXELS=<seconds|0> (default 10) makes one picture in that many
+/// seconds a capture frame, in which each Draw gets a PixelCapture in its Record, filled by the primary with the
+/// pixels of its targets and used by the shadow to draw the same draw from them on a real backend. It is the only
+/// time the shadow does more than follow: the primary reads its images back (the call waits for the GPU), only for
+/// the draws of the thread that began the capture, for at most ASTRO_SHADOW_PIXELS_BUDGET_MS (default 2000) of the
+/// picture; the primary's output does not change.
 /// Calls from different command processor threads (graphics and compute queues) are not serialised here:
 /// each reaches the primary and the shadow in its own order, as it would reach one renderer.
 class TeeRasterizer final : public RasterizerInterface {
@@ -199,6 +211,9 @@ private:
         Shadow::Record record;
         record.op = op;
         record.seq = comparison.NextSeq();
+        if (op == Shadow::Op::Draw) {
+            record.pixels = BeginPixels();
+        }
         {
             const Shadow::Scope scope{&record};
             run_primary();
@@ -213,8 +228,44 @@ private:
         }
         if (answered) {
             comparison.Submit(record);
+            pixel_results.Submit(record);
         }
         comparison.Tick(Shadow::Frames().load(std::memory_order_relaxed));
+    }
+
+    static double Now() {
+        return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+    }
+
+    /// The PixelCapture of this Draw when it is to be captured (see the class comment), else null. Also ends the
+    /// capture whose picture was presented (its summary) and begins the next one.
+    std::shared_ptr<Shadow::PixelCapture> BeginPixels() {
+        if (!pixels_enabled) {
+            return nullptr;
+        }
+        std::scoped_lock lock{pixel_mutex};
+        const double now = Now();
+        const auto step = pixel_schedule.Advance(Shadow::Frames().load(std::memory_order_relaxed), now);
+        if (step.ended) {
+            pixel_results.End();
+            pixel_thread_set = false;
+        }
+        if (step.started) {
+            pixel_results.Begin();
+        }
+        if (!pixel_schedule.Capturing(now) || !Shadow::PixelsAvailable().load(std::memory_order_relaxed)) {
+            return nullptr;
+        }
+        if (!pixel_thread_set) {
+            pixel_thread = std::this_thread::get_id();
+            pixel_thread_set = true;
+        }
+        if (pixel_thread != std::this_thread::get_id()) {
+            return nullptr;  // (one thread's draws are isolated one by one; another's would interleave)
+        }
+        auto capture = std::make_shared<Shadow::PixelCapture>();
+        capture->captureId = pixel_schedule.Id();
+        return capture;
     }
 
     template <typename Fn>
@@ -248,6 +299,15 @@ private:
     std::function<bool()> shadow_failed;
     std::atomic<bool> shadow_on{true};
     Shadow::Aggregator comparison{[](const std::string& line) { LOG_INFO(Render_Vulkan, "{}", line); }};
+    // ASTRO_SHADOW_PIXELS
+    const double pixel_interval = Shadow::CaptureSchedule::ParseInterval(std::getenv("ASTRO_SHADOW_PIXELS"));
+    const bool pixels_enabled = pixel_interval > 0;
+    Shadow::CaptureSchedule pixel_schedule{
+        pixel_interval, Shadow::CaptureSchedule::ParseInterval(std::getenv("ASTRO_SHADOW_PIXELS_BUDGET_MS"), 2000.0) / 1000.0};
+    Shadow::PixelAggregator pixel_results{[](const std::string& line) { LOG_INFO(Render_Vulkan, "{}", line); }};
+    std::mutex pixel_mutex;
+    std::thread::id pixel_thread;
+    bool pixel_thread_set = false;
 };
 
 } // namespace VideoCore

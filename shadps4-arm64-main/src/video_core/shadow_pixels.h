@@ -355,7 +355,11 @@ public:
         };
         std::vector<Result> results;
         std::string skip;
-        if (!pc.vkSkip.empty()) {
+        if (record.vk.status != Status::Drawn) {  // (nothing was drawn to compare)
+            skip = "vk:" + detail::StatusText(record.vk);
+        } else if (record.vpk.status != Status::Drawn) {
+            skip = "vpk:" + detail::StatusText(record.vpk);
+        } else if (!pc.vkSkip.empty()) {
             skip = "vk:" + pc.vkSkip;
         } else if (!pc.vpkSkip.empty()) {
             skip = "vpk:" + pc.vpkSkip;
