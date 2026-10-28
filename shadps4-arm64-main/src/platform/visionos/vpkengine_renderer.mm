@@ -869,11 +869,17 @@ void shadowResolved(const vpps4::Resolved& r) {
 // ASTRO_SHADOW_PIXELS (video_core/shadow_pixels.h): the second renderer. The shadow's own renderer is on the null backend and
 // draws nothing; for the draws of a capture frame this one draws for real, on Metal, one draw at a time from the pixels
 // Vulkan had before it (PixelCapture), and its targets are read back. It must never write guest memory, so:
-//  - Renderer::setGuestReadOnly: no write back, DMA, ZPASS_DONE or dispatch, and no draw that writes a V# buffer;
+//  - Renderer::setGuestReadOnly: no write back, DMA or ZPASS_DONE, and no draw or dispatch that binds a V# buffer for
+//    writing (a dispatch that stores to none runs: it writes the GDS or an image of the GPU, never guest memory);
 //  - the memory it is given is a private copy (windows of anonymous memory refreshed from the guest at every draw), so
-//    even a shader storing through a raw pointer writes the copy;
+//    even a shader storing through a raw pointer (FLAT) writes the copy: read-only is not enforced by the renderer for
+//    those, the private windows are what make it safe;
 //  - no page watches, no mirrors, no presentation: it has no hooks for any of them.
 // It is created at the first captured draw and switched off for good (PixelsAvailable) if it cannot start or throws.
+// Windows of a PixelEngine are mapped (a Draw outside a capture asks the engine to let them go; without any, the engine
+// is not even made).
+std::atomic<bool> pixelWindowsHeld{false};
+
 struct PixelEngine {
     static constexpr u64 kPage = 16384, kGrid = 1ull << 20, kWindowBytes = 256ull << 20;
     struct Window {
@@ -896,7 +902,8 @@ struct PixelEngine {
     std::vector<Window> windows;
     u64 windowBytes = 0;
     std::mutex mutex;                 // draw() and release() come from the threads of the Tee's calls
-    std::atomic<bool> held{false};    // windows are mapped (release() has something to do)
+    std::thread::id captureThread;    // the thread of the draws it was given
+    bool stuck = false;               // its GPU did not go idle in time: the windows are never unmapped nor refreshed
     bool copyFailed = false;          // a window could not be copied from guest memory in this draw
     u64 epoch = 0;       // one per draw
     u64 captureId = 0;
@@ -936,7 +943,7 @@ struct PixelEngine {
             windowBytes += hi - lo;
             windows.push_back({lo, hi - lo, host, 0});
             w = &windows.back();
-            held.store(true, std::memory_order_relaxed);
+            pixelWindowsHeld.store(true, std::memory_order_relaxed);
         }
         if (w->copiedAt != epoch) {
             // Not a memcpy: a page the host protects (Vulkan's PageManager, which the shadow has no probe for) would
@@ -984,18 +991,33 @@ struct PixelEngine {
         return false;
     }
 
-    // The capture is over: the windows go back to the system (the renderer lets go of what it made over them first; the GPU
-    // is idle, every draw waits for it).
-    void release() {
+    // The capture is over for `thread` (it drew outside one): the windows go back to the system. The renderer lets go of
+    // what it made over them first (invalidate, abandonOwners, dropGuestBuffers: no buffer stays alive over unmapped
+    // pages, nor is reused for a later map at the same address) and the GPU must be idle; if it is not (it is waited for,
+    // bounded), the windows stay mapped for good and the engine is off.
+    void release(std::thread::id thread) {
         std::scoped_lock lock{mutex};
-        if (!held.exchange(false, std::memory_order_relaxed)) return;
+        if (thread != captureThread || !pixelWindowsHeld.load(std::memory_order_relaxed) || stuck) return;
+        bool idle = true;
         if (renderer) {
-            renderer->abandonOwners(0, 1ull << 47);
-            renderer->invalidate(0, 1ull << 47);
+            renderer->submit();
+            idle = device->waitIdle(5'000'000'000ull);
+            if (idle) {
+                renderer->abandonOwners(0, 1ull << 47);
+                renderer->invalidate(0, 1ull << 47);
+                idle = renderer->dropGuestBuffers();
+            }
+        }
+        if (!idle) {
+            stuck = true;
+            VideoCore::Shadow::PixelsAvailable().store(false, std::memory_order_relaxed);
+            LOG_WARNING(Render_Vulkan, "ASTRO_PIXEL disabled reason=the second renderer's GPU did not go idle: its windows stay mapped");
+            return;
         }
         for (Window& w : windows) ::munmap(w.host, w.size);
         windows.clear();
         windowBytes = 0;
+        pixelWindowsHeld.store(false, std::memory_order_relaxed);
     }
 
     bool start() {
@@ -1008,7 +1030,6 @@ struct PixelEngine {
         if (!backend->ok()) return false;
         device = std::make_unique<vpgpu::Device>(*backend, 2, [this](const std::string& l) { log(l); });
         device->setRefuseFailedBuffers(true);
-        device->setHoldMs(250);  // (a pipeline new to this renderer is made within the draw, not left for a later frame)
         vpps4::Hooks hooks;
         hooks.region = [this](u64 a, u64 n, vpps4::GuestRegion& g) { return region(a, n, g); };
         hooks.shader = [this](u64 id, vpir::Stage, const vpmsl::MslShader& m) { shaders.add(id, toMetal(m)); };
@@ -1027,6 +1048,10 @@ struct PixelEngine {
     void draw(VideoCore::Shadow::PixelCapture& pc, const vpps4::DrawState* clear, const vpps4::DrawState& d) {
         using namespace VideoCore::Shadow;
         std::scoped_lock lock{mutex};
+        if (stuck) {
+            pc.vpkSkip = "gpu timeout";
+            return;
+        }
         if (!start()) {
             PixelsAvailable().store(false, std::memory_order_relaxed);
             pc.vpkSkip = "second renderer unavailable";
@@ -1038,6 +1063,10 @@ struct PixelEngine {
             renderer->abandonOwners(0, 1ull << 47);
             renderer->invalidate(0, 1ull << 47);
         }
+        captureThread = std::this_thread::get_id();
+        // (a pipeline new to this renderer is made within the draw, not left for a later frame: for what is left of the
+        // capture's budget, at most 250 ms; the GPU is idle here, every draw waited for it)
+        device->setHoldMs(pc.holdMs);
         ++epoch;
         seeds.clear();
         seeded.clear();
@@ -1047,25 +1076,46 @@ struct PixelEngine {
         for (unsigned i = 0; i < 8; ++i)
             if (pc.color[i].used) seeds.push_back({pc.color[i].address, vpps4::SeedRequest::Kind::Color, &pc.color[i].pre, false});
         if (pc.depth.used) seeds.push_back({pc.depth.address, vpps4::SeedRequest::Kind::Depth, &pc.depth.pre, false});
-        for (const PixelTexture& t : pc.textures) seeds.push_back({t.address, vpps4::SeedRequest::Kind::Texture, &t.image, false});
+        for (const PixelTexture& t : pc.textures) seeds.push_back({t.address, vpps4::SeedRequest::Kind::Texture, t.image.get(), false});
         drawing = true;
         std::string clearFail;
-        if (clear) {
-            renderer->draw(*clear);
-            if (!haveLast || last.status == vpps4::Resolved::Status::Skipped)  // (a clear is "handled": it waits for the next pass)
-                clearFail = haveLast ? last.reason : "no answer";
-        }
-        haveLast = false;
-        renderer->draw(d);
         std::vector<vpgpu::TextureId> targets(8);
-        const bool drawn = haveLast && last.status == vpps4::Resolved::Status::Drawn;
-        if (drawn)
-            for (unsigned i = 0; i < 8; ++i)
-                if (pc.color[i].used) targets[i] = renderer->colorTargetAt(pc.color[i].address);  // (kept: its pass stores it)
-        renderer->submit();
-        const bool idle = device->waitIdle(5'000'000'000ull);
-        const vpps4::CpuTimes times = renderer->takeCpuTimes();
+        bool drawn = false, idle = false;
+        vpps4::CpuTimes times;
+        try {
+            if (clear) {
+                renderer->draw(*clear);
+                if (!haveLast || last.status == vpps4::Resolved::Status::Skipped)  // (a clear is "handled": it waits for the next pass)
+                    clearFail = haveLast ? last.reason : "no answer";
+            }
+            haveLast = false;
+            renderer->draw(d);
+            drawn = haveLast && last.status == vpps4::Resolved::Status::Drawn;
+            if (drawn)
+                for (unsigned i = 0; i < 8; ++i)
+                    if (pc.color[i].used) targets[i] = renderer->colorTargetAt(pc.color[i].address);  // (kept: its pass stores it)
+            renderer->submit();
+            idle = device->waitIdle(5'000'000'000ull);
+            times = renderer->takeCpuTimes();
+        } catch (...) {
+            // (the GPU may be reading the windows: not idle, they are neither refreshed nor unmapped)
+            drawing = false;
+            try {
+                renderer->submit();
+                stuck = !device->waitIdle(5'000'000'000ull);
+            } catch (...) {
+                stuck = true;
+            }
+            throw;
+        }
         drawing = false;
+        if (!idle) {
+            stuck = true;
+            PixelsAvailable().store(false, std::memory_order_relaxed);
+            LOG_WARNING(Render_Vulkan, "ASTRO_PIXEL disabled reason=the second renderer's GPU did not finish in 5 s");
+            pc.vpkSkip = "gpu timeout";
+            return;
+        }
         for (const auto& [address, bytes] : seeded) renderer->invalidate(address, bytes);  // (the next draw is seeded again, or reads memory)
         const bool unusedSeed = std::any_of(seeds.begin(), seeds.end(), [](const Seed& x) { return !x.used; });
         if (!haveLast) {
@@ -1080,11 +1130,6 @@ struct PixelEngine {
             pc.vpkSkip = "seed " + seedFail;
         } else if (unusedSeed) {
             pc.vpkSkip = "seed not consumed";  // (the renderer drew from guest memory what Vulkan had in an image)
-        } else if (!idle) {
-            // (the GPU may still read the windows the next draw would refresh: no more captures)
-            PixelsAvailable().store(false, std::memory_order_relaxed);
-            LOG_WARNING(Render_Vulkan, "ASTRO_PIXEL disabled reason=the second renderer's GPU did not finish in 5 s");
-            pc.vpkSkip = "gpu timeout";
         } else if (times.holdTimeouts != 0) {
             pc.vpkSkip = "pipeline compiling";
         } else {
@@ -1611,8 +1656,10 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
     VideoCore::Shadow::Record* shadowRecord = VideoCore::Shadow::Current();
     VideoCore::Shadow::PixelCapture* pixels =
         shadowRecord != nullptr && shadowRecord->pixels && shadowRecord->pixels->vkSkip.empty() ? shadowRecord->pixels.get() : nullptr;
-    // (a draw outside a capture: the windows of the one that is over go back)
-    if ((shadowRecord == nullptr || !shadowRecord->pixels) && pixelEngine().held.load(std::memory_order_relaxed)) pixelEngine().release();
+    // (a draw outside a capture, of the thread that drew the captured ones: the windows of the one that is over go back;
+    // nothing is made when the pixel comparison is off, and the draws of other threads leave the capture alone)
+    if ((shadowRecord == nullptr || !shadowRecord->pixels) && pixelWindowsHeld.load(std::memory_order_relaxed))
+        pixelEngine().release(std::this_thread::get_id());
     std::optional<vpps4::DrawState> pixelClear;
 
     // Targets. The ones a title cleared by writing their fast clear metadata (see Engine::metas) are cleared

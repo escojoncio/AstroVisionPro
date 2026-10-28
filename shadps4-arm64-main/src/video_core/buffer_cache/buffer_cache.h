@@ -121,6 +121,10 @@ public:
     /// Bind host index buffer for the current draw.
     void BindIndexBuffer(u32 index_offset);
 
+    /// ASTRO_SHADOW_PIXELS: whether a vertex or index buffer of the current draw lies in guest memory the GPU wrote (the
+    /// guest bytes are stale there). Binds nothing; asked before the draw is recorded.
+    bool DrawInputsGpuModified(const Vulkan::GraphicsPipeline& pipeline, bool is_indexed, u32 index_offset);
+
     /// Writes a value to GPU buffer. (uses command buffer to temporarily store the data)
     void FillBuffer(VAddr address, u32 num_bytes, u32 value, bool is_gds);
 

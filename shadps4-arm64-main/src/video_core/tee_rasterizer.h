@@ -286,6 +286,7 @@ private:
         }
         auto capture = std::make_shared<Shadow::PixelCapture>();
         capture->captureId = pixel_schedule.Id();
+        capture->holdMs = uint32_t(std::min(250.0, pixel_schedule.Remaining(now) * 1000.0));
         return capture;
     }
 

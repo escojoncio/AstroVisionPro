@@ -320,6 +320,8 @@ public:
     uint64_t Id() const { return id; }
     /// The capture is over before its picture is (the budget): the next frame boundary reports `ended`.
     double Budget() const { return budget; }
+    /// What is left of the running capture's budget at `now`, in seconds (0: none, or no capture).
+    double Remaining(double now) const { return active ? std::max(0.0, budget - (now - capture_start)) : 0.0; }
 
 private:
     double interval, budget;

@@ -240,14 +240,19 @@ private:
     /// that is not captured, indirect draw, dispatch, and by a draw that targets the image). Only the thread of the
     /// capture touches these (Tee: one thread's draws are captured), and gives the staging back at its first draw
     /// outside a capture.
-    std::vector<std::pair<VideoCore::ImageId, VideoCore::Shadow::PixelImage>> shadow_pixel_cache;
+    struct ShadowPixelCached {
+        VideoCore::ImageId id;
+        u64 uid{};  // Image::image_uid: the slot may hold another image by now
+        std::shared_ptr<const VideoCore::Shadow::PixelImage> image;
+    };
+    std::vector<ShadowPixelCached> shadow_pixel_cache;
     u64 shadow_pixel_capture{};
     std::thread::id shadow_pixel_thread;
-    /// Counts what can write images without being captured (indirect draws, dispatches; any thread): the cache is dropped
-    /// when it moved.
+    /// Counts what can write images without being captured (draws and dispatches that are not read back, from any thread,
+    /// DMA, writes of the CPU, unmaps): the cache is dropped when it moved.
     std::atomic<u64> shadow_pixel_writes{};
     u64 shadow_pixel_cache_writes{};
-    void ShadowPixelsBefore(const GraphicsPipeline* pipeline);
+    void ShadowPixelsBefore(const GraphicsPipeline* pipeline, bool is_indexed, u32 index_offset);
     void ShadowPixelsAfter();
 
     u32 set_write_index{};

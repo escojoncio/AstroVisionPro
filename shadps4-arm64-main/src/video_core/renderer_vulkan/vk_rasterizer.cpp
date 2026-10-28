@@ -1130,10 +1130,12 @@ static std::string ShadowPixelImageSkip(const VideoCore::ImageInfo& info, bool w
 /// the GPU-made textures it samples (whole, unless this capture read them already), are copied into one host-visible
 /// buffer, on the GPU timeline, in order with everything before. Nothing waits here: ShadowPixelsAfter does, once. Does
 /// nothing for a draw that is not captured.
-void Rasterizer::ShadowPixelsBefore(const GraphicsPipeline* pipeline) {
+void Rasterizer::ShadowPixelsBefore(const GraphicsPipeline* pipeline, bool is_indexed, u32 index_offset) {
     shadow_pixel_jobs.clear();
     auto* record = VideoCore::Shadow::Current();
     if (record == nullptr || !record->pixels) {
+        // (a draw nobody reads back, of any thread, may write what the capture's cache holds)
+        shadow_pixel_writes.fetch_add(1, std::memory_order_relaxed);
         shadow_pixel_textures.clear();
         if (shadow_pixel_thread == std::this_thread::get_id()) {
             // The capture is over for this thread (or its budget is): what it held goes back (the GPU is idle, every
@@ -1164,6 +1166,21 @@ void Rasterizer::ShadowPixelsBefore(const GraphicsPipeline* pipeline) {
     }
     if (in_target_passes) {
         return skip("draw in several passes");
+    }
+    // Checked before anything is recorded: the copies below must always be waited for (ShadowPixelsAfter).
+    for (u32 i = 1; i < AmdGpu::NUM_VIEWPORTS; ++i) {
+        if (liverpool->regs.viewports[i].xscale != 0.f) {
+            return skip("multi viewport");  // (the record has the first viewport and scissor only)
+        }
+    }
+    if (buffer_cache.DrawInputsGpuModified(*pipeline, is_indexed, index_offset)) {
+        return skip("buffer written by GPU");  // (guest memory is stale there: VPKEngine would read what the GPU has since overwritten)
+    }
+    for (const Shader::Info* info : pipeline->GetStages()) {
+        if (info != nullptr && std::ranges::any_of(info->buffers, [](const auto& b) { return b.is_written; })) {
+            shadow_pixel_cache.clear();  // (it may write the memory of a texture the cache holds)
+            break;
+        }
     }
     // The draw's rectangle is the viewport and scissor the draw sets (the record gets them here as it does at the draw).
     UpdateViewportScissorState();
@@ -1200,8 +1217,8 @@ void Rasterizer::ShadowPixelsBefore(const GraphicsPipeline* pipeline) {
             if (rect.empty()) {
                 return "empty region";
             }
-            std::erase_if(shadow_pixel_cache, [&](const auto& entry) { return entry.first == id; });
         }
+        std::erase_if(shadow_pixel_cache, [&](const auto& entry) { return entry.id == id; });
         job.x = rect.x, job.y = rect.y, job.w = rect.w, job.h = rect.h;
         const u64 bytes = u64{job.w} * job.h * job.texel_bytes;
         job.pre_offset = Common::AlignUp(total, 256);
@@ -1242,10 +1259,16 @@ void Rasterizer::ShadowPixelsBefore(const GraphicsPipeline* pipeline) {
         if (is_target) {
             return skip("samples a target it draws to");
         }
-        if (const auto cached = std::ranges::find(shadow_pixel_cache, image_id,
-                                                  &decltype(shadow_pixel_cache)::value_type::first);
-            cached != shadow_pixel_cache.end()) {
-            pc.textures.push_back({texture_cache.GetImage(image_id).info.guest_address, cached->second});
+        // A texture read earlier in this capture is not read again while nothing could have written it: the image is the one
+        // that was read, still GPU-made, not dirty from the CPU (dirty means it was uploaded again), same layout.
+        const VideoCore::Image& texture = texture_cache.GetImage(image_id);
+        if (const auto cached = std::ranges::find_if(
+                shadow_pixel_cache,
+                [&](const auto& entry) { return entry.id == image_id && entry.uid == texture.image_uid; });
+            cached != shadow_pixel_cache.end() && True(texture.flags & VideoCore::ImageFlagBits::GpuModified) &&
+            False(texture.flags & VideoCore::ImageFlagBits::Dirty) &&
+            ShadowPixelImageSkip(texture.info, true).empty()) {
+            pc.textures.push_back({texture.info.guest_address, cached->image});
             continue;
         }
         if (const auto why = add(image_id, 0, false, true, texture_cache.GetImage(image_id).info.guest_address);
@@ -1309,6 +1332,7 @@ void Rasterizer::ShadowPixelsAfter() {
     }
     VideoCore::Shadow::PixelCapture& pc = *record->pixels;
     if (!pc.vkSkip.empty()) {  // (found while the draw was recorded: nothing to read)
+        scheduler.Finish();    // (the copies of ShadowPixelsBefore are in the command buffer: the staging may be freed after)
         shadow_pixel_jobs.clear();
         shadow_pixel_cache.clear();
         return;
@@ -1354,8 +1378,8 @@ void Rasterizer::ShadowPixelsAfter() {
             return out;
         };
         if (job.texture) {
-            PixelImage whole = read(job.pre_offset);
-            shadow_pixel_cache.emplace_back(job.image, whole);
+            auto whole = std::make_shared<const PixelImage>(read(job.pre_offset));
+            shadow_pixel_cache.push_back({job.image, texture_cache.GetImage(job.image).image_uid, whole});
             pc.textures.push_back({job.address, std::move(whole)});
             continue;
         }
@@ -1499,7 +1523,7 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
         return;
     }
     ShadowStatus(VideoCore::Shadow::Status::Drawn);
-    ShadowPixelsBefore(pipeline);
+    ShadowPixelsBefore(pipeline, is_indexed, index_offset);
     const auto state = BeginRendering(pipeline);
 
     buffer_cache.BindVertexBuffers(*pipeline);
@@ -3372,6 +3396,7 @@ void Rasterizer::FillBuffer(VAddr address, u32 num_bytes, u32 value, bool is_gds
     if (!is_gds && value != 0 && TryHtileClear(address, std::span{&value, 1})) {
         return;
     }
+    shadow_pixel_writes.fetch_add(1, std::memory_order_relaxed);  // (not captured: ASTRO_SHADOW_PIXELS)
     buffer_cache.FillBuffer(address, num_bytes, value, is_gds);
 }
 
@@ -3393,6 +3418,7 @@ void Rasterizer::CopyBuffer(VAddr dst, VAddr src, u32 num_bytes, bool dst_gds, b
         TryHtileClear(dst, std::span{reinterpret_cast<const u32*>(src), num_bytes / sizeof(u32)})) {
         return;
     }
+    shadow_pixel_writes.fetch_add(1, std::memory_order_relaxed);  // (not captured: ASTRO_SHADOW_PIXELS)
     buffer_cache.CopyBuffer(dst, src, num_bytes, dst_gds, src_gds);
 }
 
@@ -3408,6 +3434,7 @@ bool Rasterizer::InvalidateMemory(VAddr addr, u64 size) {
         // Not GPU mapped memory, can skip invalidation logic entirely.
         return false;
     }
+    shadow_pixel_writes.fetch_add(1, std::memory_order_relaxed);  // (the CPU wrote: ASTRO_SHADOW_PIXELS)
     buffer_cache.InvalidateMemory(addr, size);
     texture_cache.InvalidateMemory(addr, size);
     return true;
@@ -3453,6 +3480,7 @@ void Rasterizer::MapMemory(VAddr addr, u64 size) {
 }
 
 void Rasterizer::UnmapMemory(VAddr addr, u64 size) {
+    shadow_pixel_writes.fetch_add(1, std::memory_order_relaxed);  // (ASTRO_SHADOW_PIXELS)
     buffer_cache.InvalidateMemory(addr, size);
     texture_cache.UnmapMemory(addr, size);
     page_manager.OnGpuUnmap(addr, size);
