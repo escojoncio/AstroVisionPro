@@ -198,6 +198,80 @@ TEST(ShadowCompare, DispatchAndDma) {
     EXPECT_TRUE(o.diffs.size() == 1 && o.diffs[0].field == "fill.bytes");
 }
 
+TEST(ShadowCompare, VulkanSkippedForItsPipelineIsNotADifference) {
+    Record r = DrawRecord();
+    r.vk.status = Status::Skipped;
+    r.vk.reason = "no graphics pipeline";  // compiling on another thread
+    r.vk.hash = {};
+    Outcome o = Compare(r);
+    EXPECT_TRUE(o.compared && o.hostSkipped && o.diffs.empty());
+    r.vk.reason = "resources could not be bound";  // a real difference
+    o = Compare(r);
+    EXPECT_TRUE(!o.hostSkipped && o.diffs.size() == 1);
+    r.vk.reason = "no graphics pipeline";
+    r.vpk.status = Status::Skipped;
+    o = Compare(r);
+    EXPECT_TRUE(o.bothSkipped && !o.hostSkipped);
+    Aggregator agg([](const std::string&) {});
+    r = DrawRecord();
+    r.vk.status = Status::Skipped;
+    r.vk.reason = "no compute pipeline";
+    agg.Submit(r);
+    const Totals t = agg.Snapshot();
+    EXPECT_TRUE(t.skippedVk == 1 && t.hostSkipVk == 1 && t.compared == 0 && t.different == 0);
+}
+
+TEST(ShadowCompare, TheProgramHashIsComparedAsGiven) {
+    Record r = DrawRecord();
+    EXPECT_TRUE(Compare(r).diffs.empty());
+    r.vk.hash[size_t(Stage::Ps)] = 0xbbbb5;  // a permutation of the host shader mixed in
+    const Outcome o = Compare(r);
+    EXPECT_TRUE(Has(o, "hash.ps") && o.diffs.size() == 1);
+}
+
+TEST(ShadowCompare, BuffersReachedByAPointerAreOnlyComparedWhenBothListThem) {
+    Record r = DrawRecord();
+    r.vpk.buffers.push_back({Stage::Ps, 0x7000, 0, 0, false, true});  // s_load through a pointer: Vulkan binds nothing
+    EXPECT_TRUE(Compare(r).diffs.empty());
+    r.vpk.buffers.push_back({Stage::Ps, 0x7100, 64, 0, false, false});  // a V# one is a binding: Vulkan lacks it
+    Outcome o = Compare(r);
+    EXPECT_TRUE(Has(o, "buf.ps.only_vpk") && o.diffs.size() == 1);
+    r.vk.buffers.push_back({Stage::Ps, 0x7000, 32, 0, false, false});  // both list it: compared
+    r.vpk.buffers.pop_back();
+    o = Compare(r);
+    EXPECT_TRUE(Has(o, "buf.ps.size") && o.diffs.size() == 1);
+}
+
+TEST(ShadowCompare, FormatsThatGiveTheShaderTheSameBitsAreEqualTheOthersStayDifferent) {
+    EXPECT_TRUE(BitIdenticalView("D32Sfloat", "R32Float", false));
+    EXPECT_TRUE(BitIdenticalView("R32Float", "D32Sfloat", false));
+    EXPECT_TRUE(BitIdenticalView("D16Unorm", "R16Unorm", false));
+    EXPECT_TRUE(!BitIdenticalView("D32Sfloat", "R32Uint", false));
+    EXPECT_TRUE(!BitIdenticalView("D32Sfloat", "R32Float", true));  // storage: not a depth view
+    EXPECT_TRUE(!BitIdenticalView("R8G8B8A8Unorm", "RGBA8Srgb", false));
+    EXPECT_TRUE(!BitIdenticalView("A2B10G10R10UnormPack32", "R32Uint", true));
+    EXPECT_TRUE(BitIdenticalView("R32Sint", "R32Uint", true));
+    EXPECT_TRUE(!BitIdenticalView("R16G16Uint", "R32Uint", true));
+    Record r = DrawRecord();
+    r.vk.textures = {{Stage::Ps, 0x9000, 4, 7, 9, 13, 0, 0, 64, 64, {4, 5, 6, 7}, false, true, "D32Sfloat", 64, 64}};
+    r.vpk.textures = r.vk.textures;
+    r.vpk.textures[0].hostFormat = "R32Float";
+    EXPECT_TRUE(Compare(r).diffs.empty());
+    r.vpk.textures[0].hostFormat = "R32Uint";
+    EXPECT_TRUE(Has(Compare(r), "tex.ps.host_format"));
+    r.vk.textures[0].hostFormat = "A2B10G10R10UnormPack32";
+    r.vk.textures[0].storage = r.vpk.textures[0].storage = true;
+    EXPECT_TRUE(Has(Compare(r), "tex.ps.host_format"));
+}
+
+TEST(ShadowCompare, ClearedAndDepthUsedDifferencesAreStillReported) {
+    Record r = DrawRecord();
+    r.vpk.color[0].cleared = true;
+    r.vpk.depth.used = true;
+    const Outcome o = Compare(r);
+    EXPECT_TRUE(Has(o, "color0.cleared") && Has(o, "depth.used"));
+}
+
 TEST(ShadowAggregator, FirstThreeInFullThenOnlyCounted) {
     std::vector<std::string> lines;
     Aggregator agg([&](const std::string& l) { lines.push_back(l); });

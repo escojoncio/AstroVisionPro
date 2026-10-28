@@ -97,6 +97,19 @@ inline std::string NormalizeFormat(std::string_view name) {
     return std::to_string(bits) + "b" + std::to_string(channels) + "c:" + kind;
 }
 
+/// Whether two different host formats give a shader the same bits: a depth image sampled as the colour format of the
+/// same width and kind (D32Sfloat / R32Float, D16Unorm / R16Unorm), and, for storage images (read and written as raw
+/// words), integer formats of the same texel size. Anything else that differs stays a difference.
+inline bool BitIdenticalView(std::string_view vk, std::string_view vpk, bool storage) {
+    const std::string a = NormalizeFormat(vk), b = NormalizeFormat(vpk);
+    const auto pair = [&](const char* x, const char* y) { return (a == x && b == y) || (a == y && b == x); };
+    if (!storage) {
+        return pair("d32", "32b1c:float") || pair("d16", "16b1c:unorm");
+    }
+    const auto integer = [](const std::string& n) { return n.ends_with(":uint") || n.ends_with(":sint"); };
+    return integer(a) && integer(b) && a.substr(0, a.find(':')) == b.substr(0, b.find(':'));
+}
+
 struct Diff {
     std::string field, vk, vpk;
     uint64_t pgm = 0;
@@ -105,6 +118,7 @@ struct Diff {
 struct Outcome {
     bool compared = false;   // both sides have an answer
     bool bothSkipped = false;
+    bool hostSkipped = false;  // only Vulkan skipped it, for a reason of the host (an async pipeline): not a difference
     std::vector<Diff> diffs;
 };
 
@@ -132,6 +146,12 @@ inline std::string StatusText(const Side& side) {
     case Status::NotRun: break;
     }
     return "notrun";
+}
+
+/// Vulkan left the call out because its pipeline was not built yet (compiled on another thread): the host's timing,
+/// nothing the title asked for.
+inline bool IsHostSkip(const Side& vk) {
+    return vk.status == Status::Skipped && (vk.reason == "no graphics pipeline" || vk.reason == "no compute pipeline");
 }
 
 inline uint64_t MainHash(const Side& s) {
@@ -174,6 +194,12 @@ struct Differ {
     void Format(const std::string& field, const std::string& vk, const std::string& vpk) {
         if (NormalizeFormat(vk) != NormalizeFormat(vpk)) {
             Add(field, vk.empty() ? "none" : vk, vpk.empty() ? "none" : vpk);
+        }
+    }
+    /// As Format, but formats that give the shader the same bits (BitIdenticalView) are equal.
+    void FormatView(const std::string& field, const std::string& vk, const std::string& vpk, bool storage) {
+        if (!BitIdenticalView(vk, vpk, storage)) {
+            Format(field, vk, vpk);
         }
     }
     void Near(const std::string& field, float vk, float vpk, float tolerance) {
@@ -242,8 +268,24 @@ inline std::string Signature(const SamplerBinding& s) {
            std::to_string(s.mipFilter) + (s.anisotropy ? "_aniso" : "") + (s.compare ? "_cmp" : "");
 }
 
+/// Buffers reached by an address alone (no V#) are not bindings of Vulkan, which loads through the pointer: they are
+/// compared when both sides list them and otherwise left out.
+inline std::vector<BufferBinding> WithoutUnmatchedPointers(const std::vector<BufferBinding>& list,
+                                                           const std::vector<BufferBinding>& other) {
+    std::vector<BufferBinding> out;
+    for (const BufferBinding& buffer : list) {
+        const bool matched = std::any_of(other.begin(), other.end(), [&](const BufferBinding& o) {
+            return o.stage == buffer.stage && o.address == buffer.address;
+        });
+        if (!buffer.pointer || matched) {
+            out.push_back(buffer);
+        }
+    }
+    return out;
+}
+
 inline void CompareBindings(Differ& d, const Side& a, const Side& b) {
-    Align(d, "buf", a, b, a.buffers, b.buffers, [&](const BufferBinding& x, const BufferBinding& y, const std::string& p) {
+    Align(d, "buf", a, b, WithoutUnmatchedPointers(a.buffers, b.buffers), WithoutUnmatchedPointers(b.buffers, a.buffers), [&](const BufferBinding& x, const BufferBinding& y, const std::string& p) {
         d.Eq(p + "size", x.size, y.size);
         d.Eq(p + "stride", x.stride, y.stride);
         d.Eq(p + "write", x.write, y.write);
@@ -267,7 +309,7 @@ inline void CompareBindings(Differ& d, const Side& a, const Side& b) {
         }
         d.Eq(p + "found", x.found, y.found);
         if (x.found && y.found) {
-            d.Format(p + "host_format", x.hostFormat, y.hostFormat);
+            d.FormatView(p + "host_format", x.hostFormat, y.hostFormat, x.storage && y.storage);
             d.Eq(p + "host_width", x.hostWidth, y.hostWidth);
             d.Eq(p + "host_height", x.hostHeight, y.hostHeight);
         }
@@ -437,6 +479,10 @@ inline Outcome Compare(const Record& r) {
     const uint64_t main = d.pgm;
     const bool skippedA = a.status == Status::Skipped;
     const bool skippedB = b.status == Status::Skipped;
+    if (skippedA && !skippedB && IsHostSkip(a)) {
+        out.hostSkipped = true;
+        return out;
+    }
     if (skippedA != skippedB) {
         d.Add("status.vk_" + StatusText(a) + ".vpk_" + StatusText(b), StatusText(a), StatusText(b));
         return out;
@@ -486,6 +532,7 @@ struct Totals {
     uint64_t skippedVk = 0;    // the Vulkan side skipped it (any case)
     uint64_t skippedVpk = 0;
     uint64_t skippedBoth = 0;
+    uint64_t hostSkipVk = 0;   // of skippedVk: no pipeline yet (async compile), not compared and not a difference
     uint64_t notCompared = 0;  // a side did not answer
 };
 
@@ -518,6 +565,10 @@ public:
         totals.skippedVpk += record.vpk.status == Status::Skipped;
         if (!outcome.compared) {
             ++totals.notCompared;
+            return;
+        }
+        if (outcome.hostSkipped) {
+            ++totals.hostSkipVk;
             return;
         }
         if (outcome.bothSkipped) {
@@ -577,7 +628,8 @@ private:
              " compared=" + std::to_string(totals.compared) + " equal=" + std::to_string(totals.equal) +
              " different=" + std::to_string(totals.different) + " skipped_vk=" + std::to_string(totals.skippedVk) +
              " skipped_vpk=" + std::to_string(totals.skippedVpk) + " skipped_both=" + std::to_string(totals.skippedBoth) +
-             " not_compared=" + std::to_string(totals.notCompared) + " keys=" + std::to_string(keys.size()));
+             " not_compared=" + std::to_string(totals.notCompared) + " host_skipped_vk=" + std::to_string(totals.hostSkipVk) +
+             " keys=" + std::to_string(keys.size()));
         std::vector<std::map<std::pair<std::string, uint64_t>, Key>::const_iterator> order;
         for (auto it = keys.begin(); it != keys.end(); ++it) {
             order.push_back(it);

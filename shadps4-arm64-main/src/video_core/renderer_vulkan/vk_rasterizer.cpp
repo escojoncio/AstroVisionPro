@@ -78,9 +78,15 @@ static void ShadowStages(const GraphicsPipeline* pipeline) {
     if (auto* side = ShadowSide()) {
         const auto& key = pipeline->GetGraphicsKey();
         using Stage = VideoCore::Shadow::Stage;
-        ShadowStage(*side, Stage::Vs, key.stage_hashes[u32(Shader::LogicalStage::Vertex)]);
-        ShadowStage(*side, Stage::Ps, key.stage_hashes[u32(Shader::LogicalStage::Fragment)]);
-        ShadowStage(*side, Stage::Gs, key.stage_hashes[u32(Shader::LogicalStage::Geometry)]);
+        // The GCN program's hash (the one VPKEngine names it by), not stage_hashes: those mix in the
+        // permutation of the host shader.
+        const auto program_hash = [&](Shader::LogicalStage stage) -> u64 {
+            const Shader::Info* info = pipeline->GetStages()[u32(stage)];
+            return info != nullptr ? info->pgm_hash : 0;
+        };
+        ShadowStage(*side, Stage::Vs, program_hash(Shader::LogicalStage::Vertex));
+        ShadowStage(*side, Stage::Ps, program_hash(Shader::LogicalStage::Fragment));
+        ShadowStage(*side, Stage::Gs, program_hash(Shader::LogicalStage::Geometry));
         for (u32 cb = 0; cb < AmdGpu::NUM_COLOR_BUFFERS; ++cb) {
             const auto& blend = key.blend_controls[cb];
             auto& out = side->blend[cb];
