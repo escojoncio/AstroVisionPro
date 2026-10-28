@@ -28,6 +28,11 @@ public:
         return metas.empty();
     }
 
+    /// Entries (probe).
+    size_t Size() const {
+        return metas.size();
+    }
+
     bool IsMeta(VAddr address) const {
         return metas.contains(address);
     }

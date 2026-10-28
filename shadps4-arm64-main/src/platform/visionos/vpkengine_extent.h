@@ -13,6 +13,9 @@ class TargetExtents {
 public:
     enum class Source { None, Hint, Cache };
 
+    // Targets remembered (probe).
+    size_t Size() const { return known.size(); }
+
     // `width`/`height` come in as the CB's pitch and height. A valid hint no larger than them replaces them and is
     // remembered for the address together with the registers it came with. Without one (the packet that set the registers
     // had no hint) the size remembered at that address is used only if the registers and the format are exactly the ones

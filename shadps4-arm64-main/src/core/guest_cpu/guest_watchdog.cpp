@@ -13,11 +13,15 @@
 #include <thread>
 #include <unordered_map>
 
+#include "common/diagnostics.h"
 #include "common/logging/log.h"
 #include "common/path_util.h"
 #include "common/thread.h"
 #include "common/jit_arena.h"
 #include "core/address_space.h"
+#if defined(SHADPS4_VPKENGINE_RENDERER)
+#include "vpgpu/core/probe.h"
+#endif
 
 #if defined(__linux__) && defined(__aarch64__)
 #define WATCHDOG_NATIVE_STACKS 1
@@ -669,6 +673,22 @@ void ReportPace(Clock::time_point now) {
     }
     LOG_INFO(Core, "PACE: {:.1f} guest frames/s; CPU {:.0f}% in all: {}{}", fps, total, text,
              memory);
+#if defined(SHADPS4_VPKENGINE_RENDERER)
+    // The same figures as probe metrics (VPKENGINE_PROBE PACE line / probe-<date>.txt), every 5 s: the guest's frame rate,
+    // the CPU use of the process and of its busiest threads (by name).
+    if (Common::Diagnostics()) {
+        namespace pm = vpgpu::probe;
+        pm::gauge("PACE", "fps_guest").set(fps);
+        pm::gauge("PACE", "cpu_total_pct").set(total);
+        pm::counter("PACE", "guest_frames").set(frames);
+        pm::gauge("PACE", "interval_s").set(seconds);
+        for (size_t i = 0; i < use.size() && i < 12; ++i)
+            pm::gauge("PACE", "cpu_" + pm::Registry::sanitize(use[i].name) + "_pct").set(use[i].percent);
+        if (vm_count != 0) {
+            pm::gauge("PROC", "pace_footprint_mb").set(double(vm_info.phys_footprint) / 1048576.0);
+        }
+    }
+#endif
     // Every 2 minutes, and whenever the footprint grew by more than 512 MB since the last one
     // (at most every 30 s): where the memory is. The walk over the regions takes about a
     // quarter of a second with the game's ~70 000 of them.

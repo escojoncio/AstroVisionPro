@@ -3,6 +3,8 @@
 
 #import <Metal/Metal.h>
 #include <mach/mach.h>
+#include <malloc/malloc.h>
+#include <os/proc.h>
 #include <sys/mman.h>
 
 #include <algorithm>
@@ -12,8 +14,10 @@
 #include <cmath>
 #include <functional>
 #include <condition_variable>
+#include <cstddef>
 #include <cstdlib>
 #include <cstring>
+#include <ctime>
 #include <filesystem>
 #include <map>
 #include <memory>
@@ -29,8 +33,10 @@
 #include "common/diagnostics.h"
 #include "common/elf_info.h"
 #include "common/logging/log.h"
+#include "common/jit_arena.h"
 #include "common/path_util.h"
 #include "core/libraries/videoout/buffer.h"
+#include "core/address_space.h"
 #include "core/memory.h"
 #include "vpkengine_extent.h"
 #include "vpkengine_mirror.h"
@@ -45,6 +51,7 @@
 #include "video_core/recent_ranges.h"
 #include "video_core/surface_metas.h"
 #include "vpgpu/core/device.h"
+#include "vpgpu/core/probe.h"
 #include "vpgpu/metal2/metal_backend.h"
 #include "vpps4/fetch.h"
 #include "vpps4/formats.h"
@@ -58,6 +65,8 @@
 
 namespace VpkengineRenderer {
 namespace {
+
+namespace pm = vpgpu::probe;  // the probe (VPKENGINE_PROBE lines and probe-<date>.txt): on with the diagnostics mode
 
 void shadowResolved(const vpps4::Resolved& r);  // (below: Hooks::resolved of the shadow)
 void PrewarmCompose(void* nativeDevice);  // (defined with PresentState)
@@ -154,7 +163,7 @@ struct SpanCache {
     struct Unmapped {  // `address` (a 4 KiB page of it) has no span in the window [from, to)
         u64 from = 0, to = 0, page = 0;
     };
-    std::mutex m;
+    pm::TimedMutex<std::mutex> m{"span_cache"};
     std::array<Entry, 128> entries{};
     unsigned used = 0, next = 0, last = 0;
     std::array<Unmapped, 32> unmapped{};
@@ -219,12 +228,23 @@ u64 steadyNs() {
 // rasterizer, which keeps those tables.
 std::atomic<bool (*)(void*, u64, u64)> gWatchProbe{nullptr};
 std::atomic<void*> gWatchProbeContext{nullptr};
+// Publishes the rasterizer's tables (mapped / watched / owned ranges) as probe metrics; set with gWatchProbe.
+std::atomic<void (*)(void*)> gProbeTables{nullptr};
 bool spanHasWatches(u64 begin, u64 end) {
+    static pm::Timer& timer = pm::timer("TIME", "span_has_watches");
+    const pm::ScopedSampled scope(timer);  // (hot: calls exact, time estimated from 1 in 16)
     auto* probe = gWatchProbe.load(std::memory_order_acquire);
     return probe && probe(gWatchProbeContext.load(std::memory_order_acquire), begin, end);
 }
 
+bool cachedSpanUntimed(u64 address, u64 from, u64 to, u64& begin, u64& end, void*& mirror);
 bool cachedSpan(u64 address, u64 from, u64 to, u64& begin, u64& end, void*& mirror) {
+    static pm::Timer& timer = pm::timer("TIME", "cached_span");
+    const pm::ScopedSampled scope(timer);  // (hot: calls exact, time estimated from 1 in 16)
+    return cachedSpanUntimed(address, from, to, begin, end, mirror);
+}
+
+bool cachedSpanUntimed(u64 address, u64 from, u64 to, u64& begin, u64& end, void*& mirror) {
     SpanCache& c = spanCache();
     const bool noMirror = gShadowEngine.load(std::memory_order_relaxed);
     u64 gen0 = 0;
@@ -281,7 +301,13 @@ bool cachedSpan(u64 address, u64 from, u64 to, u64& begin, u64& end, void*& mirr
         return true;
     }
     c.misses.fetch_add(1, std::memory_order_relaxed);
-    if (!mappedSpan(address, from, to, begin, end)) {
+    bool spanFound;
+    {
+        static pm::Timer& walk = pm::timer("TIME", "mapped_span_walk");  // the vm_region_64 walk of a miss
+        const pm::Scoped walkScope(walk);
+        spanFound = mappedSpan(address, from, to, begin, end);
+    }
+    if (!spanFound) {
         if (stable) {
             std::scoped_lock l{c.m};
             c.follow();
@@ -368,13 +394,16 @@ vpgpu::metal2::MslShader toMetal(const vpmsl::MslShader& s) {
 }
 
 void flushLeftOut();  // defined below, with the counters it drains
+void publishLeftOut();  // probe: the draws left out before the renderer, by reason (below, with the table)
+void publishProcess();  // probe: the process's memory, heap, threads and CPU
+void publishDisk(const std::filesystem::path& cacheDir);  // probe: the persistent caches on disk
 
 // The engine: VPKEngine's Metal backend, device and PS4 renderer, shared by the rasterizer (GPU
 // thread) and the presenter. Everything that records goes under `lock`.
 struct Engine {
     // Recursive: a CPU access to memory an image on the GPU is ahead of faults inside code that
     // holds the lock already (a DMA done on the CPU); the fault handler writes the image back.
-    std::recursive_mutex lock;
+    pm::TimedMutex<std::recursive_mutex> lock{"engine"};
     vpgpu::metal2::ShaderTable shaders;
     std::unique_ptr<vpgpu::metal2::MetalBackend> backend;
     // The shadow's backend (instead of `backend`): it takes the recorded frames and drops them.
@@ -474,6 +503,13 @@ struct Engine {
     // Totals for the "vpps4.meta" line: metadata cleared by a compute shader / by DMA, FCE passes that found
     // the target still cleared, clears applied (colour, depth) and the RectList draws that carried them out.
     u64 metaCs = 0, metaDma = 0, metaEliminates = 0, metaColorClears = 0, metaDepthClears = 0, metaClearDraws = 0;
+    // Probe counters of the fast clear metadata (under `lock`): draws into a target with CMASK / HTILE, and those whose clear
+    // words do not decode to a colour (the title's fast clear is then not applied).
+    u64 probeCmaskDraws = 0, probeCmaskUndecodable = 0, probeHtileDraws = 0, probeFmaskDraws = 0;
+    // Pictures composed for the headset (ComposeEyes), and the folder the persistent caches are in (probe: disk size).
+    std::atomic<u64> pictures{0};
+    std::filesystem::path probeCacheDir;
+    std::chrono::steady_clock::time_point probeDiskAt{}, probeSummaryAt = std::chrono::steady_clock::now();
 
     // CPU time of the GPU thread, in ns, printed every ~2 s (VPKENGINE_GPU cpu:). Atomics: the
     // presenter submits too, and draw timers stop after the engine lock is released.
@@ -486,7 +522,14 @@ struct Engine {
     struct Timer {
         std::atomic<u64>& to;
         Clock::time_point t0 = Clock::now();
-        ~Timer() { to.fetch_add(nsSince(t0), std::memory_order_relaxed); }
+        ~Timer() {
+            const u64 ns = nsSince(t0);
+            to.fetch_add(ns, std::memory_order_relaxed);
+            if (pm::enabled()) {
+                static pm::Hist& adapter = pm::hist("TIME", "draw_adapter_us");  // one Draw / Dispatch of the adapter, whole call
+                adapter.add(ns / 1000);
+            }
+        }
     };
     static double msNow() {
         return std::chrono::duration<double, std::milli>(Clock::now().time_since_epoch()).count();
@@ -498,6 +541,8 @@ struct Engine {
     // CPU-side DMA over guest [a, +n) (and [b, +m)): waits only for the frames that touch it (a partial
     // fence), submitting the recorded frame first only when the overlap is in it.
     void syncForDma(u64 a, u64 n, u64 b = 0, u64 m = 0) {
+        static pm::Timer& timer = pm::timer("TIME", "sync_for_dma");
+        const pm::Scoped scope(timer);
         // Images ahead of the memory the CPU is about to read or write are written back first (the
         // copies it records count as queued GPU work on those ranges: submitted and waited for below).
         const bool written = renderer->syncToMemory(a, n);
@@ -562,16 +607,90 @@ struct Engine {
                                              double(counts[k]) / s);
             }
             const VpkengineRenderer::GuestMirrorStats ms = VpkengineRenderer::TakeGuestMirrorStats();
+            const u64 spHits = take(sc.hits), spMisses = take(sc.misses), spUnmapped = take(sc.unmappedHits);
+            const u64 spRetries = take(sc.mirrorRetries), spVm = take(gVmRegionCalls), spBumps = take(sc.bumps);
+            if (pm::enabled()) {
+                pm::counter("APP", "span_hits").add(spHits), pm::counter("APP", "span_misses").add(spMisses);
+                pm::counter("APP", "span_unmapped_hits").add(spUnmapped), pm::counter("APP", "span_mirror_retries").add(spRetries);
+                pm::counter("APP", "vm_region_calls").add(spVm), pm::counter("APP", "span_cache_emptied").add(spBumps);
+                pm::counter("APP", "mirror_lookups").add(ms.lookups), pm::counter("APP", "mirror_region_calls").add(ms.regionCalls);
+                pm::counter("APP", "region_hits").add(t.regionHits), pm::counter("APP", "region_misses").add(t.regionMisses);
+            }
             LOG_INFO(Render_Vulkan,
                      "VPKENGINE_GPU cpu region caches (per s): cachedSpan {:.0f} hits, {:.0f} misses, {:.0f} unmapped hits, "
                      "{:.0f} mirror retries; vm_region_64 {:.0f}, vm_region_recurse_64 {:.0f} ({:.0f} GuestMirror lookups); "
                      "span cache emptied {:.0f}; vpps4 region cache {:.0f} hits, {:.0f} misses; map mutations (per s): {}",
-                     double(take(sc.hits)) / s, double(take(sc.misses)) / s, double(take(sc.unmappedHits)) / s,
-                     double(take(sc.mirrorRetries)) / s, double(take(gVmRegionCalls)) / s, double(ms.regionCalls) / s,
-                     double(ms.lookups) / s, double(take(sc.bumps)) / s, double(t.regionHits) / s,
+                     double(spHits) / s, double(spMisses) / s, double(spUnmapped) / s,
+                     double(spRetries) / s, double(spVm) / s, double(ms.regionCalls) / s,
+                     double(ms.lookups) / s, double(spBumps) / s, double(t.regionHits) / s,
                      double(t.regionMisses) / s, mutations);
         }
         if (scheduler) LOG_INFO(Render_Vulkan, "VPKENGINE_GPU {}", scheduler->takeSummary());
+        if (pm::enabled()) probeSample(t, s, calls);
+    }
+
+    // ---- Probe (VPKENGINE_PROBE): every metric family, once per report() interval (~2 s). Under `lock`, from the submit hook.
+    // The engine and the backend publish their own state (Renderer / Device / MetalBackend::publishProbe); this adds what only
+    // the app knows: the CPU times of the renderer, the adapter's caches, the fast clear metadata, the process.
+    void probeSample(const vpps4::CpuTimes& t, double dt, u64 adapterCalls_) {
+        const auto tm = [](const char* name, double ms, u64 calls) { pm::timer("TIME", name).addMs(ms, std::max<u64>(calls, 1)); };
+        tm("renderer_draw", t.drawMs, t.calls), tm("shader_lookup", t.shaderMs, t.calls), tm("bind", t.bindMs, t.calls);
+        tm("bind_descriptors", t.bindDescMs, t.calls), tm("bind_textures", t.bindTexMs, t.calls), tm("bind_buffers", t.bindBufMs, t.calls);
+        tm("bind_constants", t.bindCbMs, t.calls), tm("bind_uploads", t.bindUploadMs, t.calls);
+        tm("bind_table_other", t.bindMs - t.bindDescMs - t.bindTexMs - t.bindBufMs - t.bindCbMs - t.bindUploadMs, t.calls);
+        tm("pipeline_request", t.pipelineMs, t.calls), tm("submit_total", t.submitMs, t.submits);
+        tm("life_plan", t.lifeMs, t.submits), tm("hold_pipelines", t.holdMs, t.holdFrames), tm("frame_compile", t.compileMs, t.submits);
+        tm("backend_submit", t.backendMs, t.submits), tm("slot_wait", t.slotWaitMs, t.submits);
+        tm("encode_and_commit", t.backendMs - t.slotWaitMs, t.submits);  // (the backend's submit without the wait for a frame slot)
+        pm::counter("RATES", "adapter_calls").add(adapterCalls_);
+        pm::counter("RATES", "submits").set(submits.load());
+        pm::counter("RATES", "empty_submits").add(t.emptySubmits);
+        pm::counter("RATES", "user_data_reused").add(t.userDataReused);
+        pm::counter("RATES", "aligned_copy_reused").add(t.alignedCopyReused);
+        pm::counter("RATES", "resolve_dest_clear_dropped").add(t.resolveDestClearDropped);
+        pm::counter("RATES", "resolve_dest_clear_flushed").add(t.resolveDestClearFlushed);
+        pm::counter("RATES", "dma_unsynced").set(dmaUnsynced), pm::counter("RATES", "dma_synced").set(dmaSynced);
+        pm::counter("RATES", "headset_frames").set(pictures.load());
+        pm::gauge("RATES", "interval_s").set(dt);
+        // Fast clears (CMASK / HTILE): a clear whose words do not decode is not applied (the target keeps its contents).
+        pm::counter("FASTCLEAR", "cmask_draws").set(probeCmaskDraws), pm::counter("FASTCLEAR", "cmask_undecodable").set(probeCmaskUndecodable);
+        pm::counter("FASTCLEAR", "fmask_draws").set(probeFmaskDraws), pm::counter("FASTCLEAR", "htile_draws").set(probeHtileDraws);
+        pm::counter("FASTCLEAR", "cs_meta_writes").set(metaCs), pm::counter("FASTCLEAR", "dma_meta_writes").set(metaDma);
+        pm::counter("FASTCLEAR", "eliminates").set(metaEliminates), pm::counter("FASTCLEAR", "color_clears").set(metaColorClears);
+        pm::counter("FASTCLEAR", "depth_clears").set(metaDepthClears), pm::counter("FASTCLEAR", "clear_draws").set(metaClearDraws);
+        pm::gauge("FASTCLEAR", "meta_surfaces").set(double(metas.Size()));
+        // Caches and queues of the adapter
+        pm::gauge("APP", "target_extents").set(double(extents.Size()));
+        {
+            SpanCache& sc = spanCache();
+            std::scoped_lock l{sc.m};
+            pm::gauge("APP", "span_entries").set(sc.used), pm::gauge("APP", "span_unmapped_entries").set(sc.unmappedUsed);
+        }
+        while (pendingLock.test_and_set(std::memory_order_acquire)) {}
+        pm::gauge("APP", "pending_invalidations").set(double(pending.size()));
+        pm::gauge("APP", "pending_unmaps").set(double(pendingUnmaps.size()));
+        pm::gauge("APP", "pending_all").set(pendingAll ? 1 : 0);
+        pendingLock.clear(std::memory_order_release);
+        pm::gauge("APP", "error_lines").set(double(errorLines.load()));
+        publishLeftOut();
+        if (auto* tables = gProbeTables.load(std::memory_order_acquire)) tables(gWatchProbeContext.load(std::memory_order_acquire));
+        publishProcess();
+        const auto now = Clock::now();
+        if (probeDiskAt == Clock::time_point{} || now - probeDiskAt >= std::chrono::seconds{30}) {
+            probeDiskAt = now;
+            publishDisk(probeCacheDir);
+        }
+        renderer->publishProbe(pictures.load());
+        if (device) device->publishProbe();
+        if (backend) backend->publishProbe();
+        // The log gets the compact lines (what moved, in pieces of ~2 KB); the CSV gets every metric.
+        std::vector<std::string> compact;
+        pm::registry().sample(&compact);
+        for (const std::string& line : compact) LOG_INFO(Render_Vulkan, "{}", line);
+        if (now - probeSummaryAt >= std::chrono::seconds{60}) {
+            probeSummaryAt = now;
+            for (const std::string& line : pm::registry().summary()) LOG_INFO(Render_Vulkan, "{}", line);
+        }
     }
 
     static constexpr u64 kEvery = 120;  // per-frame lines of the core every kEvery submits
@@ -586,8 +705,30 @@ struct Engine {
         LOG_INFO(Render_Vulkan, "VPKENGINE_GPU {}", line);
     }
 
+    // Probe: on with the diagnostics mode; the CSV (one row per interval, one column per metric) goes next to the logs.
+    void probeStart() {
+        if (!Common::Diagnostics()) return;
+        pm::setEnabled(true);
+        std::filesystem::path dir;
+        if (const char* d = std::getenv("SHADPS4_PROBE_DIR"); d && *d) dir = d;
+        else dir = Common::FS::GetUserPath(Common::FS::PathType::LogDir);
+        std::error_code ec;
+        std::filesystem::create_directories(dir, ec);
+        char stamp[32];
+        const std::time_t now = std::time(nullptr);
+        std::tm tmv{};
+        localtime_r(&now, &tmv);
+        std::strftime(stamp, sizeof stamp, "%Y-%m-%d_%H-%M-%S", &tmv);
+        const std::filesystem::path file = dir / (std::string("probe-") + stamp + ".txt");
+        if (pm::registry().openCsv(file.string()))
+            LOG_INFO(Render_Vulkan, "VPKENGINE_PROBE csv {}", file.string());
+        else
+            LOG_WARNING(Render_Vulkan, "VPKENGINE_PROBE csv {} could not be opened: the lines are logged only", file.string());
+    }
+
     bool start() {
         if (renderer || failed) return renderer != nullptr;
+        probeStart();
         // One GPU frame per presented picture (vpps4::Scheduler accumulates the ~15 Liverpool command
         // buffers of a picture). The picture's frame and the headset's compose (encodeInterop) each hold a frame
         // slot until the GPU finishes them, so with two the next picture's submit waits for the previous one to
@@ -610,6 +751,7 @@ struct Engine {
             std::filesystem::create_directories(cacheDir / "metal", ec);
             if (!ec) options.cacheRoot = cacheDir / "metal";
         }
+        probeCacheDir = cacheDir;
         vpgpu::Backend* base = nullptr;
         if (shadow) {
             // No GPU: the null backend takes the frames and drops them. It keeps no history (it would grow for as long
@@ -727,6 +869,12 @@ struct Engine {
         scheduler = std::make_unique<vpps4::Scheduler>(*renderer, *device, vpgpu::SubmitPolicy{}, [] { return msNow(); });
         scheduler->setSubmitHook([this] {
             ++submits;
+            if (pm::enabled()) {  // the time between one picture's submit and the next: the guest's frame time
+                static pm::Hist& frame = pm::hist("TIME", "guest_frame_us");
+                static std::atomic<u64> previous{0};
+                const u64 at = steadyNs();
+                if (const u64 before = previous.exchange(at, std::memory_order_relaxed)) frame.add((at - before) / 1000);
+            }
             if (submits % kEvery == 1)
                 LOG_INFO(Render_Vulkan, "VPKENGINE_GPU dma: {} packets without a GPU wait, {} after one (so far)",
                          dmaUnsynced, dmaSynced);
@@ -1238,6 +1386,88 @@ constexpr size_t kLeftOut = 64;
 LeftOut gLeftOut[kLeftOut];
 std::atomic<size_t> gLeftOutUsed{0};
 
+// Probe: draws left out before the renderer, by reason (cumulative; the reasons are literals, so there are few).
+void publishLeftOut() {
+    u64 all = 0;
+    const size_t n = gLeftOutUsed.load(std::memory_order_acquire);
+    for (size_t i = 0; i < n; ++i) {
+        const char* why = gLeftOut[i].why.load(std::memory_order_acquire);
+        if (!why) continue;
+        const u64 total = gLeftOut[i].total.load(std::memory_order_relaxed);
+        all += total;
+        pm::counter("LEFTOUT", "leftout_" + pm::Registry::sanitize(why)).set(total);
+    }
+    pm::counter("LEFTOUT", "leftout_total").set(all);
+}
+
+// Probe: the process as the system counts it (PROC family): footprint and its parts, the malloc heap, the code arena
+// (FEX), the console's memory, threads and CPU time. The region walk by kind is the watchdog's MEMORY line (guest_watchdog.cpp).
+void publishProcess() {
+    const double mb = 1.0 / 1048576.0;
+    const auto G = [](const char* name, double v) { pm::gauge("PROC", name).set(v); };
+    task_vm_info_data_t vm{};
+    mach_msg_type_number_t count = TASK_VM_INFO_COUNT;
+    if (task_info(mach_task_self(), TASK_VM_INFO, reinterpret_cast<task_info_t>(&vm), &count) == KERN_SUCCESS) {
+        G("phys_footprint_mb", double(vm.phys_footprint) * mb), G("resident_mb", double(vm.resident_size) * mb);
+        G("internal_mb", double(vm.internal) * mb), G("compressed_mb", double(vm.compressed) * mb);
+        G("external_mb", double(vm.external) * mb), G("virtual_mb", double(vm.virtual_size) * mb);
+        G("purgeable_volatile_mb", double(vm.purgeable_volatile_pmap) * mb);
+        if (u64(count) * sizeof(natural_t) >= offsetof(task_vm_info_data_t, ledger_tag_graphics_footprint_compressed) +
+                                                  sizeof(vm.ledger_tag_graphics_footprint_compressed)) {
+            G("graphics_mb", double(vm.ledger_tag_graphics_footprint) * mb);
+            G("graphics_compressed_mb", double(vm.ledger_tag_graphics_footprint_compressed) * mb);
+            G("purgeable_nonvolatile_mb", double(vm.ledger_purgeable_nonvolatile) * mb);
+        }
+        if (u64(count) * sizeof(natural_t) >= offsetof(task_vm_info_data_t, ledger_phys_footprint_peak) + sizeof(vm.ledger_phys_footprint_peak))
+            G("phys_footprint_peak_mb", double(vm.ledger_phys_footprint_peak) * mb);
+    }
+    G("available_mb", double(os_proc_available_memory()) * mb);
+    malloc_statistics_t heap{};
+    malloc_zone_statistics(nullptr, &heap);
+    G("malloc_in_use_mb", double(heap.size_in_use) * mb), G("malloc_allocated_mb", double(heap.size_allocated) * mb);
+    G("malloc_blocks", double(heap.blocks_in_use));
+    const auto arena = Common::JitArena::GetUsage();
+    G("jit_arena_used_mb", double(arena.used) * mb), G("jit_arena_most_mb", double(arena.most) * mb);
+    G("jit_arena_size_mb", double(arena.size) * mb);
+    G("console_resident_mb", double(Core::ResidentConsoleMemory()) * mb);
+    thread_act_array_t threads = nullptr;
+    mach_msg_type_number_t threadCount = 0;
+    if (task_threads(mach_task_self(), &threads, &threadCount) == KERN_SUCCESS) {
+        G("threads", double(threadCount));
+        for (mach_msg_type_number_t i = 0; i < threadCount; ++i) mach_port_deallocate(mach_task_self(), threads[i]);
+        vm_deallocate(mach_task_self(), reinterpret_cast<vm_address_t>(threads), threadCount * sizeof(thread_act_t));
+    }
+    // CPU time of the process (live threads plus the ones that ended), cumulative: the interval's delta over its length is the CPU use.
+    u64 us = 0;
+    mach_task_basic_info_data_t basic{};
+    mach_msg_type_number_t basicCount = MACH_TASK_BASIC_INFO_COUNT;
+    if (task_info(mach_task_self(), MACH_TASK_BASIC_INFO, reinterpret_cast<task_info_t>(&basic), &basicCount) == KERN_SUCCESS)
+        us += u64(basic.user_time.seconds + basic.system_time.seconds) * 1000000 + u64(basic.user_time.microseconds + basic.system_time.microseconds);
+    task_thread_times_info_data_t live{};
+    mach_msg_type_number_t liveCount = TASK_THREAD_TIMES_INFO_COUNT;
+    if (task_info(mach_task_self(), TASK_THREAD_TIMES_INFO, reinterpret_cast<task_info_t>(&live), &liveCount) == KERN_SUCCESS)
+        us += u64(live.user_time.seconds + live.system_time.seconds) * 1000000 + u64(live.user_time.microseconds + live.system_time.microseconds);
+    pm::counter("PROC", "cpu_ms").set(us / 1000);
+}
+
+// Probe: size of the persistent caches on disk (the Metal pipeline archives, .metalar, and the rest), walked every ~30 s.
+void publishDisk(const std::filesystem::path& cacheDir) {
+    if (cacheDir.empty()) return;
+    u64 metalar = 0, metalarBytes = 0, others = 0, otherBytes = 0;
+    std::error_code ec;
+    for (std::filesystem::recursive_directory_iterator it(cacheDir, std::filesystem::directory_options::skip_permission_denied, ec), end;
+         !ec && it != end; it.increment(ec)) {
+        std::error_code fe;
+        if (!it->is_regular_file(fe) || fe) continue;
+        const u64 size = it->file_size(fe);
+        if (fe) continue;
+        if (it->path().extension() == ".metalar") ++metalar, metalarBytes += size;
+        else ++others, otherBytes += size;
+    }
+    pm::gauge("PSO", "metalar_files").set(double(metalar)), pm::gauge("PSO", "metalar_mb").set(double(metalarBytes) / 1048576.0);
+    pm::gauge("PSO", "cache_other_files").set(double(others)), pm::gauge("PSO", "cache_other_mb").set(double(otherBytes) / 1048576.0);
+}
+
 void leftOut(const char* why) {
     if (VideoCore::Shadow::Side* side = shadowSide()) {
         side->status = VideoCore::Shadow::Status::Skipped;
@@ -1381,13 +1611,15 @@ struct Rasterizer::Impl {
     // Null in the shadow: a PageManager keeps one static rasterizer pointer and one fault handler, the Vulkan renderer's.
     std::unique_ptr<VideoCore::PageManager> page_manager;
     // Guest memory the title mapped for the GPU (MapMemory/UnmapMemory).
-    std::mutex mapped_mutex;
+    pm::TimedMutex<std::mutex> mapped_mutex{"mapped"};
     std::map<VAddr, VAddr> mapped;  // start -> end
     // Ranges textures were filled from, watched for CPU writes (start -> size).
-    std::mutex watch_mutex;
+    pm::TimedMutex<std::mutex> watch_mutex{"watch"};
     std::map<VAddr, u64> watched;
     // Whether [a, b) overlaps a range this rasterizer protects (texture sources, memory an image is ahead of).
     bool anyWatchIn(VAddr a, VAddr b) {
+        static pm::Timer& timer = pm::timer("TIME", "any_watch_in");
+        const pm::ScopedSampled scope(timer);  // (hot: calls exact, time estimated from 1 in 16)
         {
             std::scoped_lock l{owned_mutex};
             auto it = owned.lower_bound({a > (1ull << 30) ? a - (1ull << 30) : 0, 0});
@@ -1399,6 +1631,31 @@ struct Rasterizer::Impl {
         for (; it != watched.end() && it->first < b; ++it)
             if (it->first + it->second > a) return true;
         return false;
+    }
+    // Probe: the sizes of the tables above (APP family). Takes each lock for the time of a size() call.
+    void publishTables() {
+        {
+            std::scoped_lock l{mapped_mutex};
+            pm::gauge("APP", "mapped_ranges").set(double(mapped.size()));
+            u64 bytes = 0;
+            for (const auto& [start, end] : mapped) bytes += end - start;
+            pm::gauge("APP", "mapped_mb").set(double(bytes) / 1048576.0);
+        }
+        {
+            std::scoped_lock l{watch_mutex};
+            pm::gauge("APP", "watched_ranges").set(double(watched.size()));
+            u64 bytes = 0;
+            for (const auto& [start, size] : watched) bytes += size;
+            pm::gauge("APP", "watched_mb").set(double(bytes) / 1048576.0);
+        }
+        {
+            std::scoped_lock l{owned_mutex};
+            u64 bytes = 0;
+            for (const auto& [range, count] : owned) bytes += range.second;
+            pm::gauge("APP", "owned_ranges").set(double(owned.size()));
+            pm::gauge("APP", "owned_mb").set(double(bytes) / 1048576.0);
+            pm::gauge("APP", "ahead_since").set(double(aheadSince.size()));
+        }
     }
     // Ranges let go of lately (watch_mutex): a second thread faulting on the same page finds the watch
     // gone already, and its access counts as handled if the page can be written now. Kept for a short
@@ -1479,7 +1736,7 @@ struct Rasterizer::Impl {
     // the pages are inaccessible to the CPU (a write watcher plus a read watcher) until the renderer
     // has written the image back (re-tiled it into the guest memory). The first access faults here.
     // Keyed by (start, size) with a count: two images may share a range.
-    std::mutex owned_mutex;
+    pm::TimedMutex<std::mutex> owned_mutex{"owned"};
     std::map<std::pair<VAddr, u64>, u32> owned;
     // When each owned range was first found ahead of memory after a write back (engine lock): past kAheadLimit
     // the owner is dropped instead of retrying the fault for ever.
@@ -1590,6 +1847,7 @@ Rasterizer::Rasterizer(AmdGpu::Liverpool* liverpool, Mode mode)
     gWatchProbeContext.store(raw, std::memory_order_release);
     gWatchProbe.store([](void* ctx, u64 a, u64 b) { return static_cast<Impl*>(ctx)->anyWatchIn(a, b); },
                       std::memory_order_release);
+    gProbeTables.store([](void* ctx) { static_cast<Impl*>(ctx)->publishTables(); }, std::memory_order_release);
     e.start();
 }
 
@@ -1611,8 +1869,12 @@ Rasterizer::~Rasterizer() {
     e.watchOwned = nullptr;
     if (e.renderer) e.renderer->flushReports();
     flushLeftOut();
+    gProbeTables.store(nullptr, std::memory_order_release);
     gWatchProbe.store(nullptr, std::memory_order_release);
     gWatchProbeContext.store(nullptr, std::memory_order_release);
+    if (pm::enabled()) {  // the run's peaks and means
+        for (const std::string& line : pm::registry().summary()) LOG_INFO(Render_Vulkan, "{}", line);
+    }
 }
 
 void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
@@ -1717,6 +1979,11 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
             bl.alphaDst = uint8_t(b.alpha_dst_factor);
             bl.alphaFunc = uint8_t(b.alpha_func);
             bl.disableRop3 = b.disable_rop3;
+            if (pm::enabled()) {
+                e.probeCmaskDraws += cb.info.fast_clear && cb.CmaskAddress();
+                e.probeCmaskUndecodable += cb.info.fast_clear && cb.CmaskAddress() && !fastClearDecodes(c);
+                e.probeFmaskDraws += cb.info.compression && cb.FmaskAddress();
+            }
             if (cb.info.fast_clear && cb.CmaskAddress()) e.metas.Register(VideoCore::SurfaceMetas::Type::CMask, cb.CmaskAddress());
             if (cb.info.compression && cb.FmaskAddress()) e.metas.Register(VideoCore::SurfaceMetas::Type::FMask, cb.FmaskAddress());
             // (a clear colour that cannot be decoded is not applied, and the metadata is left alone: the target is
@@ -1774,6 +2041,7 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
             const VAddr htile = regs.depth_htile_data_base.GetAddress();
             const u32 slice = regs.depth_view.slice_start;
             if (db.z_info.tile_surface_enable && htile) e.metas.Register(VideoCore::SurfaceMetas::Type::HTile, htile);
+            if (pm::enabled()) e.probeHtileDraws += db.z_info.tile_surface_enable && htile;
             clearDepth = db.DepthValid() && !d.depth.depthClear && e.metas.IsCleared(htile, slice);
             e.metas.Touch(htile, slice, false);
         }
@@ -2724,6 +2992,156 @@ kernel void vp_eye_stats(texture2d<float, access::read> t [[texture(0)]], device
         if (!stats_pso) LOG_WARNING(Render_Vulkan, "EYE_STATS kernel unavailable");
     }
 
+    // ---- EYE probe (diagnostics): every picture, per eye, the mean luma, the share of lit samples and a hash of the
+    // sampled texels (a frozen picture repeats it), with the draws that wrote the eye's target. The reduction is the stats
+    // kernel's grid (64x64 cells of strided samples) with the texels' bits folded into a hash; one small shared buffer per
+    // eye and slot, summed by the completion handler. A slot still in use makes the picture count as skipped.
+    static constexpr u32 kHashSlots = 4;
+    id<MTLComputePipelineState> hash_pso{nil};
+    std::array<std::array<id<MTLBuffer>, 2>, kHashSlots> hash_buf{};
+    std::atomic<u32> hash_busy{0};
+    std::mutex hash_mutex;                   // the previous hash per eye (completion handlers of different pictures)
+    std::array<u64, 2> hash_prev{};
+    std::array<bool, 2> hash_has_prev{};
+    u32 hash_slot = 0;
+
+    void buildHashPipeline(id<MTLDevice> dev) {
+        static const char* kSource = R"MSL(
+#include <metal_stdlib>
+using namespace metal;
+kernel void vp_eye_hash(texture2d<float, access::read> t [[texture(0)]], device uint4* out [[buffer(0)]],
+                        uint2 gid [[thread_position_in_grid]]) {
+    const uint w = t.get_width(), h = t.get_height();
+    const uint x0 = gid.x * w / 64, x1 = (gid.x + 1) * w / 64, y0 = gid.y * h / 64, y1 = (gid.y + 1) * h / 64;
+    const uint sx = max((x1 - x0) / 8, 1u), sy = max((y1 - y0) / 8, 1u);
+    float l = 0;
+    uint nz = 0, n = 0, hash = 2166136261u;
+    for (uint y = y0; y < y1; y += sy)
+        for (uint x = x0; x < x1; x += sx) {
+            const float4 c = t.read(uint2(x, y));
+            const uint4 b = as_type<uint4>(c);
+            hash = (((hash ^ b.x) * 16777619u ^ b.y) * 16777619u ^ b.z) * 16777619u ^ b.w;
+            hash *= 16777619u;
+            l += (c.r + c.g + c.b) / 3.0f;
+            nz += (c.r > 0 || c.g > 0 || c.b > 0) ? 1u : 0u;
+            ++n;
+        }
+    out[gid.y * 64 + gid.x] = uint4(uint(min(l / float(max(n, 1u)), 4000.0f) * 1000000.0f), nz, hash, n);
+}
+)MSL";
+        NSError* error = nil;
+        id<MTLLibrary> lib = [dev newLibraryWithSource:@(kSource) options:nil error:&error];
+        id<MTLFunction> fn = lib ? [lib newFunctionWithName:@"vp_eye_hash"] : nil;
+        if (fn) hash_pso = [dev newComputePipelineStateWithFunction:fn error:&error];
+        for (auto& slot : hash_buf)
+            for (auto& b : slot)
+                b = [dev newBufferWithLength:kStatsGrid * kStatsGrid * sizeof(u32) * 4 options:MTLResourceStorageModeShared];
+        if (!hash_pso) LOG_WARNING(Render_Vulkan, "VPKENGINE_PROBE eye hash kernel unavailable");
+    }
+
+    // The reduction of one picture, encoded inside the headset frame's own command buffer (compose): no command buffer, frame
+    // slot or drain of its own, so it does not disturb the slot wait or the submit times it is there to measure.
+    struct HashJob {
+        int slot = -1;  // -1: none this picture
+        std::array<id<MTLTexture>, 2> src{};
+        std::array<id<MTLBuffer>, 2> bufs{};
+    };
+    HashJob hash_job;
+
+    // Under the engine lock, after the eyes' drawing is submitted (like eyeStats); compose() carries the job out.
+    void eyeProbe(Engine& e, const std::array<id<MTLTexture>, 2>& eyes, const std::array<vpps4::ImageDesc, 2>& eyeDesc) {
+        static pm::Counter* pictures = &pm::counter("EYE", "pictures");
+        static std::array<pm::Counter*, 2> draws{&pm::counter("EYE", "eye0_draws"), &pm::counter("EYE", "eye1_draws")};
+        static std::array<pm::Hist*, 2> drawsPerPicture{&pm::hist("EYE", "eye0_draws_per_picture"), &pm::hist("EYE", "eye1_draws_per_picture")};
+        static pm::Counter* skipped = &pm::counter("EYE", "reduction_skipped");
+        e.pictures.fetch_add(1, std::memory_order_relaxed);
+        pictures->add();
+        // (the eye pair as slices of one array target: the draws are counted under the eye whose T# is the target's address)
+        for (u32 k = 0; k < 2; ++k) {
+            const u64 n = e.renderer->takeTargetDraws(eyeDesc[k].address, 0, 0);
+            draws[k]->add(n);
+            drawsPerPicture[k]->add(n);
+        }
+        {
+            std::scoped_lock built{build_mutex};
+            if (!hash_pso && !hash_buf[0][0]) buildHashPipeline((__bridge id<MTLDevice>)e.backend->nativeDevice());
+        }
+        if (!hash_pso) return;
+        // (the same test as the chain's reduction: a float-readable single-sample 2D picture with memory; the eyes are 2D already,
+        // an array target's slice was made a 2D view by ComposeEyes)
+        HashJob job;
+        for (u32 k = 0; k < 2; ++k) {
+            if (!eyes[k]) continue;
+            job.src[k] = reducible(eyes[k], 0);
+            if (!job.src[k]) skipped->add();
+        }
+        if (!job.src[0] && !job.src[1]) return;
+        const u32 slot = hash_slot++ % kHashSlots;
+        if (hash_busy.fetch_or(1u << slot) & (1u << slot)) {
+            skipped->add();
+            return;
+        }
+        job.slot = int(slot);
+        job.bufs = hash_buf[slot];
+        dropHashJob(hash_job);  // (a job no compose carried out: its slot goes back first)
+        hash_job = job;
+    }
+
+    // Gives back the slot of a job that was not carried out.
+    void dropHashJob(const HashJob& job) {
+        if (job.slot >= 0) hash_busy.fetch_and(~(1u << job.slot));
+    }
+
+    // Encodes a job's compute pass (into the command buffer of the headset frame).
+    void encodeHashJob(id<MTLCommandBuffer> cb, const HashJob& job) {
+        if (job.slot < 0) return;
+        id<MTLComputeCommandEncoder> enc = [cb computeCommandEncoder];
+        enc.label = @"eye probe";
+        [enc setComputePipelineState:hash_pso];
+        for (u32 k = 0; k < 2; ++k) {
+            if (!job.src[k]) continue;
+            [enc setTexture:job.src[k] atIndex:0];
+            [enc setBuffer:job.bufs[k] offset:0 atIndex:0];
+            [enc dispatchThreads:MTLSizeMake(kStatsGrid, kStatsGrid, 1) threadsPerThreadgroup:MTLSizeMake(8, 8, 1)];
+        }
+        [enc endEncoding];
+    }
+
+    // The headset frame's completion handler: sums the job's buffers.
+    void finishHashJob(const HashJob& job) {
+        if (job.slot < 0) return;
+        for (u32 k = 0; k < 2; ++k)
+            if (job.src[k]) noteEyeHash(k, job.bufs[k]);
+        dropHashJob(job);
+    }
+
+    // Completion handler: sums a filled hash buffer into the EYE metrics (luma, lit share, blank and frozen pictures).
+    void noteEyeHash(u32 eye, id<MTLBuffer> buf) {
+        const u32* v = static_cast<const u32*>(buf.contents);
+        double luma = 0;
+        u64 lit = 0, samples = 0, hash = 14695981039346656037ull;
+        for (u32 i = 0; i < kStatsGrid * kStatsGrid; ++i) {
+            luma += double(v[4 * i]) / 1e6;
+            lit += v[4 * i + 1];
+            samples += v[4 * i + 3];
+            hash = (hash ^ v[4 * i + 2]) * 1099511628211ull;
+        }
+        const std::string name = "eye" + std::to_string(eye) + "_";
+        pm::counter("EYE", name + "frames").add();
+        pm::hist("EYE", name + "luma_milli").add(u64(luma / (kStatsGrid * kStatsGrid) * 1000.0));
+        pm::hist("EYE", name + "lit_permille").add(samples ? lit * 1000 / samples : 0);
+        if (lit == 0) pm::counter("EYE", name + "blank").add();
+        bool frozen = false;
+        {
+            std::scoped_lock l{hash_mutex};
+            frozen = hash_has_prev[eye] && hash_prev[eye] == hash;
+            hash_prev[eye] = hash;
+            hash_has_prev[eye] = true;
+        }
+        if (frozen) pm::counter("EYE", name + "frozen").add();
+        pm::registry().info("EYE", name + "hash", fmt::format("{:016x}", hash));
+    }
+
     // (average luma, % of samples lit) of a filled stats buffer.
     static std::pair<double, double> reduced(id<MTLBuffer> buf) {
         const float* v = static_cast<const float*>(buf.contents);
@@ -3021,7 +3439,16 @@ kernel void vp_eye_stats(texture2d<float, access::read> t [[texture(0)]], device
     int compose(Engine& e, u32 width, u32 height, std::span<const Region> regions) {
         u32 target_index = 0;
         void* target_texture = nullptr;
-        if (!VpkengineXr::Begin(width, height, target_index, target_texture)) return -1;
+        HashJob job;  // the eye probe's reduction of this picture, if any: it rides this command buffer
+        if (hash_job.slot >= 0) {
+            job = std::move(hash_job);
+            hash_job = {};
+        }
+        const bool probing = job.slot >= 0;
+        if (!VpkengineXr::Begin(width, height, target_index, target_texture)) {
+            dropHashJob(job);
+            return -1;
+        }
         const u32 slot = target_index % kSlots;
         {
             std::scoped_lock l{done_mutex};
@@ -3034,9 +3461,9 @@ kernel void vp_eye_stats(texture2d<float, access::read> t [[texture(0)]], device
         // they must have reached the backend.
         e.device->drain();
         bool queued = false;
-        e.device->withBackend([&] { queued = e.backend->encodeInterop(
-            [&](void* cbp) {
+        const auto encode = [&](void* cbp) {
                 id<MTLCommandBuffer> cb = (__bridge id<MTLCommandBuffer>)cbp;
+                if (probing) encodeHashJob(cb, job);  // (a fresh command buffer: no encoder is open in it)
                 MTLRenderPassDescriptor* rp = [MTLRenderPassDescriptor renderPassDescriptor];
                 rp.colorAttachments[0].texture = out;
                 rp.colorAttachments[0].loadAction = MTLLoadActionClear;
@@ -3057,14 +3484,28 @@ kernel void vp_eye_stats(texture2d<float, access::read> t [[texture(0)]], device
                     [enc drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
                 }
                 [enc endEncoding];
-            },
-            "vp.headset",
-            [this, slot] {
-                std::scoped_lock l{done_mutex};
-                done[slot] = true;
-                done_cv.notify_all();
-            }); });
+            };
+        // (encodeInterop returns false only before it runs `encode` or registers the handler, so a refused job is given back here
+        // and by no handler)
+        if (probing)
+            e.device->withBackend([&] { queued = e.backend->encodeInterop(
+                encode, "vp.headset",
+                [this, slot, job] {
+                    finishHashJob(job);
+                    std::scoped_lock l{done_mutex};
+                    done[slot] = true;
+                    done_cv.notify_all();
+                }); });
+        else
+            e.device->withBackend([&] { queued = e.backend->encodeInterop(
+                encode, "vp.headset",
+                [this, slot] {
+                    std::scoped_lock l{done_mutex};
+                    done[slot] = true;
+                    done_cv.notify_all();
+                }); });
         if (!queued) {
+            dropHashJob(job);
             VpkengineXr::Drop(target_index);
             return -1;
         }
@@ -3160,6 +3601,7 @@ int ComposeEyes(std::span<const AmdGpu::Image, 2> eye_textures, const Core::Vr::
                         eyes[0] != nil, eyes[1] != nil);
     }
     impl->eyeStats(e, eyes, eyeDesc);
+    if (pm::enabled()) impl->eyeProbe(e, eyes, eyeDesc);
     impl->eyeGs(e, eyeDesc);
     impl->last_fov = fov;
     impl->last_eye_width = eye_width;

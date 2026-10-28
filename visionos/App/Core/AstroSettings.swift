@@ -251,6 +251,8 @@ struct AstroSettings {
         env.append("SHADPS4_GPU_CLOCK_SCALE=auto")
         if diagnostics {
             env.append("SHADPS4_DIAGNOSTICS=1")
+            // The probe's CSV (probe-<date>.txt, one row per interval) next to the logs.
+            env.append("SHADPS4_PROBE_DIR=\(LogFiles.directory.path)")
             // What a frame is made of every few seconds and one frame's render passes; the GPU
             // test with L3 + R3, shader by shader.
             env.append("SHADPS4_FRAME_STATS=2")

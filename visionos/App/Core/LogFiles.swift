@@ -81,6 +81,7 @@ enum LogFiles {
         var files = [check]
         files += newest(prefix: "consola-", count: 3)
         files += newest(prefix: "emulador-", count: 2)
+        files += newest(prefix: "probe-", count: 2)
         // The running game's log as it is now.
         if FileManager.default.fileExists(atPath: emulatorLog.path) {
             let current = directory.appendingPathComponent("emulador-actual.txt")
@@ -104,7 +105,7 @@ enum LogFiles {
 
     /// Ten of each kind are kept.
     private static func prune() {
-        for prefix in ["consola-", "emulador-"] {
+        for prefix in ["consola-", "emulador-", "probe-"] {
             let files = (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? []
             let old = files
                 .filter { $0.lastPathComponent.hasPrefix(prefix) && $0.lastPathComponent != "emulador-actual.txt" }
