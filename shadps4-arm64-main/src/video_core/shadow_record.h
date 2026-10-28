@@ -7,6 +7,7 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -140,11 +141,54 @@ struct Side {
     uint32_t value = 0;
 };
 
+/// Texels of a rectangle of a surface, rows tight. `format` is the name the side that read it gives its host
+/// format (the pixel comparison parses either API's).
+struct PixelImage {
+    uint32_t x = 0, y = 0, width = 0, height = 0;    // the rectangle, in texels of the surface
+    uint32_t surfaceWidth = 0, surfaceHeight = 0;    // the whole surface
+    std::string format;
+    std::vector<uint8_t> texels;
+    bool empty() const { return texels.empty(); }
+};
+
+struct PixelTarget {
+    bool used = false;
+    uint64_t address = 0;
+    PixelImage pre, post;  // Vulkan's, before and after the draw (the region the draw can reach)
+    PixelImage vpkPost;    // VPKEngine's, after the same draw started from `pre`
+};
+
+/// A texture the draw samples that the GPU made (Vulkan's image, whole): VPKEngine starts from it as well.
+struct PixelTexture {
+    uint64_t address = 0;
+    PixelImage image;
+};
+
+/// One draw of a capture frame, compared pixel by pixel (shadow_pixels.h). The Tee gives it to the Record of a
+/// captured draw; the Vulkan rasterizer fills the Vulkan half (`pre`, `post`, `textures`, `depth`), the VPKEngine
+/// adapter reads the seeds from it, draws on its real-backend renderer and fills `vpkPost`. A reason in `vkSkip` /
+/// `vpkSkip` means that side could not take part: the draw is counted skipped, not compared.
+struct PixelCapture {
+    uint64_t captureId = 0;
+    std::array<PixelTarget, 8> color;
+    PixelTarget depth;  // `pre` only: the depth test starts from it
+    std::vector<PixelTexture> textures;
+    std::string vkSkip, vpkSkip;
+};
+
 struct Record {
     uint64_t seq = 0;
     Op op = Op::Draw;
     Side vk, vpk;
+    std::shared_ptr<PixelCapture> pixels;  // set on the draws of a capture frame (ASTRO_SHADOW_PIXELS)
 };
+
+/// Whether the VPKEngine adapter can run the pixel comparison (cleared by it when its real-backend renderer cannot
+/// start or fails): the Tee stops taking captures then.
+inline std::atomic<bool>& PixelsAvailable() {
+    static std::atomic<bool> available{true};
+    return available;
+}
 
 /// The record of the Tee call in progress on this thread (null outside one, and with the shadow off).
 inline Record*& Current() {
