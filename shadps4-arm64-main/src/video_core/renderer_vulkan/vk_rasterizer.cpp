@@ -1126,25 +1126,50 @@ static std::string ShadowPixelImageSkip(const VideoCore::ImageInfo& info, bool w
     return {};
 }
 
-/// Before the draw's pass: the whole images the draw starts from (its colour targets and depth, and the GPU-made
-/// textures it samples) are copied into one host-visible buffer, on the GPU timeline, in order with everything
-/// before. Nothing waits here: ShadowPixelsAfter does, once. Does nothing for a draw that is not captured.
+/// Before the draw's pass: the rectangle the draw can reach (viewport and scissor) of its colour targets and depth, and
+/// the GPU-made textures it samples (whole, unless this capture read them already), are copied into one host-visible
+/// buffer, on the GPU timeline, in order with everything before. Nothing waits here: ShadowPixelsAfter does, once. Does
+/// nothing for a draw that is not captured.
 void Rasterizer::ShadowPixelsBefore(const GraphicsPipeline* pipeline) {
     shadow_pixel_jobs.clear();
     auto* record = VideoCore::Shadow::Current();
     if (record == nullptr || !record->pixels) {
         shadow_pixel_textures.clear();
+        if (shadow_pixel_thread == std::this_thread::get_id()) {
+            // The capture is over for this thread (or its budget is): what it held goes back (the GPU is idle, every
+            // captured draw waited for it).
+            shadow_pixel_cache.clear();
+            shadow_pixel_staging.reset();
+        }
         return;
     }
     VideoCore::Shadow::PixelCapture& pc = *record->pixels;
+    shadow_pixel_thread = std::this_thread::get_id();
+    if (shadow_pixel_capture != pc.captureId ||
+        shadow_pixel_cache_writes != shadow_pixel_writes.load(std::memory_order_relaxed)) {
+        shadow_pixel_capture = pc.captureId;
+        shadow_pixel_cache_writes = shadow_pixel_writes.load(std::memory_order_relaxed);
+        shadow_pixel_cache.clear();
+    }
     const auto skip = [&](std::string why) {
-        pc.vkSkip = std::move(why);
+        if (pc.vkSkip.empty()) {
+            pc.vkSkip = std::move(why);
+        }
         shadow_pixel_jobs.clear();
         shadow_pixel_textures.clear();
+        shadow_pixel_cache.clear();  // (the draw goes on without being read: it may write what the cache holds)
     };
+    if (!pc.vkSkip.empty()) {  // (BindResources found the draw cannot be reproduced)
+        return skip({});
+    }
     if (in_target_passes) {
         return skip("draw in several passes");
     }
+    // The draw's rectangle is the viewport and scissor the draw sets (the record gets them here as it does at the draw).
+    UpdateViewportScissorState();
+    using namespace VideoCore::Shadow;
+    const Side& side = record->vk;
+    const float viewport[4] = {side.viewport[0], side.viewport[1], side.viewport[2], side.viewport[3]};
     const auto& regs = liverpool->regs;
     constexpr u64 kMaxStaging = u64{192} << 20;
     u64 total = 0;
@@ -1167,9 +1192,18 @@ void Rasterizer::ShadowPixelsBefore(const GraphicsPipeline* pipeline) {
         job.address = address;
         job.width = image.info.size.width;
         job.height = image.info.size.height;
-        job.texel_bytes = VideoCore::Shadow::ParsePixelFormat(vk::to_string(image.info.pixel_format))->bytes;
+        job.texel_bytes = ParsePixelFormat(vk::to_string(image.info.pixel_format))->bytes;
         job.format = vk::to_string(image.info.pixel_format);
-        const u64 bytes = u64{job.width} * job.height * job.texel_bytes;
+        PixelRect rect{0, 0, job.width, job.height};
+        if (!texture) {
+            rect = DrawRegion(side.viewportValid, viewport, side.scissorValid, side.scissor, job.width, job.height);
+            if (rect.empty()) {
+                return "empty region";
+            }
+            std::erase_if(shadow_pixel_cache, [&](const auto& entry) { return entry.first == id; });
+        }
+        job.x = rect.x, job.y = rect.y, job.w = rect.w, job.h = rect.h;
+        const u64 bytes = u64{job.w} * job.h * job.texel_bytes;
         job.pre_offset = Common::AlignUp(total, 256);
         total = job.pre_offset + bytes;
         if (!depth && !texture) {
@@ -1208,6 +1242,12 @@ void Rasterizer::ShadowPixelsBefore(const GraphicsPipeline* pipeline) {
         if (is_target) {
             return skip("samples a target it draws to");
         }
+        if (const auto cached = std::ranges::find(shadow_pixel_cache, image_id,
+                                                  &decltype(shadow_pixel_cache)::value_type::first);
+            cached != shadow_pixel_cache.end()) {
+            pc.textures.push_back({texture_cache.GetImage(image_id).info.guest_address, cached->second});
+            continue;
+        }
         if (const auto why = add(image_id, 0, false, true, texture_cache.GetImage(image_id).info.guest_address);
             !why.empty()) {
             return skip("texture: " + why);
@@ -1235,8 +1275,8 @@ void Rasterizer::ShadowPixelsBefore(const GraphicsPipeline* pipeline) {
         VideoCore::Image& image = texture_cache.GetImage(job.image);
         const vk::BufferImageCopy copy{
             .bufferOffset = job.pre_offset,
-            .bufferRowLength = job.width,
-            .bufferImageHeight = job.height,
+            .bufferRowLength = job.w,
+            .bufferImageHeight = job.h,
             .imageSubresource =
                 {
                     .aspectMask = image.info.props.is_depth ? vk::ImageAspectFlagBits::eDepth
@@ -1245,16 +1285,22 @@ void Rasterizer::ShadowPixelsBefore(const GraphicsPipeline* pipeline) {
                     .baseArrayLayer = 0,
                     .layerCount = 1,
                 },
-            .imageOffset = {0, 0, 0},
-            .imageExtent = {job.width, job.height, 1},
+            .imageOffset = {s32(job.x), s32(job.y), 0},
+            .imageExtent = {job.w, job.h, 1},
         };
+        // Download leaves the image in the layout of the copy; BindTextures wrote the descriptors of a sampled one with
+        // the layout it had, and the draw is still to come: it is put back. (A target is moved by the pass.)
+        const auto previous = image.backing->state;
         image.Download({&copy, 1}, shadow_pixel_staging->Handle(), job.pre_offset,
-                       u64{job.width} * job.height * job.texel_bytes);
+                       u64{job.w} * job.h * job.texel_bytes);
+        if (job.texture && previous.layout != vk::ImageLayout::eUndefined) {
+            image.Transit(previous.layout, previous.access_mask, std::nullopt);
+        }
     }
 }
 
-/// After the draw: the colour targets are copied again, the GPU is waited for (once), and the rectangle the draw
-/// can reach (viewport and scissor) of each is cut out of the buffer, with the "before" images, into the record.
+/// After the draw: the colour targets are copied again, the GPU is waited for (once), and the images go, with the "before"
+/// ones, into the record.
 void Rasterizer::ShadowPixelsAfter() {
     auto* record = VideoCore::Shadow::Current();
     if (shadow_pixel_jobs.empty() || record == nullptr || !record->pixels) {
@@ -1262,6 +1308,11 @@ void Rasterizer::ShadowPixelsAfter() {
         return;
     }
     VideoCore::Shadow::PixelCapture& pc = *record->pixels;
+    if (!pc.vkSkip.empty()) {  // (found while the draw was recorded: nothing to read)
+        shadow_pixel_jobs.clear();
+        shadow_pixel_cache.clear();
+        return;
+    }
     for (const ShadowPixelJob& job : shadow_pixel_jobs) {
         if (job.texture || job.depth) {
             continue;
@@ -1269,8 +1320,8 @@ void Rasterizer::ShadowPixelsAfter() {
         VideoCore::Image& image = texture_cache.GetImage(job.image);
         const vk::BufferImageCopy copy{
             .bufferOffset = job.post_offset,
-            .bufferRowLength = job.width,
-            .bufferImageHeight = job.height,
+            .bufferRowLength = job.w,
+            .bufferImageHeight = job.h,
             .imageSubresource =
                 {
                     .aspectMask = vk::ImageAspectFlagBits::eColor,
@@ -1278,11 +1329,11 @@ void Rasterizer::ShadowPixelsAfter() {
                     .baseArrayLayer = 0,
                     .layerCount = 1,
                 },
-            .imageOffset = {0, 0, 0},
-            .imageExtent = {job.width, job.height, 1},
+            .imageOffset = {s32(job.x), s32(job.y), 0},
+            .imageExtent = {job.w, job.h, 1},
         };
         image.Download({&copy, 1}, shadow_pixel_staging->Handle(), job.post_offset,
-                       u64{job.width} * job.height * job.texel_bytes);
+                       u64{job.w} * job.h * job.texel_bytes);
     }
     scheduler.Finish();
     if (!shadow_pixel_staging->is_coherent) {
@@ -1291,37 +1342,29 @@ void Rasterizer::ShadowPixelsAfter() {
     }
     using namespace VideoCore::Shadow;
     const u8* mapped = shadow_pixel_staging->mapped_data.data();
-    const Side& side = record->vk;
-    const float viewport[4] = {side.viewport[0], side.viewport[1], side.viewport[2], side.viewport[3]};
     for (const ShadowPixelJob& job : shadow_pixel_jobs) {
-        PixelImage whole;
-        whole.surfaceWidth = whole.width = job.width;
-        whole.surfaceHeight = whole.height = job.height;
-        whole.format = job.format;
+        PixelImage image;
+        image.surfaceWidth = job.width, image.surfaceHeight = job.height;
+        image.x = job.x, image.y = job.y, image.width = job.w, image.height = job.h;
+        image.format = job.format;
+        const u64 bytes = u64{job.w} * job.h * job.texel_bytes;
+        const auto read = [&](u64 offset) {
+            PixelImage out = image;
+            out.texels.assign(mapped + offset, mapped + offset + bytes);
+            return out;
+        };
         if (job.texture) {
-            whole.texels.assign(mapped + job.pre_offset,
-                                mapped + job.pre_offset + u64{job.width} * job.height * job.texel_bytes);
+            PixelImage whole = read(job.pre_offset);
+            shadow_pixel_cache.emplace_back(job.image, whole);
             pc.textures.push_back({job.address, std::move(whole)});
             continue;
         }
-        const PixelRect rect = DrawRegion(side.viewportValid, viewport, side.scissorValid, side.scissor,
-                                          job.width, job.height);
-        if (rect.empty()) {
-            pc.vkSkip = "empty region";
-            continue;
-        }
-        const auto cut = [&](u64 offset) {
-            PixelImage image = whole;
-            image.x = rect.x, image.y = rect.y, image.width = rect.w, image.height = rect.h;
-            image.texels = CropRect(mapped + offset, job.width, job.texel_bytes, rect);
-            return image;
-        };
         PixelTarget& target = job.depth ? pc.depth : pc.color[job.color_index];
         target.used = true;
         target.address = job.address;
-        target.pre = cut(job.pre_offset);
+        target.pre = read(job.pre_offset);
         if (!job.depth) {
-            target.post = cut(job.post_offset);
+            target.post = read(job.post_offset);
         }
     }
     shadow_pixel_jobs.clear();
@@ -1867,6 +1910,7 @@ boost::container::small_vector<u8, 4> Rasterizer::SharedTargetPasses(u8 mrt_mask
 void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u32 stride,
                               u32 max_count, VAddr count_address) {
     RENDERER_TRACE;
+    shadow_pixel_writes.fetch_add(1, std::memory_order_relaxed);  // (not captured: ASTRO_SHADOW_PIXELS)
 
     scheduler.PopPendingOperations();
     if (scheduler.IsFlushDue()) {
@@ -1968,6 +2012,7 @@ void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u3
 
 void Rasterizer::DispatchDirect() {
     RENDERER_TRACE;
+    shadow_pixel_writes.fetch_add(1, std::memory_order_relaxed);  // (not captured: ASTRO_SHADOW_PIXELS)
 
     scheduler.PopPendingOperations();
     if (scheduler.IsFlushDue()) {
@@ -2027,6 +2072,7 @@ void Rasterizer::DispatchDirect() {
 
 void Rasterizer::DispatchIndirect(VAddr address, u32 offset, u32 size) {
     RENDERER_TRACE;
+    shadow_pixel_writes.fetch_add(1, std::memory_order_relaxed);  // (not captured: ASTRO_SHADOW_PIXELS)
 
     scheduler.PopPendingOperations();
     if (scheduler.IsFlushDue()) {
@@ -2341,6 +2387,12 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, Shader::Backend::Binding
             const auto& [bound_id, bound_sharp, bound_size] = buffer_bindings.back();
             side->buffers.push_back({ShadowStageOf(stage), bound_sharp.base_address, bound_size,
                                      bound_sharp.GetStride(), desc.is_written});
+            if (auto* record = VideoCore::Shadow::Current();
+                record != nullptr && record->pixels && record->pixels->vkSkip.empty() && bound_size > 0 &&
+                buffer_cache.IsRegionGpuModified(bound_sharp.base_address, bound_size)) {
+                // (guest memory is stale there: VPKEngine would read what the GPU has since overwritten)
+                record->pixels->vkSkip = "buffer written by GPU";
+            }
         }
     }
 

@@ -5,8 +5,10 @@
 
 #include "video_core/rasterizer_interface.h"
 #include <array>
+#include <atomic>
 #include <memory>
 #include <mutex>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -18,6 +20,7 @@
 #include "video_core/page_manager.h"
 #include "video_core/renderer_vulkan/gpu_bench.h"
 #include "video_core/renderer_vulkan/vk_pipeline_cache.h"
+#include "video_core/shadow_record.h"
 #include "video_core/texture_cache/texture_cache.h"
 
 namespace AmdGpu {
@@ -224,7 +227,8 @@ private:
         bool depth{};
         bool texture{};
         u64 address{};
-        u32 width{}, height{}, texel_bytes{};
+        u32 width{}, height{}, texel_bytes{};  // the image
+        u32 x{}, y{}, w{}, h{};                // the rectangle copied (the draw's viewport and scissor; a texture: all)
         u64 pre_offset{}, post_offset{};
         std::string format;
     };
@@ -232,6 +236,17 @@ private:
     /// The images the draw samples that the GPU made (noted by BindTextures while a draw is captured).
     std::vector<VideoCore::ImageId> shadow_pixel_textures;
     std::unique_ptr<VideoCore::Buffer> shadow_pixel_staging;
+    /// The textures read back in this capture, kept while nothing could have drawn to them (dropped by every draw
+    /// that is not captured, indirect draw, dispatch, and by a draw that targets the image). Only the thread of the
+    /// capture touches these (Tee: one thread's draws are captured), and gives the staging back at its first draw
+    /// outside a capture.
+    std::vector<std::pair<VideoCore::ImageId, VideoCore::Shadow::PixelImage>> shadow_pixel_cache;
+    u64 shadow_pixel_capture{};
+    std::thread::id shadow_pixel_thread;
+    /// Counts what can write images without being captured (indirect draws, dispatches; any thread): the cache is dropped
+    /// when it moved.
+    std::atomic<u64> shadow_pixel_writes{};
+    u64 shadow_pixel_cache_writes{};
     void ShadowPixelsBefore(const GraphicsPipeline* pipeline);
     void ShadowPixelsAfter();
 

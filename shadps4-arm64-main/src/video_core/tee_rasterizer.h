@@ -213,6 +213,8 @@ private:
         record.seq = comparison.NextSeq();
         if (op == Shadow::Op::Draw) {
             record.pixels = BeginPixels();
+        } else if (op != Shadow::Op::FillBuffer && op != Shadow::Op::CopyBuffer) {
+            NotePixelsNotCaptured(op);
         }
         {
             const Shadow::Scope scope{&record};
@@ -229,12 +231,38 @@ private:
         if (answered) {
             comparison.Submit(record);
             pixel_results.Submit(record);
+        } else if (record.pixels) {
+            pixel_results.Unanswered("shadow threw or off");
         }
         comparison.Tick(Shadow::Frames().load(std::memory_order_relaxed));
     }
 
     static double Now() {
         return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+    }
+
+    /// An indirect draw or a dispatch while a capture runs: not captured, counted in its summary.
+    void NotePixelsNotCaptured(Shadow::Op op) {
+        if (!pixels_enabled) {
+            return;
+        }
+        std::scoped_lock lock{pixel_mutex};
+        StepPixelsLocked(Now());
+        if (pixel_schedule.Capturing(Now()) && pixel_thread_set && pixel_thread == std::this_thread::get_id()) {
+            pixel_results.Unanswered(std::string(Shadow::OpName(op)) + " not captured");
+        }
+    }
+
+    /// The schedule moves to this call: the capture whose picture was presented ends (its summary), the next begins.
+    void StepPixelsLocked(double now) {
+        const auto step = pixel_schedule.Advance(Shadow::Frames().load(std::memory_order_relaxed), now);
+        if (step.ended) {
+            pixel_results.End();
+            pixel_thread_set = false;
+        }
+        if (step.started) {
+            pixel_results.Begin();
+        }
     }
 
     /// The PixelCapture of this Draw when it is to be captured (see the class comment), else null. Also ends the
@@ -245,14 +273,7 @@ private:
         }
         std::scoped_lock lock{pixel_mutex};
         const double now = Now();
-        const auto step = pixel_schedule.Advance(Shadow::Frames().load(std::memory_order_relaxed), now);
-        if (step.ended) {
-            pixel_results.End();
-            pixel_thread_set = false;
-        }
-        if (step.started) {
-            pixel_results.Begin();
-        }
+        StepPixelsLocked(now);
         if (!pixel_schedule.Capturing(now) || !Shadow::PixelsAvailable().load(std::memory_order_relaxed)) {
             return nullptr;
         }

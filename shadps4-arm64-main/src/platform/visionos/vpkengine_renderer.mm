@@ -895,6 +895,9 @@ struct PixelEngine {
     unsigned errorLines = 0;
     std::vector<Window> windows;
     u64 windowBytes = 0;
+    std::mutex mutex;                 // draw() and release() come from the threads of the Tee's calls
+    std::atomic<bool> held{false};    // windows are mapped (release() has something to do)
+    bool copyFailed = false;          // a window could not be copied from guest memory in this draw
     u64 epoch = 0;       // one per draw
     u64 captureId = 0;
     // The draw in progress.
@@ -933,10 +936,17 @@ struct PixelEngine {
             windowBytes += hi - lo;
             windows.push_back({lo, hi - lo, host, 0});
             w = &windows.back();
+            held.store(true, std::memory_order_relaxed);
         }
         if (w->copiedAt != epoch) {
-            if (spanHasWatches(lo, hi)) return false;
-            std::memcpy(w->host, reinterpret_cast<const void*>(lo), hi - lo);
+            // Not a memcpy: a page the host protects (Vulkan's PageManager, which the shadow has no probe for) would
+            // fault in the middle of the draw; the kernel's copy answers with an error instead, touching nothing.
+            vm_size_t copied = 0;
+            if (vm_read_overwrite(mach_task_self(), vm_address_t(lo), vm_size_t(hi - lo), vm_address_t(w->host), &copied) != KERN_SUCCESS ||
+                copied != hi - lo) {
+                copyFailed = true;
+                return false;
+            }
             w->copiedAt = epoch;
         }
         out = {w->base, w->size, w->host, false};
@@ -974,6 +984,20 @@ struct PixelEngine {
         return false;
     }
 
+    // The capture is over: the windows go back to the system (the renderer lets go of what it made over them first; the GPU
+    // is idle, every draw waits for it).
+    void release() {
+        std::scoped_lock lock{mutex};
+        if (!held.exchange(false, std::memory_order_relaxed)) return;
+        if (renderer) {
+            renderer->abandonOwners(0, 1ull << 47);
+            renderer->invalidate(0, 1ull << 47);
+        }
+        for (Window& w : windows) ::munmap(w.host, w.size);
+        windows.clear();
+        windowBytes = 0;
+    }
+
     bool start() {
         if (renderer) return true;
         if (failed) return false;
@@ -984,6 +1008,7 @@ struct PixelEngine {
         if (!backend->ok()) return false;
         device = std::make_unique<vpgpu::Device>(*backend, 2, [this](const std::string& l) { log(l); });
         device->setRefuseFailedBuffers(true);
+        device->setHoldMs(250);  // (a pipeline new to this renderer is made within the draw, not left for a later frame)
         vpps4::Hooks hooks;
         hooks.region = [this](u64 a, u64 n, vpps4::GuestRegion& g) { return region(a, n, g); };
         hooks.shader = [this](u64 id, vpir::Stage, const vpmsl::MslShader& m) { shaders.add(id, toMetal(m)); };
@@ -1001,6 +1026,7 @@ struct PixelEngine {
     // Draws `clear` (when the metadata asked for a clear) and `d` from the pixels in `pc`, and reads the colour targets.
     void draw(VideoCore::Shadow::PixelCapture& pc, const vpps4::DrawState* clear, const vpps4::DrawState& d) {
         using namespace VideoCore::Shadow;
+        std::scoped_lock lock{mutex};
         if (!start()) {
             PixelsAvailable().store(false, std::memory_order_relaxed);
             pc.vpkSkip = "second renderer unavailable";
@@ -1016,13 +1042,19 @@ struct PixelEngine {
         seeds.clear();
         seeded.clear();
         seedFail.clear();
+        copyFailed = false;
         haveLast = false;
         for (unsigned i = 0; i < 8; ++i)
             if (pc.color[i].used) seeds.push_back({pc.color[i].address, vpps4::SeedRequest::Kind::Color, &pc.color[i].pre, false});
         if (pc.depth.used) seeds.push_back({pc.depth.address, vpps4::SeedRequest::Kind::Depth, &pc.depth.pre, false});
         for (const PixelTexture& t : pc.textures) seeds.push_back({t.address, vpps4::SeedRequest::Kind::Texture, &t.image, false});
         drawing = true;
-        if (clear) renderer->draw(*clear);
+        std::string clearFail;
+        if (clear) {
+            renderer->draw(*clear);
+            if (!haveLast || last.status == vpps4::Resolved::Status::Skipped)  // (a clear is "handled": it waits for the next pass)
+                clearFail = haveLast ? last.reason : "no answer";
+        }
         haveLast = false;
         renderer->draw(d);
         std::vector<vpgpu::TextureId> targets(8);
@@ -1035,12 +1067,19 @@ struct PixelEngine {
         const vpps4::CpuTimes times = renderer->takeCpuTimes();
         drawing = false;
         for (const auto& [address, bytes] : seeded) renderer->invalidate(address, bytes);  // (the next draw is seeded again, or reads memory)
+        const bool unusedSeed = std::any_of(seeds.begin(), seeds.end(), [](const Seed& x) { return !x.used; });
         if (!haveLast) {
             pc.vpkSkip = "no answer";
+        } else if (!clearFail.empty()) {
+            pc.vpkSkip = "clear draw: " + clearFail;
+        } else if (copyFailed) {
+            pc.vpkSkip = "guest memory protected";
         } else if (last.status != vpps4::Resolved::Status::Drawn) {
             pc.vpkSkip = (last.status == vpps4::Resolved::Status::Skipped ? "skipped: " : "handled: ") + last.reason;
         } else if (!seedFail.empty()) {
             pc.vpkSkip = "seed " + seedFail;
+        } else if (unusedSeed) {
+            pc.vpkSkip = "seed not consumed";  // (the renderer drew from guest memory what Vulkan had in an image)
         } else if (!idle) {
             // (the GPU may still read the windows the next draw would refresh: no more captures)
             PixelsAvailable().store(false, std::memory_order_relaxed);
@@ -1572,6 +1611,8 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
     VideoCore::Shadow::Record* shadowRecord = VideoCore::Shadow::Current();
     VideoCore::Shadow::PixelCapture* pixels =
         shadowRecord != nullptr && shadowRecord->pixels && shadowRecord->pixels->vkSkip.empty() ? shadowRecord->pixels.get() : nullptr;
+    // (a draw outside a capture: the windows of the one that is over go back)
+    if ((shadowRecord == nullptr || !shadowRecord->pixels) && pixelEngine().held.load(std::memory_order_relaxed)) pixelEngine().release();
     std::optional<vpps4::DrawState> pixelClear;
 
     // Targets. The ones a title cleared by writing their fast clear metadata (see Engine::metas) are cleared
@@ -1886,20 +1927,24 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
     }
     e.renderer->draw(d);
     if (VideoCore::Shadow::Side* side = shadowSide()) {
-        // The definitions of Vulkan's half (shadow_record.h): `cleared` is the target's CMASK metadata state at the
-        // draw (the register bit FAST_CLEAR only says the target has one), the depth target is used when the draw
+        // The definitions of Vulkan's half (shadow_record.h): `cleared` is what the renderer reports (its pass starts with
+        // a clear of the target: Resolved::color[].cleared, shadowResolved), the depth target is used when the draw
         // tests or writes it. Kept to what the renderer reports: a target it does not hold stays unused.
-        for (unsigned i = 0; i < 8; ++i)
-            if (side->color[i].used) side->color[i].cleared = clearColor[i];
         side->depth.used = side->depth.used && ((dc.depth_enable && db.DepthValid()) || (dc.stencil_enable && db.StencilValid()));
     }
     if (pixels && VideoCore::Shadow::PixelsAvailable().load(std::memory_order_relaxed)) {
-        try {
-            pixelEngine().draw(*pixels, pixelClear ? &*pixelClear : nullptr, d);
-        } catch (const std::exception& ex) {
-            VideoCore::Shadow::PixelsAvailable().store(false, std::memory_order_relaxed);
-            pixels->vpkSkip = "exception";
-            LOG_ERROR(Render_Vulkan, "ASTRO_PIXEL disabled reason={}", ex.what());
+        @autoreleasepool {
+            try {
+                pixelEngine().draw(*pixels, pixelClear ? &*pixelClear : nullptr, d);
+            } catch (const std::exception& ex) {
+                VideoCore::Shadow::PixelsAvailable().store(false, std::memory_order_relaxed);
+                pixels->vpkSkip = "exception";
+                LOG_ERROR(Render_Vulkan, "ASTRO_PIXEL disabled reason={}", ex.what());
+            } catch (...) {
+                VideoCore::Shadow::PixelsAvailable().store(false, std::memory_order_relaxed);
+                pixels->vpkSkip = "exception";
+                LOG_ERROR(Render_Vulkan, "ASTRO_PIXEL disabled reason=unknown exception");
+            }
         }
     }
     e.noteWork();
