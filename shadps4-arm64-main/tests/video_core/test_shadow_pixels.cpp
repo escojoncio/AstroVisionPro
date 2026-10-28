@@ -116,6 +116,7 @@ TEST(ShadowPixels, ScheduleCapturesOnePictureEveryInterval) {
     step = s.Advance(7, 10.0);
     EXPECT_TRUE(step.started && !step.ended && s.Active() && s.Id() == 1);
     EXPECT_TRUE(s.Capturing(11.9) && !s.Capturing(12.0));  // the budget
+    EXPECT_TRUE(std::abs(s.Remaining(10.5) - 1.5) < 1e-9 && s.Remaining(13.0) == 0.0);  // (what is left of it)
     step = s.Advance(7, 11.0);
     EXPECT_TRUE(!step.started && !step.ended);
     step = s.Advance(8, 12.5);
@@ -124,6 +125,7 @@ TEST(ShadowPixels, ScheduleCapturesOnePictureEveryInterval) {
     EXPECT_TRUE(!step.started);
     step = s.Advance(10, 20.0);
     EXPECT_TRUE(step.started && s.Id() == 2);
+    EXPECT_TRUE(s.Remaining(30.0) == 0.0 && CaptureSchedule(10.0, 2.0).Remaining(1.0) == 0.0);  // (spent, or none running: none)
     CaptureSchedule off(0.0, 2.0);
     EXPECT_TRUE(!off.Advance(1, 0).started && !off.Advance(2, 1000).started && !off.Capturing(1000));
     EXPECT_TRUE(CaptureSchedule::ParseInterval(nullptr) == 10.0 && CaptureSchedule::ParseInterval("0") == 0.0);

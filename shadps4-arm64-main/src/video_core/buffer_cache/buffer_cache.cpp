@@ -190,6 +190,31 @@ void BufferCache::DownloadBufferMemory(Buffer& buffer, VAddr device_addr, u64 si
     }
 }
 
+bool BufferCache::DrawInputsGpuModified(const Vulkan::GraphicsPipeline& pipeline, bool is_indexed,
+                                        u32 index_offset) {
+    const auto& regs = liverpool->regs;
+    Vulkan::VertexInputs<vk::VertexInputAttributeDescription2EXT> attributes;
+    Vulkan::VertexInputs<vk::VertexInputBindingDescription2EXT> bindings;
+    Vulkan::VertexInputs<vk::VertexInputBindingDivisorDescriptionEXT> divisors;
+    Vulkan::VertexInputs<AmdGpu::Buffer> guest_buffers;
+    pipeline.GetVertexInputs(attributes, bindings, divisors, guest_buffers,
+                             regs.vgt_instance_step_rate_0, regs.vgt_instance_step_rate_1);
+    for (const auto& buffer : guest_buffers) {
+        if (buffer.base_address != 0 && buffer.GetSize() > 0 &&
+            IsRegionGpuModified(buffer.base_address, buffer.GetSize())) {
+            return true;
+        }
+    }
+    if (is_indexed) {
+        const u32 index_size =
+            regs.index_buffer_type.index_type == AmdGpu::IndexType::Index16 ? sizeof(u16) : sizeof(u32);
+        const VAddr index_address =
+            regs.index_base_address.Address<VAddr>() + index_offset * index_size;
+        return IsRegionGpuModified(index_address, regs.num_indices * index_size);
+    }
+    return false;
+}
+
 void BufferCache::BindVertexBuffers(const Vulkan::GraphicsPipeline& pipeline) {
     const auto& regs = liverpool->regs;
     Vulkan::VertexInputs<vk::VertexInputAttributeDescription2EXT> attributes;
@@ -235,10 +260,6 @@ void BufferCache::BindVertexBuffers(const Vulkan::GraphicsPipeline& pipeline) {
                 record->vk.buffers.push_back({Shadow::Stage::Vs, buffer.base_address,
                                               memory->ClampRangeSize(buffer.base_address, buffer.GetSize()),
                                               buffer.GetStride(), false});
-                if (record->pixels && record->pixels->vkSkip.empty() && buffer.GetSize() > 0 &&
-                    IsRegionGpuModified(buffer.base_address, buffer.GetSize())) {
-                    record->pixels->vkSkip = "buffer written by GPU";  // (guest memory is stale there)
-                }
             }
         }
     }

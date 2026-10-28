@@ -161,7 +161,7 @@ struct PixelTarget {
 /// A texture the draw samples that the GPU made (Vulkan's image, whole): VPKEngine starts from it as well.
 struct PixelTexture {
     uint64_t address = 0;
-    PixelImage image;
+    std::shared_ptr<const PixelImage> image;  // (shared with the capture's cache: a texture read again is not copied)
 };
 
 /// One draw of a capture frame, compared pixel by pixel (shadow_pixels.h). The Tee gives it to the Record of a
@@ -170,6 +170,7 @@ struct PixelTexture {
 /// `vpkSkip` means that side could not take part: the draw is counted skipped, not compared.
 struct PixelCapture {
     uint64_t captureId = 0;
+    uint32_t holdMs = 0;  // how long VPKEngine may wait for a pipeline it has not built: what is left of the capture's budget, 250 ms at most
     std::array<PixelTarget, 8> color;
     PixelTarget depth;  // `pre` only: the depth test starts from it
     std::vector<PixelTexture> textures;
