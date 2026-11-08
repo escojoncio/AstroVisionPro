@@ -258,7 +258,7 @@ final class AppModel {
             manager.fileExists(atPath: url.appendingPathComponent("eboot.bin").path)
         }
         func preferred(_ url: URL) -> Bool {
-            url.lastPathComponent.caseInsensitiveCompare("CUSA12392") == .orderedSame
+            ["CUSA12392", "CUSA12431"].contains { url.lastPathComponent.caseInsensitiveCompare($0) == .orderedSame }
         }
         // Every game at hand: the VPS4 folder first (GameFolder.swift: its Juegos folder, and
         // the folder itself), then the app's documents.

@@ -50,6 +50,13 @@ static std::vector<u8> MadeUp(const Build& build) {
     for (const Change& change : PhysicsStepChanges(build)) {
         std::memcpy(image.data() + change.at, &change.was, change.bytes);
     }
+    for (const Change& change : FrameCountChanges(build)) {
+        std::memcpy(image.data() + change.at, &change.was, change.bytes);
+        // And the constant they are to read.
+        s32 distance = 0;
+        std::memcpy(&distance, reinterpret_cast<const u8*>(&change.now) + 4, sizeof(distance));
+        Put(image, change.at + 8 + distance, ConsoleFrameSeconds);
+    }
     return image;
 }
 
@@ -63,6 +70,110 @@ static u64 CallTarget(std::span<const u8> code, u64 at) {
         }
     }
     return 0;
+}
+
+/// The soccer robots' frame counts: every place reads the same stack slot as a VEX instruction
+/// of eight bytes, and is to read, with the same instruction, a constant 8 bytes on that holds
+/// 1/60 as a float (where the image has it: made-up images hold nothing there).
+static void CheckFrameCounts(const Build& build, std::vector<u8> image, const std::string& name) {
+    const auto changes = FrameCountChanges(build);
+    Check(changes.size() == 6, name + ": the soccer robots' frame counts in 6 places");
+    bool same_slot = true;
+    bool same_instruction = true;
+    bool one_constant = true;
+    bool constant_holds = true;
+    u64 constant = 0;
+    for (const Change& change : changes) {
+        u8 was[8];
+        u8 now[8];
+        std::memcpy(was, &change.was, 8);
+        std::memcpy(now, &change.now, 8);
+        same_slot &= change.bytes == 8 && was[0] == 0xc5 && (was[3] & 0xc7) == 0x85 &&
+                     (change.was >> 32) == (changes[0].was >> 32);
+        same_instruction &= std::memcmp(was, now, 3) == 0 && (now[3] & 0xc7) == 0x05 &&
+                            (now[3] & 0x38) == (was[3] & 0x38);
+        s32 distance = 0;
+        std::memcpy(&distance, now + 4, sizeof(distance));
+        const u64 at = change.at + 8 + distance;
+        one_constant &= constant == 0 || constant == at;
+        constant = at;
+        if (at + 4 <= image.size()) {
+            float value = 0.0f;
+            std::memcpy(&value, image.data() + at, sizeof(value));
+            constant_holds &= value == ConsoleFrameSeconds;
+        }
+    }
+    Check(same_slot, name + ": each reads the step from the same place on the stack");
+    Check(same_instruction, name + ": each is to be the same instruction from rip+...");
+    Check(one_constant, name + ": all of them read one constant");
+    Check(constant_holds, name + ": which holds 1/60 where the image has it");
+    Check(Apply(image, changes) == nullptr && Recognise(image) == &build,
+          name + ": written whole, and still recognised");
+}
+
+/// The same places, against the constant each build declares (found in the build: the float
+/// 1/60 in its read-only data), and against each other.
+static void CheckFrameCountPlaces(const Build& build, const std::string& name) {
+    // Declared by Build::frame_counts' comments in known_title_builds.h, one for each build of
+    // Known in order.
+    static constexpr std::array<u64, 2> Constants{0x10d1694, 0x115bfb4};
+    const u64 expected = Constants[&build - Known.data()];
+    const auto changes = FrameCountChanges(build);
+    bool eight = true;
+    bool rip_relative = true;
+    bool apart = true;
+    for (size_t i = 0; i < changes.size(); ++i) {
+        const Change& change = changes[i];
+        eight &= change.bytes == 8;
+        // rip is the end of the instruction: its address plus its length (8).
+        const s32 distance = static_cast<s32>(change.now >> 32);
+        rip_relative &= static_cast<s64>(change.at + change.bytes) + distance ==
+                        static_cast<s64>(expected);
+        for (size_t j = 0; j < i; ++j) {
+            apart &= change.at + change.bytes <= changes[j].at ||
+                     changes[j].at + changes[j].bytes <= change.at;
+        }
+        // No place is another change's.
+        for (const Change& other : PhysicsStepChanges(build)) {
+            apart &= change.at + change.bytes <= other.at || other.at + other.bytes <= change.at;
+        }
+        for (const Change& other : SizeChanges(build, Sizes{})) {
+            apart &= change.at + change.bytes <= other.at || other.at + other.bytes <= change.at;
+        }
+    }
+    Check(eight, name + ": every frame count place is 8 bytes (was and now)");
+    Check(rip_relative, name + ": every one reads, rip-relative, the declared constant at " +
+                            std::to_string(expected));
+    Check(apart, name + ": the frame count places overlap neither each other nor other changes");
+
+    // One place not as expected, the last one: nothing at all is written.
+    std::vector<u8> odd = MadeUp(build);
+    odd[changes.back().at] ^= 1;
+    const std::vector<u8> untouched = odd;
+    Check(Apply(odd, changes) == &changes.back() && odd == untouched,
+          name + ": no frame count written when the last place is not as expected");
+    odd = MadeUp(build);
+    odd[changes.front().at + 7] ^= 1;
+    const std::vector<u8> untouched_first = odd;
+    Check(Apply(odd, changes) == &changes.front() && odd == untouched_first,
+          name + ": no frame count written when the first place is not as expected");
+    // Every place has become its now, and only those.
+    std::vector<u8> written = MadeUp(build);
+    const std::vector<u8> original = written;
+    Check(Apply(written, changes) == nullptr, name + ": frame counts written");
+    bool now_found = true;
+    size_t differing = 0;
+    for (const Change& change : changes) {
+        u64 found = 0;
+        std::memcpy(&found, written.data() + change.at, change.bytes);
+        now_found &= found == change.now;
+    }
+    for (size_t i = 0; i < written.size(); ++i) {
+        differing += written[i] != original[i];
+    }
+    Check(now_found, name + ": every place holds its new instruction");
+    Check(differing > 0 && differing <= 6 * 8, name + ": nothing else in the image changed");
+    Check(Apply(written, changes) != nullptr, name + ": frame counts not written a second time");
 }
 
 /// The physics step of a build, changed: written once and whole, into one run of bytes that
@@ -219,6 +330,8 @@ int main(int argc, char** argv) {
         Check(Apply(image, beyond) == &beyond[0], name + ": nothing written beyond the image");
 
         CheckPhysicsStep(build, image, name);
+        CheckFrameCounts(build, image, name);
+        CheckFrameCountPlaces(build, name);
         // What the game is told apart by does not depend on it.
         std::vector<u8> stepped = image;
         Check(Apply(stepped, PhysicsStepChanges(build)) == nullptr &&
@@ -246,6 +359,7 @@ int main(int argc, char** argv) {
             Check(Apply(larger, SizeChanges(*build, Doubled())) == nullptr,
                   std::string{"larger sizes written into "} + argv[i]);
             CheckPhysicsStep(*build, image, argv[i]);
+            CheckFrameCounts(*build, image, argv[i]);
         }
     }
 

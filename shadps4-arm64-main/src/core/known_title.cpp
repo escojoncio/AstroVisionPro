@@ -35,6 +35,15 @@ using Clock = std::chrono::steady_clock;
 // inside, and how a build is told from the others, is in known_title_builds.h; what follows is
 // the same in all of them.
 using Builds::Build;
+
+/// Whether the title is Astro Bot Rescue Mission in a release whose builds may be among those
+/// known: the European one (CUSA12392), or the American one (CUSA12431, issue #35). Which build
+/// it is, if any known, is told from inside it all the same, whatever its release.
+bool IsThisTitle() {
+    const std::string_view serial = Common::ElfInfo::Instance().GameSerial();
+    return serial == "CUSA12392" || serial == "CUSA12431";
+}
+
 using Builds::ConsoleSizes;
 using Builds::FirstHeadsetLevel;
 using Builds::LastHeadsetLevel;
@@ -1008,7 +1017,7 @@ u32 FramePace() {
 }
 
 void Prepare() {
-    if (Common::ElfInfo::Instance().GameSerial() != "CUSA12392") {
+    if (!IsThisTitle()) {
         return;
     }
     const Larger& larger = GetLarger();
@@ -1061,10 +1070,25 @@ static void ApplyCodeChanges(std::span<u8> image, const Build* build_pointer, co
                            "were sent with");
         }
     }
+    if (settings.time_step) {
+        // Where the step is not the console's, what the title counts in frames is to be its
+        // frames still.
+        const auto changes = Builds::FrameCountChanges(*build);
+        if (const Builds::Change* unexpected = Builds::Apply(image, changes);
+            unexpected != nullptr) {
+            if (log) LOG_WARNING(Core,
+                        "The title does not have {:#x} at {:#x} as expected: its soccer robots "
+                        "count their frames with the time step, and may stop the game where "
+                        "frames are shorter than a sixtieth of a second",
+                        unexpected->was, unexpected->at);
+        } else if (log) {
+            LOG_INFO(Core, "The title's soccer robots count their frames as the console's");
+        }
+    }
 }
 
 void OnGameLoaded(VAddr base, u64 size) {
-    if (Common::ElfInfo::Instance().GameSerial() != "CUSA12392") {
+    if (!IsThisTitle()) {
         return;
     }
     // Asked here and nowhere else: this is the one moment at which the image is as its build
@@ -1073,13 +1097,15 @@ void OnGameLoaded(VAddr base, u64 size) {
     const Build* const build = Builds::Recognise(image);
     if (build == nullptr) {
         LOG_WARNING(Core,
-                    "This build of CUSA12392 is none of those known from inside (its versions "
-                    "1.00 and 1.04 are): it is left to itself. It then counts time in frames, "
-                    "which is slow motion wherever a frame takes longer than a sixtieth of a "
-                    "second, and draws at the console's sizes");
+                    "This build of {} is none of those known from inside (the versions 1.00 "
+                    "and 1.04 of CUSA12392 are): it is left to itself. It then counts time in "
+                    "frames, which is slow motion wherever a frame takes longer than a sixtieth "
+                    "of a second, and draws at the console's sizes",
+                    Common::ElfInfo::Instance().GameSerial());
         return;
     }
-    LOG_INFO(Core, "CUSA12392 in a build known from inside: {}", build->name);
+    LOG_INFO(Core, "{} in a build known from inside: {}", Common::ElfInfo::Instance().GameSerial(),
+             build->name);
 
     ApplyCodeChanges(image, build, GetLarger(), GetSettings(), true);
     known_base = base;
