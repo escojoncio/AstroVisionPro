@@ -977,6 +977,40 @@ void Scheduler::BeginRendering(const RenderState& requested) {
         return;
     }
     EndRendering();
+    // A pass that clears a target writes it again after the passes before, and those may have
+    // written it too: both eyes, for one, are drawn into the same depth buffer, the second
+    // cleared right after the first is done. Nothing else stands between such passes when the
+    // target stays in its layout, and without a barrier a GPU driver drawing straight to memory
+    // lets what the earlier pass left in its cache land on the cleared target later, block by
+    // block: black squares where the sky then failed the depth test.
+    const auto& depth_target = new_state.depth_stencil_attachment;
+    const bool clears_depth =
+        depth_target.image_view && (depth_target.depth_clear || depth_target.stencil_clear);
+    bool clears_color = false;
+    for (u32 i = 0; i < new_state.num_color_attachments; ++i) {
+        clears_color |= new_state.color_attachments[i].image_view &&
+                        new_state.color_attachments[i].is_clear;
+    }
+    if (clears_depth || clears_color) {
+        const vk::MemoryBarrier2 earlier_writes = {
+            .srcStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput |
+                            vk::PipelineStageFlagBits2::eEarlyFragmentTests |
+                            vk::PipelineStageFlagBits2::eLateFragmentTests,
+            .srcAccessMask = vk::AccessFlagBits2::eColorAttachmentWrite |
+                             vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+            .dstStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput |
+                            vk::PipelineStageFlagBits2::eEarlyFragmentTests |
+                            vk::PipelineStageFlagBits2::eLateFragmentTests,
+            .dstAccessMask = vk::AccessFlagBits2::eColorAttachmentRead |
+                             vk::AccessFlagBits2::eColorAttachmentWrite |
+                             vk::AccessFlagBits2::eDepthStencilAttachmentRead |
+                             vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+        };
+        current_cmdbuf.pipelineBarrier2(vk::DependencyInfo{
+            .memoryBarrierCount = 1,
+            .pMemoryBarriers = &earlier_writes,
+        });
+    }
     is_rendering = true;
     ++pass_serial;
     render_state = new_state;
