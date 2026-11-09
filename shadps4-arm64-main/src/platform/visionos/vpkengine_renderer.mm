@@ -2071,6 +2071,8 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
         d.depth.stencilClear = regs.depth_render_control.stencil_clear_enable;
         d.depth.clearDepth = regs.depth_clear;
         d.depth.clearStencil = uint8_t(regs.stencil_clear);
+        d.depth.pitch = db.Pitch();  // (the allocation: guest memory is laid out at it when the hint below is smaller)
+        d.depth.rows = db.Height();
         if (const auto& ext = impl->liverpool->last_db_extent; ext.Valid() && ext.width <= d.depth.width && ext.height <= d.depth.height) {
             d.depth.width = ext.width;
             d.depth.height = ext.height;
