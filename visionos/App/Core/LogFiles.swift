@@ -14,9 +14,19 @@
 import Foundation
 
 enum LogFiles {
+    /// Where every log goes (the console, the emulator's, the probe's CSV and dumps, the hang reports): LOGS inside the
+    /// VPS4 folder when the player has chosen one (Files app: VPS4 > LOGS, next to Juegos, Partidas and Cachés), else the
+    /// app's own Registros. Decided once, at the app's start, so a session never splits between the two.
     static var directory: URL {
+        chosen ?? legacyDirectory
+    }
+
+    /// The folder the logs were kept in before LOGS existed; still the one when there is no VPS4 folder to reach.
+    private static var legacyDirectory: URL {
         AstroSettings.documents.appendingPathComponent("Registros", isDirectory: true)
     }
+
+    private static var chosen: URL?
 
     /// Present while a game runs; still there at the next start if the app ended meanwhile.
     private static var runningMarker: URL {
@@ -36,6 +46,10 @@ enum LogFiles {
     /// At the app's start: keeps what the last session left, and starts this session's console.
     static func begin() {
         let manager = FileManager.default
+        chosen = GameFolder.url()?.appendingPathComponent("LOGS", isDirectory: true)
+        if let logs = chosen, (try? manager.createDirectory(at: logs, withIntermediateDirectories: true)) == nil {
+            chosen = nil  // (the VPS4 folder cannot be written to: the app's own folder)
+        }
         try? manager.createDirectory(at: directory, withIntermediateDirectories: true)
 
         let stamp = Self.stamp(Date())

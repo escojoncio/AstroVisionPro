@@ -15,6 +15,7 @@
 //              VPS4 itself are found too
 //   Partidas/  the emulator's home folder: users and saves
 //   Cachés/    what the Vulkan driver translated, so that it is not translated again
+//   LOGS/      every log: the console, the emulator's, the probe's CSV and dumps, the hang reports
 
 import Foundation
 import Security

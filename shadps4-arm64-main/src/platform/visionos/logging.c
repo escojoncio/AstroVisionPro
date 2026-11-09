@@ -3,7 +3,7 @@
 
 // Everything the app and the emulator write to their standard output and error (the app's
 // messages, FEX's, the emulator's crash reporter with its registers) goes to a file the player
-// can reach with the Files app and send: Documents/Registros/consola-<date>.txt. Written
+// can reach with the Files app and send: VPS4/LOGS/consola-<date>.txt (Documents/Registros without a VPS4 folder). Written
 // straight through, so what was written before a crash is in the file.
 
 #include <fcntl.h>

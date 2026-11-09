@@ -29,7 +29,7 @@ struct LogsView: View {
                     Text(L("La comprobación, la consola de las últimas sesiones (la app, FEX y el emulador) y los registros del emulador, por AirDrop, Mail o Guardar en Archivos.", "The check, the console of the last sessions (the app, FEX and the emulator) and the emulator's logs, by AirDrop, Mail or Save to Files."))
                 }
                 Section(L("Dónde están", "Where they are")) {
-                    Label(L("Archivos › En mi Apple Vision Pro › AstroQuest › Registros", "Files › On My Apple Vision Pro › AstroQuest › Registros"), systemImage: "folder")
+                    Label(L("Archivos › VPS4 › LOGS (sin carpeta VPS4 elegida: En mi Apple Vision Pro › AstroQuest › Registros)", "Files › VPS4 › LOGS (no VPS4 folder chosen: On My Apple Vision Pro › AstroQuest › Registros)"), systemImage: "folder")
                     Label(L("Si la app se cierra de golpe, visionOS guarda además un informe en Ajustes › Privacidad y seguridad › Análisis y mejoras › Datos de análisis (el que empieza por «AstroQuest»).", "If the app closes suddenly, visionOS also keeps a report in Settings › Privacy & Security › Analytics & Improvements › Analytics Data (the one starting with “AstroQuest”)."),
                           systemImage: "exclamationmark.bubble")
                         .font(.callout)

@@ -290,6 +290,8 @@ struct AstroSettings {
         if let caches = GameFolder.caches {
             env.append("SHADPS4_CACHE_DIR=\(caches.path)")
         }
+        // The engine's hang reports with the other logs (LogFiles.directory: VPS4/LOGS).
+        env.append("VPVK_HANG_DIR=\(LogFiles.directory.path)")
         env.append(contentsOf: extraEnvironment)
         return env
     }
