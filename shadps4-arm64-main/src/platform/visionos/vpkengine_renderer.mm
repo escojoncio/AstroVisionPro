@@ -20,6 +20,7 @@
 #include <ctime>
 #include <filesystem>
 #include <map>
+#include <unordered_map>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -475,6 +476,10 @@ struct Engine {
         pendingAll = false;
         pendingLock.clear(std::memory_order_release);
         for (auto [a, n] : unmapped) metas.EraseRange(a, a + n);
+        for (auto [a, n] : unmapped) {
+            const u64 lo = a, hi = a + n;
+            std::erase_if(htileDepths, [lo, hi](const auto& h) { return h.first >= lo && h.first < hi; });
+        }
         if (!renderer) return;
         if (all) {
             // Which ranges the CPU wrote is unknown: images ahead of memory are written back (and the GPU waited
@@ -501,6 +506,18 @@ struct Engine {
     // Vulkan backend's TextureCache::surface_metas). The host keeps no compression metadata: a title that
     // clears a target by writing its metadata gets a real clear before the next draw into the target.
     VideoCore::SurfaceMetas metas;
+    // The depth buffer each HTILE belongs to (the base of its Z plane and DB_DEPTH_CLEAR at its last draw): a clear of the
+    // HTILE is told to the renderer, which gives the clear value to a texture of that surface no depth target serves (the
+    // hardware reads the value through the HTILE; memory was never written). Under `lock`.
+    struct HtileDepth {
+        VAddr z = 0;
+        float clear = 1.0f;
+    };
+    std::unordered_map<VAddr, HtileDepth> htileDepths;
+    void noteHtileCleared(VAddr htile) {
+        if (!renderer) return;
+        if (const auto it = htileDepths.find(htile); it != htileDepths.end()) renderer->depthCleared(it->second.z, it->second.clear);
+    }
     // Totals for the "vpps4.meta" line: metadata cleared by a compute shader / by DMA, FCE passes that found
     // the target still cleared, clears applied (colour, depth) and the RectList draws that carried them out.
     u64 metaCs = 0, metaDma = 0, metaEliminates = 0, metaColorClears = 0, metaDepthClears = 0, metaClearDraws = 0;
@@ -565,6 +582,10 @@ struct Engine {
         const u64 onGpuNs = probing ? nsSince(t1) : 0;
         const Clock::time_point t2 = probing ? Clock::now() : Clock::time_point{};
         const bool waited = !onGpu && scheduler->syncCpu(a, n, vpgpu::SubmitReason::Dma, b, m, caller);
+        // (a small range the CPU had to wait for: buffers bound from it are copied at their draw from now on, so the next
+        // write of it in order with the draws, DUMP_CONST_RAM / WRITE_DATA / a small DMA once a picture, waits for nothing)
+        if (waited && n <= 4096) renderer->cpuAccessed(a, n);
+        if (waited && m && m <= 4096) renderer->cpuAccessed(b, m);
         if (probing) {
             const u64 cpuNs = nsSince(t2);
             static pm::Timer& tMem = pm::timer("TIME", "sync_for_dma_to_memory");
@@ -905,6 +926,7 @@ struct Engine {
             for (const vpps4::ComputeBuffer& b : buffers)
                 if (b.written && metas.ClearAll(b.address)) {
                     ++metaCs;
+                    noteHtileCleared(b.address);
                     return true;
                 }
             return false;
@@ -918,7 +940,13 @@ struct Engine {
         });
         renderer = std::make_unique<vpps4::Renderer>(*device, std::move(hooks));
         renderer->setSummaryEvery(kEvery);
-        scheduler = std::make_unique<vpps4::Scheduler>(*renderer, *device, vpgpu::SubmitPolicy{}, [] { return msNow(); });
+        // A label without an interrupt waits up to 12 ms on unsubmitted work (the default is 6): every such submit ends the
+        // GPU frame (a pass cut and a trip through the encoder under the engine lock), and at 25 pictures a second the title
+        // got four of them a picture. VPKENGINE_LABEL_GRACE_MS sets it.
+        vpgpu::SubmitPolicy policy;
+        policy.labelGraceMs = 12;
+        if (const char* v = std::getenv("VPKENGINE_LABEL_GRACE_MS"); v && *v) policy.labelGraceMs = std::max(1.0, std::atof(v));
+        scheduler = std::make_unique<vpps4::Scheduler>(*renderer, *device, policy, [] { return msNow(); });
         scheduler->setSubmitHook([this] {
             ++submits;
             if (pm::enabled()) {  // the time between one picture's submit and the next: the guest's frame time
@@ -2095,6 +2123,7 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
             const VAddr htile = regs.depth_htile_data_base.GetAddress();
             const u32 slice = regs.depth_view.slice_start;
             if (db.z_info.tile_surface_enable && htile) e.metas.Register(VideoCore::SurfaceMetas::Type::HTile, htile);
+            if (db.z_info.tile_surface_enable && htile && db.DepthValid()) e.htileDepths[htile] = {db.DepthAddress(), regs.depth_clear};
             if (pm::enabled()) e.probeHtileDraws += db.z_info.tile_surface_enable && htile;
             clearDepth = db.DepthValid() && !d.depth.depthClear && e.metas.IsCleared(htile, slice);
             e.metas.Touch(htile, slice, false);
@@ -2429,6 +2458,7 @@ void Rasterizer::FillBuffer(VAddr address, u32 num_bytes, u32 value, bool is_gds
     // of a metadata surface marks it cleared (and is done).
     if (value != 0 && e.metas.TryHtileClear(address, std::span{&value, 1})) {
         ++e.metaDma;
+        e.noteHtileCleared(address);
         if (VideoCore::Shadow::Side* side = shadowSide()) side->status = VideoCore::Shadow::Status::Drawn, side->reason.clear();
         return;
     }
@@ -2509,6 +2539,7 @@ void Rasterizer::CopyBuffer(VAddr dst, VAddr src, u32 num_bytes, bool dst_gds, b
         if (readable(src, num_bytes) >= num_bytes &&
             e.metas.TryHtileClear(dst, std::span{reinterpret_cast<const u32*>(src), num_bytes / sizeof(u32)})) {
             ++e.metaDma;
+            e.noteHtileCleared(dst);
             if (VideoCore::Shadow::Side* side = shadowSide()) side->status = VideoCore::Shadow::Status::Drawn, side->reason.clear();
             return;
         }
