@@ -54,6 +54,13 @@ int main() {
     CHECK(e.Apply(0x100000, 10, false, 0, 0, w, h) == TargetExtents::Source::None);
     w = 64, h = 64;
     CHECK(e.Apply(0x100000 + (TargetExtents::kMaxEntries + 7) * 0x1000, 10, false, 0, 0, w, h) == TargetExtents::Source::Cache);
+    // View slices (DB_DEPTH_VIEW / CB_COLORn_VIEW): one slice k of an array is SLICE_START = SLICE_MAX = k -> 1 slice from k
+    // (the image then has k + 1 layers, not 2k + 1); a view from 0 counts SLICE_MAX + 1; SLICE_MAX below SLICE_START -> 1.
+    CHECK(VpkengineRenderer::ViewSliceCount(0, 0) == 1);
+    CHECK(VpkengineRenderer::ViewSliceCount(4, 4) == 1);
+    CHECK(VpkengineRenderer::ViewSliceCount(0, 1) == 2);
+    CHECK(VpkengineRenderer::ViewSliceCount(2, 7) == 6);
+    CHECK(VpkengineRenderer::ViewSliceCount(5, 0) == 1);
     if (failures) std::fprintf(stderr, "%d failure(s)\n", failures);
     return failures ? 1 : 0;
 }

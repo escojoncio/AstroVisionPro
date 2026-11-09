@@ -553,10 +553,34 @@ struct Engine {
         const pm::Scoped scope(timer);
         // Images ahead of the memory the CPU is about to read or write are written back first (the
         // copies it records count as queued GPU work on those ranges: submitted and waited for below).
+        // (probe: the parts of the call, and a SYNCDMA_SLOW line for a call over 50 ms: write-back of images, the GPU-timeline
+        // decision, the CPU wait)
+        const bool probing = pm::enabled();
+        const Clock::time_point t0 = probing ? Clock::now() : Clock::time_point{};
         const bool written = renderer->syncToMemory(a, n);
         const bool writtenB = m && renderer->syncToMemory(b, m);
-        if (gpuOk && (m ? scheduler->dmaOnGpu(b, m, a) : scheduler->dmaOnGpu(a, n))) return true;
-        if (scheduler->syncCpu(a, n, vpgpu::SubmitReason::Dma, b, m, caller) || written || writtenB) ++dmaSynced;
+        const u64 toMemoryNs = probing ? nsSince(t0) : 0;
+        const Clock::time_point t1 = probing ? Clock::now() : Clock::time_point{};
+        const bool onGpu = gpuOk && (m ? scheduler->dmaOnGpu(b, m, a) : scheduler->dmaOnGpu(a, n));
+        const u64 onGpuNs = probing ? nsSince(t1) : 0;
+        const Clock::time_point t2 = probing ? Clock::now() : Clock::time_point{};
+        const bool waited = !onGpu && scheduler->syncCpu(a, n, vpgpu::SubmitReason::Dma, b, m, caller);
+        if (probing) {
+            const u64 cpuNs = nsSince(t2);
+            static pm::Timer& tMem = pm::timer("TIME", "sync_for_dma_to_memory");
+            static pm::Timer& tGpu = pm::timer("TIME", "sync_for_dma_on_gpu_check");
+            static pm::Timer& tCpu = pm::timer("TIME", "sync_for_dma_cpu_wait");
+            tMem.add(toMemoryNs), tGpu.add(onGpuNs), tCpu.add(cpuNs);
+            static u64 slow = 0;
+            if (const u64 total = nsSince(t0); total > 50'000'000ull && (++slow <= 200 || slow % 50 == 0))
+                LOG_INFO(Render_Vulkan,
+                         "VPKENGINE_PROBE SYNCDMA_SLOW n={} caller={} a={:#x} n_bytes={} b={:#x} m={} gpu_ok={} on_gpu={} written={}{} "
+                         "to_memory_ms={:.2f} on_gpu_check_ms={:.2f} cpu_wait_ms={:.2f} total_ms={:.2f} waited={}",
+                         slow, caller, a, n, b, m, int(gpuOk), int(onGpu), int(written), int(writtenB), toMemoryNs / 1e6,
+                         onGpuNs / 1e6, cpuNs / 1e6, total / 1e6, int(waited));
+        }
+        if (onGpu) return true;
+        if (waited || written || writtenB) ++dmaSynced;
         else ++dmaUnsynced;
         return false;
     }
@@ -735,6 +759,23 @@ struct Engine {
             LOG_INFO(Render_Vulkan, "VPKENGINE_PROBE csv {}", file.string());
         else
             LOG_WARNING(Render_Vulkan, "VPKENGINE_PROBE csv {} could not be opened: the lines are logged only", file.string());
+        // The system's memory pressure warnings (a jetsam kill gives the process no notice: the last of these, with the memory
+        // left, is what the log can show before it).
+        static dispatch_source_t pressure = dispatch_source_create(
+            DISPATCH_SOURCE_TYPE_MEMORYPRESSURE, 0,
+            DISPATCH_MEMORYPRESSURE_NORMAL | DISPATCH_MEMORYPRESSURE_WARN | DISPATCH_MEMORYPRESSURE_CRITICAL,
+            dispatch_get_global_queue(QOS_CLASS_UTILITY, 0));
+        if (pressure) {
+            dispatch_source_set_event_handler(pressure, ^{
+                const unsigned long level = dispatch_source_get_data(pressure);
+                LOG_WARNING(Render_Vulkan, "VPKENGINE_PROBE MEMPRESSURE level={} available_mb={}",
+                            level & DISPATCH_MEMORYPRESSURE_CRITICAL ? "critical"
+                            : level & DISPATCH_MEMORYPRESSURE_WARN  ? "warn"
+                                                                    : "normal",
+                            u64(os_proc_available_memory()) >> 20);
+            });
+            dispatch_resume(pressure);
+        }
     }
 
     bool start() {
@@ -1360,7 +1401,7 @@ vpps4::ColorTarget colorTarget(const AmdGpu::Regs& regs, unsigned i) {
     c.compSwap = uint8_t(cb.info.comp_swap);
     c.tileMode = cb.info.linear_general ? 31 : uint8_t(cb.attrib.tile_mode_index);
     c.sliceStart = uint16_t(cb.BaseSlice());
-    c.sliceCount = uint16_t(cb.NumSlices());
+    c.sliceCount = ViewSliceCount(cb.BaseSlice(), cb.view.slice_max);
     c.samples = uint8_t(cb.NumSamples());  // colour fragments (EQAA: what the surface stores)
     c.coverage = uint8_t(1u << cb.attrib.num_samples_log2);
     c.fastClear = cb.info.fast_clear;
@@ -1579,7 +1620,7 @@ void describeGeometryDraw(const AmdGpu::Regs& regs) {
         const auto& cb = regs.color_buffers[i];
         if (!cb) continue;
         cbs += fmt::format(" cb{}@{:#x} {}x{} pitch {} slices {}+{} fmt {}/{}", i, u64(cb.Address()), u32(cb.Pitch()),
-                           u32(cb.Height()), u32(cb.Pitch()), u32(cb.BaseSlice()), u32(cb.NumSlices()),
+                           u32(cb.Height()), u32(cb.Pitch()), u32(cb.BaseSlice()), ViewSliceCount(cb.BaseSlice(), cb.view.slice_max),
                            u32(cb.info.format), u32(cb.info.number_type));
     }
     LOG_INFO(Render_Vulkan,
@@ -2024,7 +2065,7 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
         d.depth.stencilFormat = db.StencilValid() ? uint8_t(db.stencil_info.format) : 0;
         d.depth.tileMode = uint8_t(db.z_info.tile_mode_index);
         d.depth.sliceStart = uint16_t(regs.depth_view.slice_start);
-        d.depth.sliceCount = uint16_t(regs.depth_view.NumSlices());
+        d.depth.sliceCount = ViewSliceCount(regs.depth_view.slice_start, regs.depth_view.slice_max);
         d.depth.samples = uint8_t(db.NumSamples());
         d.depth.depthClear = regs.depth_render_control.depth_clear_enable;
         d.depth.stencilClear = regs.depth_render_control.stencil_clear_enable;

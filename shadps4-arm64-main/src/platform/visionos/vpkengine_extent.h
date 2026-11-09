@@ -60,4 +60,11 @@ private:
     uint64_t tick = 0;
 };
 
+// The slices a CB/DB view renders to, counted from its first: SLICE_START..SLICE_MAX (vpps4 ColorTarget/DepthTarget
+// sliceStart/sliceCount; the engine's image has sliceStart + sliceCount layers). NumSlices() of the registers is
+// SLICE_MAX + 1, the slices counted from 0.
+inline uint16_t ViewSliceCount(uint32_t slice_start, uint32_t slice_max) {
+    return uint16_t(slice_max >= slice_start ? slice_max - slice_start + 1 : 1);
+}
+
 } // namespace VpkengineRenderer
