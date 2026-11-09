@@ -501,6 +501,7 @@ struct Engine {
     std::atomic<bool> failed{false};  // (the Tee reads it from other threads)
     u64 dmaUnsynced = 0, dmaSynced = 0;  // DMA packets done on the CPU without / after a GPU wait
     u64 dmaOnGpu = 0;                    // DMA packets recorded on the GPU timeline instead (Scheduler::dmaOnGpu)
+    u64 labelsImmediate = 0;             // labels written when processed, not after the GPU (ScheduleLabelWrite)
 
     // Fast clear metadata (CMASK / HTILE) of the targets drawn so far, under `lock` (the same semantics as the
     // Vulkan backend's TextureCache::surface_metas). The host keeps no compression metadata: a title that
@@ -688,6 +689,8 @@ struct Engine {
     // The engine and the backend publish their own state (Renderer / Device / MetalBackend::publishProbe); this adds what only
     // the app knows: the CPU times of the renderer, the adapter's caches, the fast clear metadata, the process.
     void probeSample(const vpps4::CpuTimes& t, double dt, u64 adapterCalls_) {
+        static pm::Timer& lockedTimer = pm::timer("TIME", "probe_sample_locked");  // (what the sampling costs the thread that draws)
+        const pm::Scoped lockedScope(lockedTimer);
         const auto tm = [](const char* name, double ms, u64 calls) { pm::timer("TIME", name).addMs(ms, std::max<u64>(calls, 1)); };
         tm("renderer_draw", t.drawMs, t.calls), tm("shader_lookup", t.shaderMs, t.calls), tm("bind", t.bindMs, t.calls);
         tm("bind_descriptors", t.bindDescMs, t.calls), tm("bind_textures", t.bindTexMs, t.calls), tm("bind_buffers", t.bindBufMs, t.calls);
@@ -706,6 +709,7 @@ struct Engine {
         pm::counter("RATES", "resolve_dest_clear_flushed").add(t.resolveDestClearFlushed);
         pm::counter("RATES", "dma_unsynced").set(dmaUnsynced), pm::counter("RATES", "dma_synced").set(dmaSynced);
         pm::counter("RATES", "dma_on_gpu").set(dmaOnGpu);
+        pm::counter("RATES", "labels_immediate").set(labelsImmediate);
         pm::counter("RATES", "headset_frames").set(pictures.load());
         pm::gauge("RATES", "interval_s").set(dt);
         // Fast clears (CMASK / HTILE): a clear whose words do not decode is not applied (the target keeps its contents).
@@ -730,23 +734,26 @@ struct Engine {
         pm::gauge("APP", "error_lines").set(double(errorLines.load()));
         publishLeftOut();
         if (auto* tables = gProbeTables.load(std::memory_order_acquire)) tables(gWatchProbeContext.load(std::memory_order_acquire));
-        publishProcess();
         const auto now = Clock::now();
-        if (probeDiskAt == Clock::time_point{} || now - probeDiskAt >= std::chrono::seconds{30}) {
-            probeDiskAt = now;
-            publishDisk(probeCacheDir);
-        }
+        const bool disk = probeDiskAt == Clock::time_point{} || now - probeDiskAt >= std::chrono::seconds{30};
+        if (disk) probeDiskAt = now;
         renderer->publishProbe(pictures.load());
         if (device) device->publishProbe();
         if (backend) backend->publishProbe();
-        // The log gets the compact lines (what moved, in pieces of ~2 KB); the CSV gets every metric.
-        std::vector<std::string> compact;
-        pm::registry().sample(&compact);
-        for (const std::string& line : compact) LOG_INFO(Render_Vulkan, "{}", line);
-        if (now - probeSummaryAt >= std::chrono::seconds{60}) {
-            probeSummaryAt = now;
-            for (const std::string& line : pm::registry().summary()) LOG_INFO(Render_Vulkan, "{}", line);
-        }
+        const bool summary = now - probeSummaryAt >= std::chrono::seconds{60};
+        if (summary) probeSummaryAt = now;
+        // The rest runs on a thread of its own, off the engine lock (the registry has its own mutex): the process and disk
+        // figures, the sample (every metric to the CSV, the compact lines to the log) and the summary. It stalled the thread
+        // that draws, and whoever waited for the engine lock, once every interval.
+        std::thread([disk, summary, dir = probeCacheDir] {
+            publishProcess();
+            if (disk) publishDisk(dir);
+            std::vector<std::string> compact;
+            pm::registry().sample(&compact);
+            for (const std::string& line : compact) LOG_INFO(Render_Vulkan, "{}", line);
+            if (summary)
+                for (const std::string& line : pm::registry().summary()) LOG_INFO(Render_Vulkan, "{}", line);
+        }).detach();
     }
 
     static constexpr u64 kEvery = 120;  // per-frame lines of the core every kEvery submits
@@ -2818,6 +2825,26 @@ void Rasterizer::SyncGds() {
 void Rasterizer::ScheduleLabelWrite(void* address, u64 value, u32 size, std::function<void()> then) {
     Engine& e = engine();
     if (e.shadow) return;  // (the label and its interrupt are the real renderer's)
+    // VPKENGINE_LABELS_IMMEDIATE=1 (off by default): the label is written, and its interrupt raised, when it is processed
+    // and not when the GPU has finished the work before it, as the reference command processor does. That saves a GPU round
+    // trip per batch a title submits, but here the label is also what keeps the title from reusing memory that recorded
+    // draws still read in place (buffers are bound from guest memory, not copied) and from reading what the GPU has yet to
+    // write outside the watched images: only for measuring. A DMA recorded on the GPU timeline over the label's bytes is
+    // waited for (it must land first).
+    static const bool ordered = std::getenv("VPKENGINE_LABELS_IMMEDIATE") == nullptr;
+    if (!ordered) {
+        {
+            std::scoped_lock g{e.lock};
+            if (e.scheduler && address) {
+                e.applyPending();
+                e.syncForDma(reinterpret_cast<u64>(address), size, 0, 0, "label");
+            }
+            ++e.labelsImmediate;
+        }
+        if (address) VideoCore::WriteGuestLabel(address, value, size);
+        if (then) then();
+        return;
+    }
     std::scoped_lock g{e.lock};
     if (!e.scheduler) {  // no GPU work can exist
         if (address) VideoCore::WriteGuestLabel(address, value, size);
