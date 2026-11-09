@@ -481,7 +481,7 @@ struct Engine {
             // for) first, so marking everything CPU-written does not drop the content only they hold.
             // (The shadow writes nothing back: its images stay ahead of memory.)
             if (!shadow) {
-                if (scheduler) syncForDma(0, ~u64(0));
+                if (scheduler) syncForDma(0, ~u64(0), 0, 0, "invalidate_all");
                 else renderer->syncToMemory(0, ~u64(0));
             }
             renderer->invalidate(0, ~u64(0));
@@ -495,6 +495,7 @@ struct Engine {
     }
     std::atomic<bool> failed{false};  // (the Tee reads it from other threads)
     u64 dmaUnsynced = 0, dmaSynced = 0;  // DMA packets done on the CPU without / after a GPU wait
+    u64 dmaOnGpu = 0;                    // DMA packets recorded on the GPU timeline instead (Scheduler::dmaOnGpu)
 
     // Fast clear metadata (CMASK / HTILE) of the targets drawn so far, under `lock` (the same semantics as the
     // Vulkan backend's TextureCache::surface_metas). The host keeps no compression metadata: a title that
@@ -540,15 +541,24 @@ struct Engine {
     }
     // CPU-side DMA over guest [a, +n) (and [b, +m)): waits only for the frames that touch it (a partial
     // fence), submitting the recorded frame first only when the overlap is in it.
-    void syncForDma(u64 a, u64 n, u64 b = 0, u64 m = 0) {
+    // A DMA that syncForDma left to the GPU timeline was recorded.
+    void noteDmaOnGpu() {
+        ++dmaOnGpu;
+        scheduler->noteDmaRecorded();
+    }
+    // `caller` names who asks (probe DMASYNC). With `gpuOk` (FillBuffer / CopyBuffer) it returns true, without waiting, when queued
+    // GPU work touches the range: the DMA is then recorded on the GPU timeline by the caller (VPKENGINE_DMA_CPU=1 turns that off).
+    bool syncForDma(u64 a, u64 n, u64 b = 0, u64 m = 0, const char* caller = "", bool gpuOk = false) {
         static pm::Timer& timer = pm::timer("TIME", "sync_for_dma");
         const pm::Scoped scope(timer);
         // Images ahead of the memory the CPU is about to read or write are written back first (the
         // copies it records count as queued GPU work on those ranges: submitted and waited for below).
         const bool written = renderer->syncToMemory(a, n);
         const bool writtenB = m && renderer->syncToMemory(b, m);
-        if (scheduler->syncCpu(a, n, vpgpu::SubmitReason::Dma, b, m) || written || writtenB) ++dmaSynced;
+        if (gpuOk && (m ? scheduler->dmaOnGpu(b, m, a) : scheduler->dmaOnGpu(a, n))) return true;
+        if (scheduler->syncCpu(a, n, vpgpu::SubmitReason::Dma, b, m, caller) || written || writtenB) ++dmaSynced;
         else ++dmaUnsynced;
+        return false;
     }
     void watchdogLoop() {
         std::unique_lock l{lock};
@@ -650,6 +660,7 @@ struct Engine {
         pm::counter("RATES", "resolve_dest_clear_dropped").add(t.resolveDestClearDropped);
         pm::counter("RATES", "resolve_dest_clear_flushed").add(t.resolveDestClearFlushed);
         pm::counter("RATES", "dma_unsynced").set(dmaUnsynced), pm::counter("RATES", "dma_synced").set(dmaSynced);
+        pm::counter("RATES", "dma_on_gpu").set(dmaOnGpu);
         pm::counter("RATES", "headset_frames").set(pictures.load());
         pm::gauge("RATES", "interval_s").set(dt);
         // Fast clears (CMASK / HTILE): a clear whose words do not decode is not applied (the target keeps its contents).
@@ -876,8 +887,8 @@ struct Engine {
                 if (const u64 before = previous.exchange(at, std::memory_order_relaxed)) frame.add((at - before) / 1000);
             }
             if (submits % kEvery == 1)
-                LOG_INFO(Render_Vulkan, "VPKENGINE_GPU dma: {} packets without a GPU wait, {} after one (so far)",
-                         dmaUnsynced, dmaSynced);
+                LOG_INFO(Render_Vulkan, "VPKENGINE_GPU dma: {} packets without a GPU wait, {} after one, {} on the GPU timeline (so far)",
+                         dmaUnsynced, dmaSynced, dmaOnGpu);
             renderer->drainOcclusion(false);  // ZPASS_DONE results of frames that finished
             if (submits % 600 == 1) {
                 const auto& handled = renderer->stats().handled;
@@ -2386,13 +2397,21 @@ void Rasterizer::FillBuffer(VAddr address, u32 num_bytes, u32 value, bool is_gds
         e.noteWork();
         return;
     }
-    // DMA runs on the CPU, in order: the command processor and the title may read the result
-    // right after this packet (e.g. PM4 or shader code assembled by DMA, then an IndirectBuffer),
-    // which a blit queued for the end of the frame would not have written yet. Memory is unified,
-    // so the GPU's earlier work is finished first and then the bytes are written in place.
-    // Only when queued GPU work may touch the range (the renderer keeps the guest ranges bound
-    // since the GPU was last idle): otherwise the bytes are written at once, no submit, no wait.
-    e.syncForDma(address, num_bytes);
+    // DMA runs on the CPU, in order, when queued GPU work does not touch the range (the renderer keeps the guest ranges
+    // bound since the GPU was last idle): the bytes are written at once, no submit, no wait. Memory is unified, so the
+    // command processor and the title may read them right after this packet. When the GPU does touch the range, the fill goes
+    // on the GPU timeline, in order with that work, with no wait and no submit (what shadPS4 does too): whoever reads it
+    // on the CPU (the command processor: IB, labels, WAIT_REG_MEM) goes through SyncGpuWrites / syncForDma and waits for it.
+    // (VPKENGINE_DMA_CPU=1: it waits and writes in place, as before.) A fill the renderer refuses (no staging) waits too.
+    if (e.syncForDma(address, num_bytes, 0, 0, "fill", true)) {
+        if (e.renderer->fill(address, num_bytes, value)) {
+            e.noteDmaOnGpu();
+            e.noteWork();
+            if (e.scheduler) e.scheduler->forgetLabelValues(address, num_bytes);
+            return;
+        }
+        e.syncForDma(address, num_bytes, 0, 0, "fill");
+    }
     // (a range the probe cannot vouch for, e.g. across its window, keeps the GPU blit)
     if (readable(address, num_bytes) < num_bytes) {
         e.renderer->fill(address, num_bytes, value);
@@ -2424,6 +2443,8 @@ void Rasterizer::CopyBuffer(VAddr dst, VAddr src, u32 num_bytes, bool dst_gds, b
             if (dst < 0x10000 && src < 0x10000)
                 std::memmove(gb + dst, gb + src, std::min<u64>(num_bytes, 0x10000 - std::max(dst, src)));
         } else if (dst_gds) {
+            // (the source is read on the CPU: a DMA recorded on the GPU timeline over it lands first)
+            if (!e.shadow) e.syncForDma(src, num_bytes, 0, 0, "gds_copy");
             if (dst < 0x10000 && readable(src, num_bytes) >= num_bytes)
                 std::memcpy(gb + dst, reinterpret_cast<const void*>(src), std::min<u64>(num_bytes, 0x10000 - dst));
         } else if (src < 0x10000 && readable(dst, num_bytes) >= num_bytes) {
@@ -2431,6 +2452,7 @@ void Rasterizer::CopyBuffer(VAddr dst, VAddr src, u32 num_bytes, bool dst_gds, b
                 // GDS into guest memory is the real renderer's write: the shadow only learns that the range changed.
                 e.renderer->invalidate(dst, num_bytes);
             } else {
+                e.syncForDma(dst, num_bytes, 0, 0, "gds_copy");  // (written on the CPU: after a DMA recorded on the GPU timeline)
                 std::memcpy(reinterpret_cast<void*>(dst), gb + src, std::min<u64>(num_bytes, 0x10000 - src));
                 impl->invalidate(dst, num_bytes);
             }
@@ -2440,7 +2462,7 @@ void Rasterizer::CopyBuffer(VAddr dst, VAddr src, u32 num_bytes, bool dst_gds, b
     // A copy of HTILE entries that are mostly cleared (a template the title prepared) is a depth clear: noted,
     // the copy itself is left out.
     if (e.metas.IsHtile(dst)) {
-        if (!e.shadow) e.syncForDma(src, num_bytes);
+        if (!e.shadow) e.syncForDma(src, num_bytes, 0, 0, "htile_src");
         if (readable(src, num_bytes) >= num_bytes &&
             e.metas.TryHtileClear(dst, std::span{reinterpret_cast<const u32*>(src), num_bytes / sizeof(u32)})) {
             ++e.metaDma;
@@ -2453,8 +2475,17 @@ void Rasterizer::CopyBuffer(VAddr dst, VAddr src, u32 num_bytes, bool dst_gds, b
         e.noteWork();
         return;
     }
-    // On the CPU and in order, for the same reason as FillBuffer (synced only when needed).
-    e.syncForDma(src, num_bytes, dst, num_bytes);
+    // On the CPU and in order, for the same reason as FillBuffer (synced only when needed; on the GPU timeline when the GPU
+    // touches either range, unless they overlap: a memmove is not a GPU copy).
+    if (e.syncForDma(src, num_bytes, dst, num_bytes, "copy", !(src < dst + num_bytes && dst < src + num_bytes))) {
+        if (e.renderer->copy(dst, src, num_bytes)) {
+            e.noteDmaOnGpu();
+            e.noteWork();
+            if (e.scheduler) e.scheduler->forgetLabelValues(dst, num_bytes);
+            return;
+        }
+        e.syncForDma(src, num_bytes, dst, num_bytes, "copy");
+    }
     if (readable(src, num_bytes) < num_bytes || readable(dst, num_bytes) < num_bytes) {
         e.renderer->copy(dst, src, num_bytes);
         e.noteWork();
@@ -2516,7 +2547,7 @@ bool Rasterizer::Impl::resolveOwned(VAddr addr, u64 n, bool write) {
         e.applyPending();
         if (e.renderer) {
             // (writes the images back and waits only for the frames that touch those ranges)
-            for (auto [s, z] : hit) e.syncForDma(s, z);
+            for (auto [s, z] : hit) e.syncForDma(s, z, 0, 0, "owned_fault");
         }
         std::vector<std::pair<VAddr, u64>> overdue;
         {
@@ -2658,7 +2689,7 @@ bool Rasterizer::SyncGpuWrites(VAddr addr, u64 size, bool wait) {
     if (e.scheduler) {
         const u64 a = addr, n = std::max<u64>(size, 1);
         if (wait) {
-            e.syncForDma(a, n);
+            e.syncForDma(a, n, 0, 0, "cp_read");
         } else {
             e.scheduler->prepareWait(a, n);
             final = final && !e.renderer->labelPending(a, static_cast<u32>(std::min<u64>(n, ~0u)));

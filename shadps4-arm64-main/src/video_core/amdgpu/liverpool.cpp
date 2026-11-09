@@ -176,10 +176,12 @@ void Liverpool::ReleaseAfterGfxLocked() {
     while (!after_gfx.empty() &&
            (after_gfx.front().target <= gfx_done || now - after_gfx.front().since > MostWait)) {
         if (after_gfx.front().target > gfx_done) {
-            static bool told = false;
-            if (!std::exchange(told, true)) {
+            static u64 forced = 0;
+            if (++forced == 1 || forced % 100 == 0) {
                 LOG_WARNING(Render_Vulkan, "A command waited 50 ms for the drawing submitted "
-                                           "before it (a submission may wait for it): run now");
+                                           "before it (a submission may wait for it): run now "
+                                           "(forced releases so far: {})",
+                            forced);
             }
         }
         command_queue.emplace(std::move(after_gfx.front().func));
@@ -399,6 +401,8 @@ void Liverpool::ExecWriteData(const PM4CmdWriteData* write_data, u32 mapped_queu
         if (!CpReadable(address, 4)) {
             break;
         }
+        // (a DMA recorded on the GPU timeline over it lands first: the CP write must come after it)
+        SyncCpRead(rasterizer, address, one_addr ? 4 : u64(data_dwords) * 4);
         if (one_addr) {
             if (data_dwords) {
                 CpWriteMemory(reinterpret_cast<void*>(address), &write_data->data[data_dwords - 1], 4);
@@ -641,6 +645,7 @@ void Liverpool::ExecStrmoutBufferUpdate(const PM4Header* header) {
         break;
     }
     if (u.store_filled_size && CpReadable(u.dst_address, 4)) {
+        SyncCpRead(rasterizer, u.dst_address, 4);
         CpWriteMemory(reinterpret_cast<void*>(u.dst_address), &strmout_filled[u.buffer], 4);
     }
     Census::Note("pm4", "STRMOUT_BUFFER_UPDATE bookkeeping only (stream-out not executed)");
@@ -705,6 +710,7 @@ Liverpool::Pm4Result Liverpool::ExecPacket(const PM4Header* header, Pm4Engine en
         if (!all_valid) {
             Census::Note("pm4", "OCCLUSION_QUERY results not all written");
         }
+        SyncCpRead(rasterizer, query, 8);
         CpWriteMemory(reinterpret_cast<void*>(query), &total, 8);
         break;
     }
@@ -971,6 +977,7 @@ Liverpool::Task Liverpool::ProcessCeUpdate(std::span<const u32> ccb) {
         }
         case PM4ItOpcode::DumpConstRam: {
             const auto* dump_const = reinterpret_cast<const PM4DumpConstRam*>(header);
+            SyncCpRead(rasterizer, reinterpret_cast<u64>(dump_const->Address<void*>()), dump_const->Size());
             memcpy(dump_const->Address<void*>(),
                    cblock.constants_heap.data() + dump_const->Offset(), dump_const->Size());
             break;
@@ -1004,6 +1011,9 @@ Liverpool::Task Liverpool::ProcessCeUpdate(std::span<const u32> ccb) {
                           indirect_buffer->ib_size.Value());
                 break;
             }
+            // A DMA recorded on the GPU timeline may be writing the command buffer: wait for it (no-op without one).
+            SyncCpRead(rasterizer, reinterpret_cast<u64>(indirect_buffer->Address<const void>()),
+                       u64(indirect_buffer->ib_size) * 4);
             auto task =
                 ProcessCeUpdate({indirect_buffer->Address<const u32>(), indirect_buffer->ib_size});
             RESUME_CE(task);
@@ -1769,6 +1779,9 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                               indirect_buffer->ib_size.Value());
                     break;
                 }
+                // A DMA recorded on the GPU timeline may be writing the command buffer: wait for it (no-op without one).
+                SyncCpRead(rasterizer, reinterpret_cast<u64>(indirect_buffer->Address<const void>()),
+                           u64(indirect_buffer->ib_size) * 4);
                 auto task = ProcessGraphics(
                     {indirect_buffer->Address<const u32>(), indirect_buffer->ib_size}, {}, true);
                 RESUME_GFX(task);
@@ -1821,6 +1834,7 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                     dcb = {};
                     break;
                 }
+                SyncCpRead(rasterizer, reinterpret_cast<u64>(cond_exec->Address()), 1);
                 const auto skip = *cond_exec->Address() == false;
                 if (skip) {
                     dcb = NextPacket(dcb,
@@ -1978,6 +1992,9 @@ Liverpool::Task Liverpool::ProcessCompute(std::span<const u32> acb, u32 vqid) {
                           indirect_buffer->ib_size.Value());
                 break;
             }
+            // A DMA recorded on the GPU timeline may be writing the command buffer: wait for it (no-op without one).
+            SyncCpRead(rasterizer, reinterpret_cast<u64>(indirect_buffer->Address<const void>()),
+                       u64(indirect_buffer->ib_size) * 4);
             auto task = ProcessCompute<true>(
                 {indirect_buffer->Address<const u32>(), indirect_buffer->ib_size}, vqid);
             RESUME_ASC(task, vqid);
