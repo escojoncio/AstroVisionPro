@@ -72,19 +72,26 @@ constexpr s64 ReportDelayNs = 1'000'000'000;
 /// without, one step each and all together. The engine reads each at its own time: a switch it reads
 /// once, when the renderer is made, cannot be changed in the middle of a session (no step, a line in
 /// the log says so); one it reads while it runs is set with setenv at the start of its step.
-/// Unverified: not in the engine yet when this was written, or its reading time not checked.
-enum class Reads { Live, Unverified, AtStart };
+/// Live: read when a shader library / sampler is made, so it takes effect only for those made after
+/// the setenv (`why` says what stays as it was).
+enum class Reads { Live, AtStart };
 struct AbVariable {
     const char* name;
     const char* value;
     const char* label;
     Reads reads;
-    const char* why; // for AtStart
+    const char* why; // AtStart: why there is no step. Live: what the step does not change
 };
 constexpr AbVariable AbVariables[] = {
-    {"VPKENGINE_VS_FASTMATH", "1", "vertex shaders in fast math", Reads::Unverified, ""},
-    {"VPKENGINE_MAX_ANISO", "1", "anisotropy 1", Reads::Unverified, ""},
-    {"VPGCN_FETCH_GUARDS", "1", "A3 off (fetch guards)", Reads::Unverified, ""},
+    {"VPKENGINE_VS_FASTMATH", "1", "vertex shaders in fast math", Reads::Live,
+     "a vertex library is built when its pipeline is compiled and the pipeline cache key does not hold "
+     "the switch: pipelines compiled before the step keep their library"},
+    {"VPKENGINE_MAX_ANISO", "1", "anisotropy 1", Reads::Live,
+     "the renderer keeps one sampler per S# it has seen: only the S# first seen after the step began "
+     "get the cap"},
+    {"VPGCN_FETCH_GUARDS", "1", "A3 off (fetch guards)", Reads::AtStart,
+     "read once per process, in a function-local static of gpu/shader/gcn/src/lift.cpp, when the first "
+     "buffer load is lifted"},
     {"VPKENGINE_DEPTH_ONLY_SPLIT", "1", "A2 off (depth-only split)", Reads::AtStart,
      "read once when the renderer is made (a member initializer of its Impl, gpu/ps4/src/renderer.cpp)"},
     {"VPKENGINE_MSAA_CUT_SAMPLES_OFF", "1", "keepSamples off", Reads::AtStart,
@@ -369,13 +376,14 @@ void ChooseCandidates(ShaderTest& t) {
                          "a session: {}; start the session with it set",
                          AbVariables[i].label, AbVariables[i].name, AbVariables[i].value,
                          AbVariables[i].why);
-            } else if (AbVariables[i].reads == Reads::Unverified) {
+            } else {
                 LOG_INFO(Render_Vulkan,
-                         "GPU_SHADER_BENCH: A/B {} ({}={}): set with setenv at its step; when the "
-                         "engine reads it is unverified (a result equal to the steps as they are "
-                         "may mean it is read once, or only for shaders and samplers made after "
-                         "the step began)",
-                         AbVariables[i].label, AbVariables[i].name, AbVariables[i].value);
+                         "GPU_SHADER_BENCH: A/B {} ({}={}): set with setenv at its step; read when "
+                         "a shader library / sampler is made, so it only reaches those made after "
+                         "the step began: {} (a result equal to the steps as they are means it "
+                         "reached nothing)",
+                         AbVariables[i].label, AbVariables[i].name, AbVariables[i].value,
+                         AbVariables[i].why);
             }
             if (t.env_saved[i]) {
                 LOG_INFO(Render_Vulkan,
