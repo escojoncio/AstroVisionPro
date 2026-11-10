@@ -977,6 +977,11 @@ if (NOT SHADPS4_VISIONOS)
     target_compile_features(shadps4_reg_audit_test PRIVATE cxx_std_23)
     add_test(NAME shadps4_reg_audit COMMAND shadps4_reg_audit_test)
 
+    add_executable(shadps4_reg_audit_sampling_test video_core/test_reg_audit_sampling.cpp)
+    target_include_directories(shadps4_reg_audit_sampling_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+    target_compile_features(shadps4_reg_audit_sampling_test PRIVATE cxx_std_23)
+    add_test(NAME shadps4_reg_audit_sampling COMMAND shadps4_reg_audit_sampling_test)
+
     add_executable(shadps4_pm4_exec_test video_core/test_pm4_exec.cpp)
     target_include_directories(shadps4_pm4_exec_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
     target_compile_features(shadps4_pm4_exec_test PRIVATE cxx_std_23)
