@@ -284,9 +284,11 @@ public:
         // rate, one refresh for a frame is its own.
         s32 fastest_now = refresh > SlowDisplay ? 1 : fastest_pace;
         if (fps_cap > 0.0) {
-            // The fewest refreshes that keep frames to the cap.
+            // The fewest refreshes that keep frames to the cap. A cap stands for a share of the
+            // display's refreshes (45 is every second one of a 90 Hz display): a display a little
+            // faster (100 Hz) gives a frame as many, not one more.
             fastest_now = std::max<s32>(
-                1, static_cast<s32>(std::ceil(1.0 / (refresh * fps_cap) - 0.01)));
+                1, static_cast<s32>(std::ceil(1.0 / (refresh * fps_cap * CapRoom) - 0.01)));
         }
         if (fixed_pace == 0 && (fastest_now != fastest || pace < fastest_now)) {
             // The display turned out to be another kind than was thought (its rate is only
@@ -534,6 +536,8 @@ private:
     static constexpr double Over = 0.03;
     /// The share of the time the GPU must be busy to be what holds frames up.
     static constexpr float GpuShort = 0.85f;
+    /// How much faster than the cap frames may come where the display's refreshes fall that way.
+    static constexpr double CapRoom = 1.12;
     /// Room a larger size, and a faster pace, must leave.
     static constexpr double SizeMargin = 0.15;
     static constexpr double PaceMargin = 0.10;

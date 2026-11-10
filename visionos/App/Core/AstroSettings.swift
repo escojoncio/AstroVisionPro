@@ -14,9 +14,10 @@ struct AstroSettings {
     /// little (log 2026-10-09: the scene took the same GPU time at 1440x1536 as at 816x870);
     /// what limits larger sizes is memory.
     var resolution = "1440"
-    /// The emulator's dynamic resolution is never used: the GPU's time goes to draws and passes,
-    /// not to pixels, so drawing smaller only blurs the picture.
-    let dynamic = false
+    /// The emulator's dynamic resolution: it draws the scene smaller (the console's own sizes, down to
+    /// 960x1080) where the GPU falls behind the frames it is given. With VPKEngine the GPU's time goes to
+    /// the pixels of the scene passes (log 2026-11-10: fragment 7-9 ms of the 8-10 ms of the main pass).
+    let dynamic = true
     /// The most frames a second: 45 by default, every second refresh of a 90 Hz display, held even when
     /// the system lowers the display's rate (GameRenderer keeps the game's clock at the nominal rate).
     var fps = 45
