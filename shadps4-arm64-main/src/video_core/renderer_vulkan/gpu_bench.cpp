@@ -9,12 +9,10 @@
 
 #include <algorithm>
 #include <atomic>
-#include <bit>
 #include <chrono>
 #include <cstdlib>
 #include <iterator>
 #include <mutex>
-#include <optional>
 #include <ranges>
 #include <string>
 #include <string_view>
@@ -68,59 +66,33 @@ constexpr size_t MaxCandidates = 8;
 // After the last step, the GPU's times for it come in a few frames late.
 constexpr s64 ReportDelayNs = 1'000'000'000;
 
-/// Environment switches of the engine that a renderer with `env_ab` (StartOn) is measured with and
-/// without, one step each and all together. The engine reads each at its own time: a switch it reads
-/// once, when the renderer is made, cannot be changed in the middle of a session (no step, a line in
-/// the log says so); one it reads while it runs is set with setenv at the start of its step.
-/// Live: read when a shader library / sampler is made, so it takes effect only for those made after
-/// the setenv (`why` says what stays as it was).
-enum class Reads { Live, AtStart };
+/// Environment switches of the engine whose effect a renderer with `env_ab` (StartOn) should be
+/// measured with and without. None has a step in the middle of a session: a switch read once (at the
+/// renderer's creation, or once per process) cannot be changed once running, and one read when a
+/// shader library / sampler is made only reaches those made after the change (the steps would not
+/// measure what they say and would leave the next step as they are changed). The log says so and
+/// whether each is set now: start the session with it set and compare the logs.
 struct AbVariable {
     const char* name;
     const char* value;
     const char* label;
-    Reads reads;
-    const char* why; // AtStart: why there is no step. Live: what the step does not change
+    const char* why; // why there is no step
 };
 constexpr AbVariable AbVariables[] = {
-    {"VPKENGINE_VS_FASTMATH", "1", "vertex shaders in fast math", Reads::Live,
+    {"VPKENGINE_VS_FASTMATH", "1", "vertex shaders in fast math",
      "a vertex library is built when its pipeline is compiled and the pipeline cache key does not hold "
-     "the switch: pipelines compiled before the step keep their library"},
-    {"VPKENGINE_MAX_ANISO", "1", "anisotropy 1", Reads::Live,
-     "the renderer keeps one sampler per S# it has seen: only the S# first seen after the step began "
-     "get the cap"},
-    {"VPGCN_FETCH_GUARDS", "1", "A3 off (fetch guards)", Reads::AtStart,
+     "the switch: pipelines compiled before the change keep their library"},
+    {"VPKENGINE_MAX_ANISO", "1", "anisotropy 1",
+     "the renderer keeps one sampler per S# it has seen: only the S# first seen after the change get "
+     "the cap"},
+    {"VPGCN_FETCH_GUARDS", "1", "A3 off (fetch guards)",
      "read once per process, in a function-local static of gpu/shader/gcn/src/lift.cpp, when the first "
      "buffer load is lifted"},
-    {"VPKENGINE_DEPTH_ONLY_SPLIT", "1", "A2 off (depth-only split)", Reads::AtStart,
+    {"VPKENGINE_DEPTH_ONLY_SPLIT", "1", "A2 off (depth-only split)",
      "read once when the renderer is made (a member initializer of its Impl, gpu/ps4/src/renderer.cpp)"},
-    {"VPKENGINE_MSAA_CUT_SAMPLES_OFF", "1", "keepSamples off", Reads::AtStart,
+    {"VPKENGINE_MSAA_CUT_SAMPLES_OFF", "1", "keepSamples off",
      "read once when the renderer is made (a member initializer of its Impl, gpu/ps4/src/renderer.cpp)"},
 };
-constexpr size_t NumAb = std::size(AbVariables);
-
-/// The switches that can be set in the middle of a session, as a bit mask by index.
-constexpr u32 PossibleAbMask() {
-    u32 mask = 0;
-    for (size_t i = 0; i < NumAb; ++i) {
-        mask |= AbVariables[i].reads != Reads::AtStart ? 1u << i : 0u;
-    }
-    return mask;
-}
-constexpr u32 PossibleAb = PossibleAbMask();
-constexpr size_t PossibleAbCount = size_t(std::popcount(PossibleAb));
-
-void SetEnv(const char* name, const char* value) {
-#ifdef _WIN32
-    _putenv_s(name, value != nullptr ? value : "");
-#else
-    if (value != nullptr) {
-        setenv(name, value, 1);
-    } else {
-        unsetenv(name);
-    }
-#endif
-}
 
 struct ShaderCount {
     u64 draws{};
@@ -130,7 +102,7 @@ struct ShaderCount {
 };
 /// What a step measures.
 struct Step {
-    enum Kind { Base, NoPixels, Out, All, Ab, AbAll } kind{Base}; // Ab: candidate is the AbVariables index
+    enum Kind { Base, NoPixels, Out, All } kind{Base};
     int candidate{-1};
 };
 struct StepTime {
@@ -161,11 +133,8 @@ struct ShaderTest {
     // out on their own (without it there are no steps for that).
     const char* renderer{};
     bool pixels_out{true};
-    // StartOn with env_ab: the A/B steps, the switches set now (bit mask by AbVariables index) and
-    // what each had when the test started.
+    // StartOn with env_ab: the A/B switches are listed in the log.
     bool env_ab{};
-    u32 env_mask{};
-    std::optional<std::string> env_saved[NumAb];
 };
 ShaderTest g_shaders;
 
@@ -258,43 +227,8 @@ std::string StepName(const ShaderTest& t, const Step& step) {
                            t.candidates[size_t(step.candidate)].first);
     case Step::Out:
         return fmt::format("without fs {:#x}", t.candidates[size_t(step.candidate)].first);
-    case Step::Ab:
-        return fmt::format("A/B {} ({}={})", AbVariables[size_t(step.candidate)].label,
-                           AbVariables[size_t(step.candidate)].name,
-                           AbVariables[size_t(step.candidate)].value);
-    case Step::AbAll: {
-        std::string text;
-        for (size_t i = 0; i < NumAb; ++i) {
-            if ((PossibleAb >> i) & 1u) {
-                text += fmt::format("{}{}={}", text.empty() ? "" : " ", AbVariables[i].name,
-                                    AbVariables[i].value);
-            }
-        }
-        return "A/B all together (" + text + ")";
-    }
     }
     return "?";
-}
-
-/// Sets the switches of `mask` and puts back the others as they were when the test started (the
-/// mutex held).
-void ApplyAbEnv(ShaderTest& t, u32 mask) {
-    for (size_t i = 0; i < NumAb; ++i) {
-        const bool want = (mask >> i) & 1u;
-        if (want == bool((t.env_mask >> i) & 1u)) {
-            continue;
-        }
-        if (want) {
-            SetEnv(AbVariables[i].name, AbVariables[i].value);
-        } else {
-            SetEnv(AbVariables[i].name, t.env_saved[i] ? t.env_saved[i]->c_str() : nullptr);
-        }
-    }
-    t.env_mask = mask;
-}
-
-u32 StepAbMask(const Step& step) {
-    return step.kind == Step::Ab ? 1u << step.candidate : step.kind == Step::AbAll ? PossibleAb : 0u;
 }
 
 /// Chooses what to leave out from the count (the mutex held).
@@ -336,17 +270,6 @@ void ChooseCandidates(ShaderTest& t) {
         t.steps.push_back({Step::Base, -1});
         t.steps.push_back({Step::All, -1});
         t.steps.push_back({Step::Base, -1});
-        // Each switch alone, then all together, each between steps as they are.
-        if (t.env_ab) {
-            for (size_t i = 0; i < NumAb; ++i) {
-                if ((PossibleAb >> i) & 1u) {
-                    t.steps.push_back({Step::Ab, int(i)});
-                    t.steps.push_back({Step::Base, -1});
-                }
-            }
-            t.steps.push_back({Step::AbAll, -1});
-            t.steps.push_back({Step::Base, -1});
-        }
     }
     t.times.clear();
     t.frames.assign(t.steps.size(), 0);
@@ -369,28 +292,13 @@ void ChooseCandidates(ShaderTest& t) {
              double(total_vertices) / seconds / 1000.0, t.steps.size(),
              ShaderStepNs / 1'000'000'000, text.empty() ? "nothing (no scene draws seen)" : text);
     if (t.env_ab && !t.candidates.empty()) {
-        for (size_t i = 0; i < NumAb; ++i) {
-            if (!((PossibleAb >> i) & 1u)) {
-                LOG_INFO(Render_Vulkan,
-                         "GPU_SHADER_BENCH: A/B {} ({}={}): no step, not possible in the middle of "
-                         "a session: {}; start the session with it set",
-                         AbVariables[i].label, AbVariables[i].name, AbVariables[i].value,
-                         AbVariables[i].why);
-            } else {
-                LOG_INFO(Render_Vulkan,
-                         "GPU_SHADER_BENCH: A/B {} ({}={}): set with setenv at its step; read when "
-                         "a shader library / sampler is made, so it only reaches those made after "
-                         "the step began: {} (a result equal to the steps as they are means it "
-                         "reached nothing)",
-                         AbVariables[i].label, AbVariables[i].name, AbVariables[i].value,
-                         AbVariables[i].why);
-            }
-            if (t.env_saved[i]) {
-                LOG_INFO(Render_Vulkan,
-                         "GPU_SHADER_BENCH: {} was already set ({}) when the test started: the "
-                         "steps as they are are not the baseline",
-                         AbVariables[i].name, *t.env_saved[i]);
-            }
+        for (const AbVariable& v : AbVariables) {
+            const char* now = std::getenv(v.name);
+            LOG_INFO(Render_Vulkan,
+                     "GPU_SHADER_BENCH: A/B {} ({}={}): no step in the middle of a session: {}; "
+                     "start the session with the variable set ({} now)",
+                     v.label, v.name, v.value, v.why,
+                     now != nullptr ? fmt::format("set to '{}'", now) : std::string{"not set"});
         }
     }
     // What each candidate's draws are made with, and its shaders' SPIR-V.
@@ -539,11 +447,6 @@ void ReportShaders(ShaderTest& t) {
         LOG_INFO(Render_Vulkan, "GPU_SHADER_BENCH: all {} at once: {}", t.candidates.size(),
                  line(all_step));
     }
-    for (size_t k = 0; k < t.steps.size(); ++k) {
-        if (t.steps[k].kind == Step::Ab || t.steps[k].kind == Step::AbAll) {
-            LOG_INFO(Render_Vulkan, "GPU_SHADER_BENCH: {}: {}", StepName(t, t.steps[k]), line(k));
-        }
-    }
 }
 
 /// Moves the shader test on: chooses the candidates after the count, sets what is done to the
@@ -591,7 +494,6 @@ void AdvanceShaderTest() {
         t.action.store(int(action), std::memory_order_relaxed);
         t.all_out.store(what.kind == Step::All, std::memory_order_relaxed);
         if (step != seen) {
-            ApplyAbEnv(t, StepAbMask(what));
             t.logged_step.store(step, std::memory_order_relaxed);
             LOG_INFO(Render_Vulkan, "GPU_SHADER_BENCH: step {} of {}: {}", step + 1,
                      t.steps.size(), StepName(t, what));
@@ -601,7 +503,6 @@ void AdvanceShaderTest() {
     t.hash.store(0, std::memory_order_relaxed);
     t.action.store(int(DrawAction::Draw), std::memory_order_relaxed);
     t.all_out.store(false, std::memory_order_relaxed);
-    ApplyAbEnv(t, 0);
     if (seen < int(t.steps.size())) {
         t.logged_step.store(int(t.steps.size()), std::memory_order_relaxed);
         LOG_INFO(Render_Vulkan, "GPU_SHADER_BENCH: done; you can move");
@@ -736,14 +637,9 @@ namespace {
 void StartShaderTest(const char* renderer, bool pixels_out, bool env_ab) {
     ShaderTest& t = g_shaders;
     std::scoped_lock lock{t.mutex};
-    ApplyAbEnv(t, 0); // (a test still on: its switches back as they were)
     t.renderer = renderer;
     t.pixels_out = pixels_out;
     t.env_ab = env_ab;
-    for (size_t i = 0; i < NumAb; ++i) {
-        const char* value = env_ab ? std::getenv(AbVariables[i].name) : nullptr;
-        t.env_saved[i] = value != nullptr ? std::optional<std::string>{value} : std::nullopt;
-    }
     t.counted = false;
     t.reported = false;
     t.census.clear();
@@ -762,7 +658,7 @@ void StartShaderTest(const char* renderer, bool pixels_out, bool env_ab) {
              "GPU_SHADER_BENCH: started: {} s counting the scene's pixel shaders, then up to {} "
              "steps of {} s; keep still",
              CensusNs / 1'000'000'000,
-             MaxCandidates * (pixels_out ? 3 : 2) + 3 + (env_ab ? 2 * (PossibleAbCount + 1) : 0),
+             MaxCandidates * (pixels_out ? 3 : 2) + 3,
              ShaderStepNs / 1'000'000'000);
     if (renderer != nullptr) {
         LOG_INFO(Render_Vulkan, "GPU_SHADER_BENCH: started on {}{}", renderer,

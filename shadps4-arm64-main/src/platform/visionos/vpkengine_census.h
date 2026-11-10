@@ -1,6 +1,7 @@
 // Census: what the GPU emulation ignores or approximates, counted. Always on and cheap (a hash
 // lookup and one relaxed atomic add per event, no lock, no allocation after the first sighting of a
-// key); a summary goes to the log every 10 s and at exit: category, key, count, first detail.
+// key), except the "reg" category: the audit of the context registers runs only in diagnostics mode,
+// on one draw in 64. A summary goes to the log every 10 s and at exit: category, key, count, first detail.
 //
 // Anything the emulation skips, stubs or approximates reports itself here (unhandled PM4 opcodes,
 // draws left out and why, shader translation errors, unsupported formats / tile modes, context

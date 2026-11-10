@@ -31,11 +31,11 @@ void Start();
 /// counted and left out, seconds it took). Without `can_discard_pixels` (no way to leave a draw's
 /// pixels out and run its vertices) there are no steps "without its pixels". The renderer calls
 /// Current() from its draws to keep the test moving, and feeds the rest as below. Diagnostics
-/// mode only. With `env_ab`, after the steps above come steps that set, with setenv, one engine
-/// switch each (VPKENGINE_VS_FASTMATH, VPKENGINE_MAX_ANISO, VPGCN_FETCH_GUARDS) and then all of them,
-/// each measured between steps as they are and labelled in the log; the switches the engine reads
-/// only when the renderer is made (VPKENGINE_DEPTH_ONLY_SPLIT, VPKENGINE_MSAA_CUT_SAMPLES_OFF) get
-/// no step, a log line says so. The switches go back as they were when the test ends.
+/// mode only. With `env_ab` the log lists the engine switches worth a comparison
+/// (VPKENGINE_VS_FASTMATH, VPKENGINE_MAX_ANISO, VPGCN_FETCH_GUARDS, VPKENGINE_DEPTH_ONLY_SPLIT,
+/// VPKENGINE_MSAA_CUT_SAMPLES_OFF), whether each is set now, and why none has a step in the middle
+/// of a session (the engine reads them once, or only for what it makes afterwards): start the
+/// session with the variable set. Nothing here changes the environment.
 void StartOn(const char* renderer, bool can_discard_pixels, bool env_ab = false);
 /// The way the draws are made now (Normal while the shader test runs). It also moves the shader
 /// test on (steps, result): called by the draws.
