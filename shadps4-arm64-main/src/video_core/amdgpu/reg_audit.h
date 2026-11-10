@@ -8,6 +8,7 @@
 #pragma once
 
 #include <array>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <unordered_set>
@@ -65,6 +66,23 @@ private:
     std::array<bool, kContextRegs> consumed_{};
     std::unordered_set<uint64_t> seen_;
     bool overflow_ = false;
+};
+
+// Which draws are scanned: only in diagnostics mode, and one draw in kScanEvery (the first one
+// included). A scan reads kContextRegs registers; the census does not need every draw.
+inline constexpr uint64_t kScanEvery = 64;
+
+class Sampler {
+public:
+    bool Next(bool diagnostics) {
+        if (!diagnostics || draws_.fetch_add(1, std::memory_order_relaxed) % kScanEvery != 0) return false;
+        scans_.fetch_add(1, std::memory_order_relaxed);
+        return true;
+    }
+    uint64_t Scans() const { return scans_.load(std::memory_order_relaxed); }
+
+private:
+    std::atomic<uint64_t> draws_{0}, scans_{0};
 };
 
 }  // namespace AmdGpu::RegAudit

@@ -539,6 +539,7 @@ struct Engine {
     // presenter submits too, and draw timers stop after the engine lock is released.
     using Clock = std::chrono::steady_clock;
     std::atomic<u64> adapterNs{0}, adapterCalls{0};
+    AmdGpu::RegAudit::Sampler regAuditSampler;  // (auditContextRegs runs on one draw in 64, diagnostics only)
     Clock::time_point lastReport = Clock::now();
     static u64 nsSince(Clock::time_point t) {
         return u64(std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now() - t).count());
@@ -752,6 +753,7 @@ struct Engine {
         tm("backend_submit", t.backendMs, t.submits), tm("slot_wait", t.slotWaitMs, t.submits);
         tm("encode_and_commit", t.backendMs - t.slotWaitMs, t.submits);  // (the backend's submit without the wait for a frame slot)
         pm::counter("RATES", "adapter_calls").add(adapterCalls_);
+        pm::counter("RATES", "audit_scans").set(regAuditSampler.Scans());
         pm::counter("RATES", "submits").set(submits.load());
         pm::counter("RATES", "empty_submits").add(t.emptySubmits);
         pm::counter("RATES", "user_data_reused").add(t.userDataReused);
@@ -2097,7 +2099,7 @@ void ShadowEndFrame() {
 void StartGpuBench() {
     if (!Common::Diagnostics()) return;
     // (no rasterizer discard in vpps4::DrawState: a draw's pixels cannot be left out on their own)
-    gpu_bench::StartOn("VPKEngine", false);
+    gpu_bench::StartOn("VPKEngine", false, true);
     LOG_INFO(Render_Vulkan,
              "GPU_SHADER_BENCH: VPKEngine: a frame's GPU time is the busy time of the Metal command buffers; "
              "the scene passes' own time is not measured (0.00 in the lines)");
@@ -2169,7 +2171,7 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
     }
     const bool eliminate = regs.color_control.mode == Mode::EliminateFastClear;
     if (regs.primitive_type == AmdGpu::PrimitiveType::None) return;
-    auditContextRegs(regs);
+    if (engine().regAuditSampler.Next(Common::Diagnostics())) auditContextRegs(regs);
     // Pipeline kinds: VS only, ES+GS+copy VS (run by VPKEngine as compute + a normal draw). LS/HS
     // (tessellation), an on-chip GS and stream out are not supported: those draws are left out.
     const bool geometry = regs.stage_enable.es_en || regs.stage_enable.gs_en;
