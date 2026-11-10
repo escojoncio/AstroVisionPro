@@ -159,6 +159,34 @@ static void Test() {
     Check(Logged("ended on Other: 3 pixel shaders counted, 3 of them left out in turn, 32 s"), "the end line: counted, left out, seconds");
     Check(Position("ended on") > Position("all 3 at once"), "the end line comes after the result");
 
+    // --- StartOn() with env_ab: no step changes the environment; the log lists the switches ---
+    GpuBenchTestLog::Lines().clear();
+    g_now += 5'000'000'000;
+    unsetenv("VPKENGINE_MAX_ANISO");
+    setenv("VPGCN_FETCH_GUARDS", "1", 1);
+    GB::StartOn("Other", false, true);
+    Check(Logged("then up to 19 steps"), "env_ab adds no steps: still up to 8 x 2 + 3");
+    run = Frames(1);
+    bool env_untouched = std::getenv("VPKENGINE_MAX_ANISO") == nullptr && std::getenv("VPGCN_FETCH_GUARDS") != nullptr &&
+                         std::string_view{std::getenv("VPGCN_FETCH_GUARDS")} == "1";
+    Check(!GB::ShaderTestRunning(), "the env_ab test is over after its result");
+    Check(Logged("step 9 of 9: as they are") && !Logged("step 10 of"), "9 steps, none for a switch");
+    Check(!Logged("A/B all together") && !Logged("step 1 of 9: A/B"), "no A/B step in the steps");
+    Check(Logged("A/B anisotropy 1 (VPKENGINE_MAX_ANISO=1): no step in the middle of a session") &&
+              Logged("start the session with the variable set (not set now)"),
+          "anisotropy: no step, said so, not set");
+    Check(Logged("A/B vertex shaders in fast math (VPKENGINE_VS_FASTMATH=1): no step"), "fast math: no step, said so");
+    Check(Logged("A/B A3 off (fetch guards) (VPGCN_FETCH_GUARDS=1): no step") && Logged("(set to '1' now)"),
+          "fetch guards: no step, and set now");
+    Check(Logged("A/B A2 off (depth-only split) (VPKENGINE_DEPTH_ONLY_SPLIT=1): no step"), "A2 off: no step, said so");
+    Check(Logged("A/B keepSamples off (VPKENGINE_MSAA_CUT_SAMPLES_OFF=1): no step"), "keepSamples off: no step, said so");
+    Check(env_untouched, "the test never changes the environment");
+    unsetenv("VPGCN_FETCH_GUARDS");
+    GpuBenchTestLog::Lines().clear();
+    GB::StartOn("Other", false);
+    Frames(1);
+    Check(!Logged("A/B "), "without env_ab nothing about the switches is logged");
+
     // --- no GPU times at all ---
     GpuBenchTestLog::Lines().clear();
     GB::StartOn("Other", false);
