@@ -108,6 +108,16 @@ struct FrameStats {
     /// answer (TakeGpuLoad, below zero when nobody looked).
     static void GpuLook(bool busy);
     static float TakeGpuLoad();
+    /// The GPU's own figure, where the renderer has one: `total_ns` is how long the GPU has
+    /// worked on the renderer's command buffers so far (GpuTime, told as often as GpuLook);
+    /// the seconds added since the last asking are the answer (TakeGpuTime, below zero while
+    /// no total was told).
+    static void GpuTime(u64 total_ns);
+    static double TakeGpuTime();
+    /// The same for the processor time the thread that turns the title's commands into the
+    /// renderer's has used so far (CpTime, told by that thread once a frame; ThreadTime).
+    static void CpTime(u64 total_ns);
+    static double TakeCpTime();
 };
 
 /// True when SHADPS4_TRACE_SYNC is set: submissions and fence operations are then written to

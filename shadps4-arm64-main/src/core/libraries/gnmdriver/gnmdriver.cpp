@@ -11,6 +11,7 @@
 
 #include "common/assert.h"
 #include "common/debug.h"
+#include "common/diagnostics.h"
 #include "common/elf_info.h"
 #include "common/logging/log.h"
 #include "common/slot_vector.h"
@@ -107,6 +108,7 @@ static void ResetSubmissionLock(Platform::InterruptId irq) {
 
 static void WaitGpuIdle() {
     HLE_TRACE;
+    const Common::DiagWaitScope waited{Common::DiagWait::GpuIdle};
     std::unique_lock lock{m_submission};
     cv_lock.wait(lock, [] { return submission_lock == 0; });
 }

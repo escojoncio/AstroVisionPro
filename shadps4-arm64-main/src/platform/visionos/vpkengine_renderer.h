@@ -102,6 +102,12 @@ void ShadowEndFrame();
 /// (what each pixel shader of the scene costs, by leaving its draws out). Not for the shadow: Vulkan's test is the one then.
 void StartGpuBench();
 
+/// «Modo diagnóstico» (L1 and R1 held, L3 pressed, astro_core.mm): captures the next whole picture of the title, to be asked
+/// for with what is wrong on screen: a SCENEDRAW line for every draw on the scene's depth targets and pictures at full
+/// resolution of what each view drew (vpps4::Renderer::beginSceneCapture; lines VPKENGINE_PROBE SCENECAP / SCENEDRAW /
+/// FRAMECAP n=u<capture>.<frame>, files framecap-u<capture>.<frame>-*.ppm next to the logs). As many times as wanted.
+void RequestSceneCapture();
+
 // The headset's frames (used by vpkengine_presenter.cpp, which hands them to videoout/driver.cpp):
 // what is drawn goes into one of the compositor's Metal textures; a slot index stands for it,
 // -1 when the host has none free (or nothing can be drawn).
@@ -117,6 +123,9 @@ void Deliver(int slot, const Core::Vr::PresentedFrame& info);
 bool Finished(int slot);
 /// Whether a frame handed to the GPU has not finished on it yet (takes no lock: looked at many times a refresh).
 bool GpuBusy();
+/// How long the GPU has worked on the engine's command buffers so far, in ns (the union of their intervals: the engine's
+/// "GPU busy_union" timer, always on; takes no lock). 0 until one finished.
+u64 GpuTimeNs();
 } // namespace Present
 
 } // namespace VpkengineRenderer

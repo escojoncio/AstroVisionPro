@@ -279,6 +279,41 @@ float FrameStats::TakeGpuLoad() {
     return looks != 0 ? static_cast<float>(busy) / static_cast<float>(looks) : -1.0f;
 }
 
+namespace {
+/// A total somebody tells (ns so far) and what was added to it since it was last asked for.
+struct ToldTime {
+    std::atomic<u64> total{};
+    std::atomic<u64> taken{};
+
+    double Take() {
+        const u64 now = total.load(std::memory_order_relaxed);
+        if (now == 0) {
+            return -1.0;
+        }
+        const u64 before = taken.exchange(now, std::memory_order_relaxed);
+        return static_cast<double>(now - before) * 1e-9;
+    }
+};
+ToldTime g_gpu_time;
+ToldTime g_cp_time;
+} // namespace
+
+void FrameStats::GpuTime(u64 total_ns) {
+    g_gpu_time.total.store(total_ns, std::memory_order_relaxed);
+}
+
+double FrameStats::TakeGpuTime() {
+    return g_gpu_time.Take();
+}
+
+void FrameStats::CpTime(u64 total_ns) {
+    g_cp_time.total.store(total_ns, std::memory_order_relaxed);
+}
+
+double FrameStats::TakeCpTime() {
+    return g_cp_time.Take();
+}
+
 std::chrono::nanoseconds FrameStats::ThreadTime() {
 #ifdef _WIN32
     return std::chrono::nanoseconds{0};

@@ -223,6 +223,8 @@ constexpr u64 kMirrorRetryNs = 16'000'000;
 std::atomic<bool> gShadowEngine{false};
 // Set by ShadowEndFrame (the flip), taken by the shadow's next Flush.
 std::atomic<bool> gShadowFlip{false};
+// The user asked for a capture of the scene (RequestSceneCapture): taken where the next picture is submitted (PresentState::sceneCapture).
+std::atomic<bool> gSceneCapture{false};
 u64 steadyNs() {
     return u64(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());
 }
@@ -610,6 +612,7 @@ struct Engine {
         return false;
     }
     void watchdogLoop() {
+        pm::threadTag = "watchdog";  // (probe: its waits for the engine lock and its submits are told apart)
         std::unique_lock l{lock};
         for (;;) {
             const double next = scheduler ? scheduler->nextCheckMs() : -1.0;
@@ -684,8 +687,53 @@ struct Engine {
                      double(ms.lookups) / s, double(spBumps) / s, double(t.regionHits) / s,
                      double(t.regionMisses) / s, mutations);
         }
+        if (pm::enabled()) probeCpFrame(adapter, t);  // (before the summary resets the scheduler's counters)
         if (scheduler) LOG_INFO(Render_Vulkan, "VPKENGINE_GPU {}", scheduler->takeSummary());
         if (pm::enabled()) probeSample(t, s, calls);
+    }
+
+    // Probe CPFRAME (every report, ~2 s): where the command processor's wall time went, in ms per headset picture. idle: asleep
+    // with nothing to run (Liverpool::Process). draw: the adapter's Draw / Dispatch calls, their wait for the engine lock
+    // included (vpps4_draw: the renderer's part). submit_<thread>: handing frames to the GPU (frame compile + backend), by the
+    // thread that did it: the command processor (its Flush, the submits its DMA / label / WRITE_DATA waits force and the
+    // flip's: ComposeEyes runs on it), the watchdog, others (the title's threads: a page fault on memory an image is ahead
+    // of); _n: how many. gpu_wait: waiting for the GPU before a CPU access (the DMASYNC
+    // waits; gpu_sync: with the submit they forced). lock_cp / lock_others: waiting for the engine lock, the command processor's
+    // thread and every other one. wait_gpu_idle: what the title's thread waited in WaitGpuIdle (gnmdriver.cpp); _n: waits.
+    // The same totals go to the CSV as timers: CP idle / wait_gpu_idle, SUBMIT by_*, LOCK engine_wait / engine_wait_cp.
+    struct CpFrame {
+        u64 pictures = 0, idle = 0, idleCalls = 0, gpuIdle = 0, gpuIdleCalls = 0, lock = 0, lockCp = 0;
+        std::array<u64, 3> submit{}, submits{};
+    } cpFrame;
+    u64 cpFrameLines = 0;
+    void probeCpFrame(u64 adapter, const vpps4::CpuTimes& t) {
+        static pm::Timer& lockAll = pm::timer("LOCK", "engine_wait");
+        static pm::Timer& lockCp = pm::timer("LOCK", "engine_wait_cp");
+        static const std::array<pm::Timer*, 3> by{&pm::timer("SUBMIT", "by_cp"), &pm::timer("SUBMIT", "by_watchdog"),
+                                                  &pm::timer("SUBMIT", "by_other")};
+        CpFrame now;
+        now.pictures = pictures.load();
+        now.idle = Common::DiagWaitNs(Common::DiagWait::CpIdle), now.idleCalls = Common::DiagWaitCalls(Common::DiagWait::CpIdle);
+        now.gpuIdle = Common::DiagWaitNs(Common::DiagWait::GpuIdle), now.gpuIdleCalls = Common::DiagWaitCalls(Common::DiagWait::GpuIdle);
+        now.lock = lockAll.ns(), now.lockCp = lockCp.ns();
+        for (size_t k = 0; k < by.size(); ++k) now.submit[k] = by[k]->ns(), now.submits[k] = by[k]->calls();
+        const CpFrame& was = cpFrame;
+        pm::timer("CP", "idle").addMs(double(now.idle - was.idle) / 1e6, now.idleCalls - was.idleCalls);
+        pm::timer("CP", "wait_gpu_idle").addMs(double(now.gpuIdle - was.gpuIdle) / 1e6, now.gpuIdleCalls - was.gpuIdleCalls);
+        const double n = double(std::max<u64>(now.pictures - was.pictures, 1));
+        const auto ms = [n](u64 ns) { return double(ns) / 1e6 / n; };
+        const u64 lockOthers = (now.lock - was.lock) - std::min(now.lock - was.lock, now.lockCp - was.lockCp);
+        LOG_INFO(Render_Vulkan,
+                 "VPKENGINE_PROBE CPFRAME i={} pictures={} idle_ms={:.2f} draw_ms={:.2f} vpps4_draw_ms={:.2f} submit_cp_ms={:.2f} "
+                 "submit_cp_n={} submit_watchdog_ms={:.2f} submit_watchdog_n={} submit_other_ms={:.2f} submit_other_n={} "
+                 "gpu_wait_ms={:.2f} gpu_sync_ms={:.2f} lock_cp_ms={:.2f} lock_others_ms={:.2f} wait_gpu_idle_ms={:.2f} "
+                 "wait_gpu_idle_n={}",
+                 cpFrameLines++, now.pictures - was.pictures, ms(now.idle - was.idle), ms(adapter), t.drawMs / n,
+                 ms(now.submit[0] - was.submit[0]), now.submits[0] - was.submits[0], ms(now.submit[1] - was.submit[1]),
+                 now.submits[1] - was.submits[1], ms(now.submit[2] - was.submit[2]), now.submits[2] - was.submits[2],
+                 scheduler ? scheduler->counters().waitMs / n : 0.0, scheduler ? scheduler->counters().syncMs / n : 0.0,
+                 ms(now.lockCp - was.lockCp), ms(lockOthers), ms(now.gpuIdle - was.gpuIdle), now.gpuIdleCalls - was.gpuIdleCalls);
+        cpFrame = now;
     }
 
     // ---- Probe (VPKENGINE_PROBE): every metric family, once per report() interval (~2 s). Under `lock`, from the submit hook.
@@ -903,6 +951,10 @@ struct Engine {
         // (the shadow has no Metal to give the shaders to; they are still translated)
         if (!shadow) hooks.shader = [this](uint64_t id, vpir::Stage, const vpmsl::MslShader& s) { shaders.add(id, toMetal(s)); };
         hooks.log = [this](const std::string& l) { log(l); };
+        // (the renderer cuts the frame itself for the user's scene capture: through the scheduler, like every other submit)
+        hooks.submit = [this] {
+            if (scheduler) scheduler->submit(vpgpu::SubmitReason::Finish);
+        };
         // The shadow tells the Tee's comparison what the renderer resolved for each call (shadow_record.h).
         if (shadow) hooks.resolved = [](const vpps4::Resolved& r) { shadowResolved(r); };
         hooks.watchWrites = [this](uint64_t a, uint64_t n) {
@@ -1703,7 +1755,7 @@ void describeGeometryDraw(const AmdGpu::Regs& regs) {
 namespace gpu_bench = Vulkan::GpuBench;
 
 // The GPU's time: the busy time of the Metal command buffers (the union of their intervals, so overlapping buffers count
-// once; the backend's "GPU busy_union" probe timer, on with the diagnostics mode), taken between two looks - at most one
+// once; the backend's "GPU busy_union" timer, which runs with the probe off too), taken between two looks - at most one
 // every 10 ms, from the draws - and given to the step the test is in. The work completed in a step's timed part was
 // submitted inside the step (the first half second of every step goes untimed and a frame is in flight for far less).
 struct BenchGpu {
@@ -2047,9 +2099,15 @@ void StartGpuBench() {
     // (no rasterizer discard in vpps4::DrawState: a draw's pixels cannot be left out on their own)
     gpu_bench::StartOn("VPKEngine", false);
     LOG_INFO(Render_Vulkan,
-             "GPU_SHADER_BENCH: VPKEngine: a frame's GPU time is the busy time of the Metal command buffers (probe {}); "
-             "the scene passes' own time is not measured (0.00 in the lines)",
-             pm::enabled() ? "on" : "OFF: no GPU times will come");
+             "GPU_SHADER_BENCH: VPKEngine: a frame's GPU time is the busy time of the Metal command buffers; "
+             "the scene passes' own time is not measured (0.00 in the lines)");
+}
+
+void RequestSceneCapture() {
+    if (!Common::Diagnostics()) return;
+    gSceneCapture.store(true, std::memory_order_release);
+    LOG_INFO(Render_Vulkan, "VPKENGINE_PROBE SCENECAP asked for: the next whole picture is captured (SCENEDRAW and FRAMECAP "
+                            "lines, pictures framecap-u<n>.* next to the logs)");
 }
 
 Rasterizer::~Rasterizer() {
@@ -2900,6 +2958,7 @@ void Rasterizer::OnCoherencePoint(VAddr base, u64 size, u32 coher_cntl) {
 
 u64 Rasterizer::Flush() {
     Engine& e = engine();
+    pm::threadTag = "cp";  // (probe: the command processor's thread, see Engine::probeCpFrame)
     std::scoped_lock g{e.lock};
     e.applyPending();
     // A Liverpool command buffer batch ended (SubmitDone, ~15 a picture): the work stays recorded
@@ -3030,7 +3089,9 @@ void Rasterizer::WriteDataOrdered(void* address, const void* data, u32 size) {
             // Images ahead of this memory are written back first (and their pages released once the GPU
             // has run that): a protected page would fault in the middle of the copy.
             if (e.renderer) e.renderer->syncToMemory(reinterpret_cast<u64>(address), size);
-            e.scheduler->syncCpu(reinterpret_cast<u64>(address), size, vpgpu::SubmitReason::WriteData);
+            // (a small range it had to wait for is noted, as syncForDma does: buffers the next draws bind inside it are
+            // copied when recorded, and the next write of it waits for nothing)
+            e.scheduler->syncWrite(reinterpret_cast<u64>(address), size);
             std::memcpy(address, data, size);
             e.scheduler->forgetLabelValues(reinterpret_cast<u64>(address), size);
             return;
@@ -3562,6 +3623,25 @@ kernel void vp_eye_hash(texture2d<float, access::read> t [[texture(0)]], device 
                  prims, n, count, wMin, wMax, shown, outside, nonFinite, v0[0], v0[1], v0[2], v0[3]);
     }
 
+    // The user's capture of the scene (RequestSceneCapture). Under the engine lock, right after a picture's drawing is
+    // submitted: a capture that was on ends with that picture (its eyes are told: the SCENEDRAW lines name targets by
+    // address), one that was asked for starts with the next, so that one whole picture of the title is captured
+    // (vpps4::Renderer::beginSceneCapture).
+    bool scene_capture = false;
+    void sceneCapture(Engine& e, const std::array<vpps4::ImageDesc, 2>& eyeDesc) {
+        if (scene_capture) {
+            scene_capture = false;
+            // (0: it ended by itself, no picture of eyes came within its frames)
+            if (const u64 n = e.renderer->endSceneCapture())
+                LOG_INFO(Render_Vulkan, "VPKENGINE_PROBE SCENECAP n={} eyes left={:#x} right={:#x}", n,
+                         u64(eyeDesc[0].address), u64(eyeDesc[1].address));
+        }
+        if (gSceneCapture.exchange(false, std::memory_order_acq_rel)) {
+            scene_capture = e.renderer->beginSceneCapture() != 0;
+            if (!scene_capture) LOG_INFO(Render_Vulkan, "VPKENGINE_PROBE SCENECAP not started (the probe is off)");
+        }
+    }
+
     // Under the engine lock, after the eyes' drawing is submitted: reduces both eyes behind it on the queue.
     void eyeStats(Engine& e, const std::array<id<MTLTexture>, 2>& eyes, const std::array<vpps4::ImageDesc, 2>& eyeDesc) {
         const auto now = std::chrono::steady_clock::now();
@@ -3851,6 +3931,9 @@ int ComposeEyes(std::span<const AmdGpu::Image, 2> eye_textures, const Core::Vr::
                       encoded[k], false, impl->sharpen};
     const int slot = impl->compose(e, width, height, regions);
     if (slot < 0) return -1;
+    // (not before: without a free frame the driver calls again for the same picture; nothing above records into the
+    // renderer's frame, so the capture still starts where a frame does)
+    impl->sceneCapture(e, eyeDesc);
     if (impl->frames++ % 600 == 0)
         LOG_INFO(Render_Vulkan, "VPKENGINE_PRESENT headset frame {}: eyes {}x{} ({} / {}), sharpen {:.2f}", impl->frames,
                  eye_width, eye_height, eyes[0] ? eyes[0].pixelFormat : 0, eyes[1] ? eyes[1].pixelFormat : 0,
@@ -3966,6 +4049,11 @@ bool GpuBusy() {
     Engine& e = engine();
     const u64 submitted = e.submittedPub.load();  // (not zero: the device exists)
     return submitted != 0 && e.device->completedFrames() < submitted;
+}
+
+u64 GpuTimeNs() {
+    static pm::Timer& busy = pm::timer("GPU", "busy_union");
+    return busy.ns();
 }
 
 } // namespace Present

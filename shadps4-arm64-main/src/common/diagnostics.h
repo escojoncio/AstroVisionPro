@@ -3,7 +3,9 @@
 
 #pragma once
 
+#include <array>
 #include <atomic>
+#include <chrono>
 #include <cstddef>
 #include <cstdlib>
 #include <mutex>
@@ -27,6 +29,56 @@ inline bool Diagnostics() {
     }();
     return on;
 }
+
+/// Two waits of the GPU path whose wall time the renderer's report tells (VPKENGINE_PROBE
+/// CPFRAME): the command processor asleep with nothing to run, and the title's thread held until
+/// the GPU is idle. Measured only while diagnostics are on.
+enum class DiagWait : u32 { CpIdle, GpuIdle, Count };
+
+namespace Detail {
+struct DiagWaitTotal {
+    std::atomic<u64> ns{0};
+    std::atomic<u64> calls{0};
+};
+inline DiagWaitTotal& DiagWaitOf(DiagWait wait) {
+    static std::array<DiagWaitTotal, static_cast<std::size_t>(DiagWait::Count)> totals;
+    return totals[static_cast<std::size_t>(wait)];
+}
+} // namespace Detail
+
+/// Nanoseconds spent in a wait so far, and how many times it was entered.
+inline u64 DiagWaitNs(DiagWait wait) {
+    return Detail::DiagWaitOf(wait).ns.load(std::memory_order_relaxed);
+}
+inline u64 DiagWaitCalls(DiagWait wait) {
+    return Detail::DiagWaitOf(wait).calls.load(std::memory_order_relaxed);
+}
+
+/// Adds the wall time of its scope to a wait's total.
+class DiagWaitScope {
+public:
+    explicit DiagWaitScope(DiagWait wait_) : wait{wait_}, on{Diagnostics()} {
+        if (on) {
+            start = std::chrono::steady_clock::now();
+        }
+    }
+    ~DiagWaitScope() {
+        if (on) {
+            const auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                std::chrono::steady_clock::now() - start);
+            Detail::DiagWaitOf(wait).ns.fetch_add(static_cast<u64>(ns.count()),
+                                                  std::memory_order_relaxed);
+            Detail::DiagWaitOf(wait).calls.fetch_add(1, std::memory_order_relaxed);
+        }
+    }
+    DiagWaitScope(const DiagWaitScope&) = delete;
+    DiagWaitScope& operator=(const DiagWaitScope&) = delete;
+
+private:
+    const DiagWait wait;
+    const bool on;
+    std::chrono::steady_clock::time_point start{};
+};
 
 namespace Detail {
 inline std::atomic<u32>& DiagEpochCounter() {

@@ -271,6 +271,55 @@ static void HitchesAndLoadsAreIgnored() {
           "a load does not break the run of good seconds either");
 }
 
+static void GpuTimeIsTheGpusOwnWhereKnown() {
+    // Frames in flight 95% of the time (each waits behind the one before) while the GPU's
+    // command buffers run 15 ms of every 31.25 ms frame: a GPU with room for the base.
+    const double in_flight = 0.95 * FallbackFrame;
+    const double own = GpuFrameTime(32 * GpuGood, 1.0, FallbackFrame, in_flight);
+    Check(Near(own, GpuGood, 1e-9), "the GPU's own time is what a frame is said to take (" +
+                                        std::to_string(own * 1e3) + " ms)");
+    Rig rig{Mode::Auto};
+    rig.Start();
+    const double took = rig.Until(2, 60.0, FallbackFrame, own);
+    Check(Near(took, 10.0, 0.05),
+          "... and goes back to the base after 10 s whatever is in flight (" +
+              std::to_string(took) + ")");
+    Check(Near(GpuFrameTime(2.0, 1.0, FallbackFrame, in_flight), FallbackFrame, 1e-9),
+          "a GPU that never rests worked the whole frame");
+
+    const double guess = GpuFrameTime(-1.0, 1.0, FallbackFrame, in_flight);
+    Rig blind{Mode::Auto};
+    blind.Start();
+    Check(Near(guess, in_flight, 1e-9) && !blind.Run(40.0, FallbackFrame, guess),
+          "without the GPU's own time the frames in flight decide, as before");
+}
+
+static void ASlowCommandThreadKeepsTheFallback() {
+    // The GPU works 17 ms a frame (room for the base, 18.4) and the thread that makes the frames
+    // 28 ms: a frame every 31.25 ms is all it can do, the base would fail at once.
+    constexpr double Gpu = 0.017;
+    const double busy = FrameWorkTime(Gpu, 32 * 0.028, 1.0, FallbackFrame);
+    Check(Near(busy, 0.028, 1e-9), "a frame takes what its slowest part takes (" +
+                                       std::to_string(busy * 1e3) + " ms)");
+    Rig slow{Mode::Auto};
+    slow.Start();
+    slow.Run(600.0, FallbackFrame, busy);
+    Check(slow.reg.Pace() == 3 && slow.switches == 1,
+          "a command thread that takes 28 ms a frame never tries the base (" +
+              std::to_string(slow.switches - 1) + " changes)");
+
+    // 17 ms on both: the base, and it holds.
+    Rig fits{Mode::Auto};
+    fits.Start();
+    const double took =
+        fits.Until(2, 60.0, FallbackFrame, FrameWorkTime(Gpu, 32 * 0.017, 1.0, FallbackFrame));
+    fits.Run(580.0, BaseFrame, FrameWorkTime(Gpu, 64 * 0.017, 1.0, BaseFrame));
+    Check(Near(took, 10.0, 0.05) && fits.reg.Pace() == 2 && fits.switches == 2,
+          "17 ms on the GPU and on the command thread goes to the base and stays");
+    Check(Near(FrameWorkTime(Gpu, -1.0, 1.0, FallbackFrame), Gpu, 1e-12),
+          "where the thread's time is not told the GPU's decides alone");
+}
+
 static void PlanChangesWithThePanel() {
     Rig rig{Mode::Auto};
     rig.Start();
@@ -292,6 +341,8 @@ int main() {
     FixedModesNeverSwitch();
     HitchesAndLoadsAreIgnored();
     PlanChangesWithThePanel();
+    GpuTimeIsTheGpusOwnWhereKnown();
+    ASlowCommandThreadKeepsTheFallback();
     std::printf("%s\n", failures == 0 ? "all ok" : "FAILED");
     return failures == 0 ? 0 : 1;
 }

@@ -720,6 +720,15 @@ void VideoOutDriver::SubmitHmdFrameInternal(VideoOutPort* port, const HmdFrame& 
     Vulkan::FrameStats::Time(Vulkan::FrameStats::Stage::CatchUp,
                              std::chrono::steady_clock::now() - handed_over);
 
+#ifdef SHADPS4_VPKENGINE_RENDERER
+    // (VPKEngine: this runs on the GPU thread, once per frame; what the thread has used of the
+    // processor so far is told to the pace governor, which does not try a pace that thread
+    // cannot make)
+    if (vp_presenter) {
+        Vulkan::FrameStats::CpTime(static_cast<u64>(Vulkan::FrameStats::ThreadTime().count()));
+    }
+#endif
+
     if (Vulkan::FrameStats::Enabled()) {
         // This runs on the GPU thread, once per frame: what it has used of the processor
         // since the last time is what the frame cost it.
@@ -1060,6 +1069,12 @@ void VideoOutDriver::PresentThread(std::stop_token token) {
             }
             // Eight looks a refresh is also often enough to tell how busy the GPU is.
             Vulkan::FrameStats::GpuLook(presenter->IsGpuBusy());
+#ifdef SHADPS4_VPKENGINE_RENDERER
+            // (VPKEngine also has the GPU's own time: the pace governor goes by it)
+            if (vp_presenter) {
+                Vulkan::FrameStats::GpuTime(VpkengineRenderer::Present::GpuTimeNs());
+            }
+#endif
             // A title that takes more than two refreshes of the display for a frame is on a
             // pace of its own: its frames are shown for two refreshes or for three as they
             // happen to fall, and what moves in the picture moves in jerks. Where it is known

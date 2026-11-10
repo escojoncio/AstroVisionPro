@@ -12,6 +12,7 @@
 
 #include "common/assert.h"
 #include "common/debug.h"
+#include "common/diagnostics.h"
 #include "common/polyfill_thread.h"
 #include "common/thread.h"
 #include "core/debug_state.h"
@@ -197,6 +198,7 @@ void Liverpool::Process(std::stop_token stoken) {
 
     while (!stoken.stop_requested()) {
         {
+            const Common::DiagWaitScope idle{Common::DiagWait::CpIdle};
             std::unique_lock lk{submit_mutex};
             Common::CondvarWait(submit_cv, lk, stoken,
                                 [this] { return num_commands || num_submits || submit_done; });

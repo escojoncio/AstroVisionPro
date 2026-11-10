@@ -338,6 +338,8 @@ public:
             changed = now;
             said_at = now;
             Vulkan::FrameStats::TakeGpuLoad();
+            Vulkan::FrameStats::TakeGpuTime();
+            Vulkan::FrameStats::TakeCpTime();
         } else {
             if (mode) {
                 FollowPlan(frame, now);
@@ -466,6 +468,11 @@ private:
 
     void Decide(Clock::time_point now, s32 fixed) {
         const float load = Vulkan::FrameStats::TakeGpuLoad();
+        // (the GPU's own time and the command thread's processor time over the same window,
+        // where the renderer tells them)
+        const double busy = Vulkan::FrameStats::TakeGpuTime();
+        const double cp = Vulkan::FrameStats::TakeCpTime();
+        const double span = std::chrono::duration<double>(now - window_start).count();
         const u32 frames = window_frames;
         const double taken = frames != 0 ? window_time / frames : 0.0;
         window_start = now;
@@ -488,7 +495,9 @@ private:
         // do than it gets done).
         const double gpu = std::min(load, 1.0f) * taken;
         if (mode) {
-            regulator.Gpu(gpu, static_cast<int>(frames));
+            regulator.Gpu(Pacing::FrameWorkTime(Pacing::GpuFrameTime(busy, span, taken, gpu), cp,
+                                                span, taken),
+                          static_cast<int>(frames));
         }
         const auto since_change = now - changed;
         const auto cost_at = [&](s32 other) { return gpu * cost[other] / cost[level]; };

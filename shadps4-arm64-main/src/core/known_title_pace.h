@@ -49,6 +49,31 @@ inline Plan MakePlan(double panel) {
     return plan;
 }
 
+/// How long the GPU worked on a frame of a window, for Regulator::Gpu. `busy` is the time the
+/// GPU's command buffers ran during the window's `span` seconds, where the renderer has that
+/// figure (below zero where it has none): that share of the `taken` seconds a frame took.
+/// Without it, `in_flight`: the share of the looks that found a frame handed to the GPU and not
+/// finished, of a frame's time, which counts the time a frame waits behind the one before as
+/// work (measured on a headset: 4 to 6 ms over, enough to never leave the fallback).
+inline double GpuFrameTime(double busy, double span, double taken, double in_flight) {
+    if (busy >= 0.0 && span > 0.0) {
+        return std::min(busy / span, 1.0) * taken;
+    }
+    return in_flight;
+}
+
+/// What Regulator::Gpu is told a frame took: `gpu` (GpuFrameTime), or what the thread that turns
+/// the title's commands into the renderer's used of a processor for it, where that is told and
+/// is more (`cp` seconds of processor time during the window's `span` seconds, below zero where
+/// it is not told; `taken` seconds a frame). A frame that thread cannot make within the base
+/// pace misses its refresh however idle the GPU is: going back to the base would fail at once.
+inline double FrameWorkTime(double gpu, double cp, double span, double taken) {
+    if (cp >= 0.0 && span > 0.0) {
+        return std::max(gpu, std::min(cp / span, 1.0) * taken);
+    }
+    return gpu;
+}
+
 /// Chooses between the base and the fallback pace of a plan from the frames' intervals and
 /// from how long the GPU worked on them. All times are in seconds, on any clock that does not
 /// go back.
