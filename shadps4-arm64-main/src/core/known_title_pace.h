@@ -5,6 +5,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
+#include <string>
 
 /// What decides how many refreshes of the headset a frame of the title is given, as plain
 /// numbers (nothing of the emulator in here, so that it can be tried alone:
@@ -62,16 +64,49 @@ inline double GpuFrameTime(double busy, double span, double taken, double in_fli
     return in_flight;
 }
 
+/// The command thread's share of a frame, for FrameWorkTime: `cp` seconds of processor time
+/// during the window's `span` seconds, of the `taken` seconds a frame took. Below zero where
+/// `cp` is not told (below zero) or the window has no length.
+inline double CpFrameTime(double cp, double span, double taken) {
+    if (cp >= 0.0 && span > 0.0) {
+        return std::min(cp / span, 1.0) * taken;
+    }
+    return -1.0;
+}
+
 /// What Regulator::Gpu is told a frame took: `gpu` (GpuFrameTime), or what the thread that turns
 /// the title's commands into the renderer's used of a processor for it, where that is told and
 /// is more (`cp` seconds of processor time during the window's `span` seconds, below zero where
 /// it is not told; `taken` seconds a frame). A frame that thread cannot make within the base
 /// pace misses its refresh however idle the GPU is: going back to the base would fail at once.
 inline double FrameWorkTime(double gpu, double cp, double span, double taken) {
-    if (cp >= 0.0 && span > 0.0) {
-        return std::max(gpu, std::min(cp / span, 1.0) * taken);
+    return std::max(gpu, CpFrameTime(cp, span, taken));
+}
+
+/// The two figures a frame's time is the more of (GpuFrameTime and CpFrameTime), per frame and
+/// in seconds, and which of them was the more: the one the regulator went by. `cp` is below
+/// zero where the renderer does not tell it. For the logs; the regulator's rule does not look at it.
+struct Figures {
+    double gpu{};
+    double cp{-1.0};
+    bool by_cp{}; ///< The command thread's figure was the more.
+};
+
+/// "GPU" or "command thread": the figure that decided.
+inline const char* DecidedBy(const Figures& figures) {
+    return figures.by_cp ? "command thread" : "GPU";
+}
+
+/// Both figures in a line, e.g. "GPU 22.0 ms, command thread 18.1 ms".
+inline std::string FiguresText(const Figures& figures) {
+    char text[96];
+    if (figures.cp >= 0.0) {
+        std::snprintf(text, sizeof text, "GPU %.1f ms, command thread %.1f ms", figures.gpu * 1e3,
+                      figures.cp * 1e3);
+    } else {
+        std::snprintf(text, sizeof text, "GPU %.1f ms, command thread not told", figures.gpu * 1e3);
     }
-    return gpu;
+    return text;
 }
 
 /// Chooses between the base and the fallback pace of a plan from the frames' intervals and
@@ -112,6 +147,7 @@ public:
         int frames{};
         double span{};
         double need{};
+        Figures figures{}; ///< The two figures `gpu` is the more of, over the window.
     };
 
     /// The last window closed (to tell once a minute what is seen).
@@ -119,6 +155,7 @@ public:
         double gpu{};
         int late{};
         int frames{};
+        Figures figures{}; ///< The two figures `gpu` is the more of, over the window.
     };
 
     explicit Regulator(Mode mode_) : mode{mode_}, plan{MakePlan(120.0)} {}
@@ -141,6 +178,21 @@ public:
         gpu_sum += per_frame * frames;
         gpu_frames += frames;
         measured = true;
+    }
+
+    /// The same, with the two figures `per_frame` is the more of (for the logs: nothing else
+    /// changes).
+    void Gpu(double per_frame, int frames, const Figures& parts) {
+        if (frames <= 0) {
+            return;
+        }
+        Gpu(per_frame, frames);
+        parts_gpu_sum += parts.gpu * frames;
+        parts_frames += frames;
+        if (parts.cp >= 0.0) {
+            parts_cp_sum += parts.cp * frames;
+            parts_cp_frames += frames;
+        }
     }
 
     /// A frame arrived at `now`, `interval` after the one before. True when the pace changed.
@@ -174,7 +226,8 @@ public:
         const double avg = gpu_n != 0 ? gpu_sum / gpu_n : 0.0;
         const int counted = frames;
         const int slow = late;
-        seen = {avg, slow, counted};
+        const Figures figures = WindowFigures(avg);
+        seen = {avg, slow, counted, figures};
         ClearWindow(now);
 
         const double base_period = plan.base / plan.panel;
@@ -219,7 +272,7 @@ public:
         at_fallback = to_fallback;
         over = 0;
         good = 0.0;
-        last = {why, to_fallback, avg, slow, counted, span, need};
+        last = {why, to_fallback, avg, slow, counted, span, need, figures};
         return true;
     }
 
@@ -252,8 +305,25 @@ public:
     }
 
 private:
+    /// The two figures of the window being closed (`avg` for the GPU's where none was told).
+    Figures WindowFigures(double avg) const {
+        Figures figures{.gpu = avg};
+        if (parts_frames != 0) {
+            figures.gpu = parts_gpu_sum / parts_frames;
+        }
+        if (parts_cp_frames != 0) {
+            figures.cp = parts_cp_sum / parts_cp_frames;
+            figures.by_cp = figures.cp > figures.gpu;
+        }
+        return figures;
+    }
+
     void ClearWindow(double now) {
         window_start = now;
+        parts_gpu_sum = 0.0;
+        parts_cp_sum = 0.0;
+        parts_frames = 0;
+        parts_cp_frames = 0;
         gpu_sum = 0.0;
         gpu_frames = 0;
         frames = 0;
@@ -271,6 +341,10 @@ private:
     double window_start{};
     double gpu_sum{};
     int gpu_frames{};
+    double parts_gpu_sum{}; // The figures of Gpu(..., parts), for the logs only.
+    double parts_cp_sum{};
+    int parts_frames{};
+    int parts_cp_frames{};
     int frames{};
     int late{};
     int over{};       // Seconds in a row at the base with the GPU over 95%.

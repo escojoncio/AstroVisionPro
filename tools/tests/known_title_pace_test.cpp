@@ -11,6 +11,7 @@
 // window comes to exactly one second.
 #include <cmath>
 #include <cstdio>
+#include <optional>
 #include <string>
 
 #include "core/known_title_pace.h"
@@ -41,6 +42,7 @@ struct Rig {
     Regulator reg;
     double t = 1000.0;
     int switches = 0;
+    std::optional<Figures> parts; ///< Told with each frame's GPU time when set.
 
     explicit Rig(Mode mode, double panel = 100.0) : reg{mode} {
         reg.SetPlan(MakePlan(panel));
@@ -50,7 +52,11 @@ struct Rig {
     bool Frame(double interval, double gpu) {
         t += interval;
         if (gpu >= 0.0) {
-            reg.Gpu(gpu, 1);
+            if (parts) {
+                reg.Gpu(gpu, 1, *parts);
+            } else {
+                reg.Gpu(gpu, 1);
+            }
         }
         const bool changed = reg.Frame(t, interval);
         switches += changed ? 1 : 0;
@@ -331,6 +337,93 @@ static void PlanChangesWithThePanel() {
     Check(rig.reg.Pace() == 3, "... and at the fallback again when there is one");
 }
 
+static void LogsSayWhichFigureDecided() {
+    // CpFrameTime is the share FrameWorkTime takes the more of.
+    constexpr double Gpus[] = {0.005, 0.017, 0.028};
+    constexpr double Cps[] = {-1.0, 0.0, 32 * 0.010, 32 * 0.028, 100.0};
+    bool same = true;
+    for (const double gpu : Gpus) {
+        for (const double cp : Cps) {
+            same = same && FrameWorkTime(gpu, cp, 1.0, FallbackFrame) ==
+                               std::max(gpu, CpFrameTime(cp, 1.0, FallbackFrame));
+        }
+    }
+    Check(same && CpFrameTime(-1.0, 1.0, FallbackFrame) < 0.0 && CpFrameTime(1.0, 0.0, FallbackFrame) < 0.0,
+          "CpFrameTime: what FrameWorkTime takes the more of, below zero where not told");
+
+    // The command thread is the more: it decided, and both figures are in the window.
+    constexpr double Thread = 0.028;
+    Rig by_thread{Mode::Auto};
+    by_thread.Start();
+    by_thread.parts = Figures{.gpu = GpuGood, .cp = Thread};
+    by_thread.Run(1.0, FallbackFrame, Thread);
+    const Regulator::Seen& seen = by_thread.reg.Window();
+    Check(seen.figures.by_cp && Near(seen.figures.gpu, GpuGood, 1e-9) && Near(seen.figures.cp, Thread, 1e-9) &&
+              Near(seen.gpu, Thread, 1e-9),
+          "the command thread's 28 ms is the figure the window went by");
+    Check(std::string{DecidedBy(seen.figures)} == "command thread" &&
+              FiguresText(seen.figures) == "GPU 15.0 ms, command thread 28.0 ms",
+          "... and the text says so, with both: " + FiguresText(seen.figures));
+
+    // The GPU is the more.
+    Rig by_gpu{Mode::Auto};
+    by_gpu.Start();
+    by_gpu.parts = Figures{.gpu = 0.022, .cp = 0.018};
+    by_gpu.Run(1.0, FallbackFrame, 0.022);
+    Check(!by_gpu.reg.Window().figures.by_cp && std::string{DecidedBy(by_gpu.reg.Window().figures)} == "GPU" &&
+              FiguresText(by_gpu.reg.Window().figures) == "GPU 22.0 ms, command thread 18.0 ms",
+          "the GPU's 22 ms against the thread's 18 decides, and the text says so");
+
+    // The renderer does not tell the thread's time.
+    Rig untold{Mode::Auto};
+    untold.Start();
+    untold.parts = Figures{.gpu = GpuGood};
+    untold.Run(1.0, FallbackFrame, GpuGood);
+    Check(!untold.reg.Window().figures.by_cp && untold.reg.Window().figures.cp < 0.0 &&
+              FiguresText(untold.reg.Window().figures) == "GPU 15.0 ms, command thread not told",
+          "no thread time told: the GPU decides alone, and the text says that");
+
+    // Mixed window: the thread is the more on 33 frames of 64, but the GPU's mean is the greater.
+    Rig mixed{Mode::Auto};
+    mixed.Start();
+    for (int k = 0; k < 64; ++k) {
+        const bool thread = k < 33;
+        mixed.parts = thread ? Figures{.gpu = 0.015, .cp = 0.020} : Figures{.gpu = 0.040, .cp = 0.005};
+        mixed.Frame(BaseFrame, mixed.parts->gpu);
+    }
+    const Figures& blend = mixed.reg.Window().figures;
+    Check(mixed.reg.Window().frames == 64 && !blend.by_cp && Near(blend.gpu, 0.0271, 1e-4) &&
+              Near(blend.cp, 0.0127, 1e-4),
+          "the mean decides, not the count of frames: " + FiguresText(blend) + " by " + DecidedBy(blend));
+
+    // A switch carries the figures of the window that made it (the way back to the base).
+    Rig back{Mode::Auto};
+    back.Start();
+    back.parts = Figures{.gpu = GpuGood, .cp = 0.012};
+    const double took = back.Until(2, 60.0, FallbackFrame, GpuGood);
+    const Regulator::Switch& made = back.reg.Last();
+    Check(took > 0.0 && made.why == Regulator::Why::Good && !made.figures.by_cp &&
+              Near(made.figures.gpu, GpuGood, 1e-9) && Near(made.figures.cp, 0.012, 1e-9),
+          "the switch back to the base carries both figures");
+
+    // The figures change nothing of the rule: the same frames, told with and without them, make the same changes.
+    Rig plain{Mode::Auto}, told{Mode::Auto};
+    plain.Start();
+    told.Start();
+    told.parts = Figures{.gpu = GpuGood, .cp = 0.012};
+    bool alike = true;
+    for (int k = 0; k < 64 * 40; ++k) {
+        const bool heavy = k > 64 * 20 && k < 64 * 26;
+        const double gpu = heavy ? GpuHeavy : GpuGood;
+        const double interval = plain.reg.Pace() == 2 ? BaseFrame : FallbackFrame;
+        plain.Frame(interval, gpu);
+        told.Frame(interval, gpu);
+        alike = alike && plain.reg.Pace() == told.reg.Pace() && plain.switches == told.switches;
+    }
+    Check(alike && plain.switches > 1, "told with the figures or not, the pace is the same (" +
+                                           std::to_string(plain.switches) + " changes)");
+}
+
 int main() {
     PlanFromPanel();
     StartsAtTheFallback();
@@ -343,6 +436,7 @@ int main() {
     PlanChangesWithThePanel();
     GpuTimeIsTheGpusOwnWhereKnown();
     ASlowCommandThreadKeepsTheFallback();
+    LogsSayWhichFigureDecided();
     std::printf("%s\n", failures == 0 ? "all ok" : "FAILED");
     return failures == 0 ? 0 : 1;
 }

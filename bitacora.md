@@ -4,6 +4,9 @@ ASTRO BOT Rescue Mission (CUSA12392) y KITCHEN (CUSA06799), PSVR, en Apple Visio
 Detalle anterior en `git log -p bitacora.md`. Detalle técnico estable de la ruta GPU PS4: `notas/vpkengine-ps4.md`.
 
 ## Last done
+- 2026-11-10 RONDA POR-DRAW + LOGS_10 (SIN BUILD; motor aadec0f, ctest 621/621; app: test `known_title_pace_test` ok). Modo sombra (LOGS_10, brazo en los últimos 30-40 s): la sombra no ve ninguna diferencia de estado entre Vulkan y VPKEngine y aun así se ve distinto → la herramienta es ciega a: clears por rect-list, stencil (func/ref/ops), z_read_only, slice de depth, depth bounds, DB_SHADER_CONTROL, a2m, write masks, contenido de CB, traducción de shaders. Sonda decisiva: captura de usuario L1+R1 + L3 con el brazo en pantalla.
+  - Motor: CP por draw (memo de peligros/programa/binds de 256 entradas comparando palabras, `quiet()`, scratch vectors, `userDataBits`; `MemoryTracker` `layout_` in situ) y compilación (`DrawFolder` en `frame_compiler`, span atómico en `LabelQueue`). Opt-outs `VPVK_FRAME_FOLD=0`, `VPKENGINE_{HAZARD,PROGRAM,BIND}_MEMO_OFF=1`. Banco x86: −18 % por draw, −42 % compilación; estimado en visor ≈ −4,5 ms/frame de 24-28 (objetivo ≤6,5 µs/draw NO alcanzado, ~8,4 esperado). No es mejora «abismal».
+  - App: textos «Pace governor» ahora dicen si decidió la GPU o el hilo de comandos (`Figures{gpu,cp,by_cp}`); regla y umbrales intactos.
 - 2026-11-10 RONDA LOGS_8 (MSAA 4x) + LOGS_9 (MSAA 1x), misma build a762289 / motor 8e85a98. Usuario: brazos del gorila a través y encima de todo, efectos solo en un ojo y encima de todo, corrupción esporádica de shaders/efectos, línea negra en aristas, fps sin mejora y muchos momentos <20; nada de eso con KosmicKrisp. Análisis y código por subagentes; revisión adversarial en 2 rondas sin bloqueantes.
   - MEDIDO por frame guest, 4x→1x: zona ~2000 draws 26,3→31,3 fps (GPU 29,8→22,7 ms); ~1450 draws 32,7→33,2 (24,1→20,0); ~2700 draws 19,0→22,6 (36,0→29,1); zona final ~1300 draws 20,1→23,1 (46,2→38,6, GPU 89-93 %). El ahorro de 1x está casi todo en transparencias.
   - Panel 100 Hz: solo existen 50 fps (base, 2 refrescos) y 33,3 (fallback, 3). Regulador en fallback ~96 % de la sesión: sube con GPU <18,4 ms durante `need` s (known_title_pace.h ~170) y su cifra de GPU eran frames en vuelo (+4-6 ms sobre `busy_union`).
@@ -23,17 +26,16 @@ Detalle anterior en `git log -p bitacora.md`. Detalle técnico estable de la rut
 
 ## Current state
 - Funciona (confirmado en visor): imagen sin polígonos negros ni bloques; sin tirón periódico; sin cuelgues con hilo de envío.
-- Sin compilar ni probar en visor: todo lo de la ronda LOGS_8/9 y lo de LOGS_7.
+- Sin compilar ni probar en visor: rondas LOGS_7, LOGS_8/9 y por-draw.
 - Pendiente: fps (tope 33,3 por regulador; CP 24-28 ms/frame; GPU 22,7 ms en 1x y 29,8 en 4x; caídas <20 en zonas de ~2700 draws y en la zona final con GPU saturada); brazos del gorila; efectos en un solo ojo; corrupción esporádica; línea negra en aristas; sombras de luces locales; KITCHEN: crash guest nulo tras assert del juego (unverified).
 - Para 50 fps en juego cargado hacen falta a la vez CP ≤~18 ms y GPU ≤18,4 ms por frame.
 
 ## Pendiente (orden)
-1. NO compilar hasta que el usuario pase el log que tiene pendiente (sesión con Motor gráfico → Sombra en la zona del gorila: compara por draw contra Vulkan, `ASTRO_SHADOW diff/summary`, shadow_compare.h ~448) y diga si la línea negra desaparece con MSAA 1x.
-2. Coste por draw del CP (10,1 µs → objetivo ~6,5): reutilizar enlaces/lookup del draw anterior con el mismo material; `bind_table_other`; adaptador.
+1. NO compilar hasta que el usuario pase la captura L1+R1+L3 (Modo diagnóstico, brazo en pantalla) y diga si la línea negra desaparece con MSAA 1x. Opcional: ampliar la sombra (stencil, z_read_only, depth bounds, DB_SHADER_CONTROL, clears rect-list; `tests/video_core/test_shadow_compare.cpp`).
+2. Coste por draw del CP (hecha 1.ª pasada; queda ~8,4 → objetivo ~6,5 µs): reutilizar enlaces/lookup del draw anterior con el mismo material; `bind_table_other`; adaptador.
 3. Zona final (GPU 38-46 ms con ~1300 draws): atribuir por pase con `gpu.excl`. Espera GDS de `EVENT_WRITE_EOS`.
 4. Con la captura de usuario y la sesión en sombra: causa de brazos / efectos de un ojo; con `unaligned_cb_gpu_written`: corrupción.
 5. Línea negra: arreglo diseñado arriba. Sombras locales: `findTarget`. D2 (depth array limpiado slice a slice); NaN RGBA16F; LDS por lane / v_mbcnt.
-6. Textos «Pace governor: the GPU took…» no dicen si la cifra es de GPU o de CP.
 
 ## Decisions
 - Arreglos generales de GPU PS4, nunca por juego, dirección ni hash; opt-out por variable de entorno; todo activo por defecto (el usuario no puede poner variables).

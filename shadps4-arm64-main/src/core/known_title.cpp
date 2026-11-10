@@ -420,10 +420,12 @@ private:
             if (regulator.GetPlan().fallback != 0 && mode == Pacing::Mode::Auto) {
                 const Pacing::Regulator::Seen& seen = regulator.Window();
                 LOG_INFO(Core,
-                         "Pace governor: at the {} pace ({} refreshes), the GPU took {:.1f} ms per "
-                         "{:.1f} ms base frame, {} of {} frames missed their refresh",
-                         regulator.AtFallback() ? "fallback" : "base", pace, seen.gpu * 1e3,
-                         plan.base / plan.panel * 1e3, seen.late, seen.frames);
+                         "Pace governor: at the {} pace ({} refreshes), the {} took {:.1f} ms per "
+                         "{:.1f} ms base frame ({}), {} of {} frames missed their refresh",
+                         regulator.AtFallback() ? "fallback" : "base", pace,
+                         Pacing::DecidedBy(seen.figures), seen.gpu * 1e3,
+                         plan.base / plan.panel * 1e3, Pacing::FiguresText(seen.figures), seen.late,
+                         seen.frames);
             } else {
                 LOG_INFO(Core, "Pace governor: frames are given {} refreshes ({:.1f} a second)",
                          pace, plan.panel / pace);
@@ -450,17 +452,19 @@ private:
             return;
         case Pacing::Regulator::Why::Heavy:
             LOG_INFO(Core,
-                     "Pace governor: the GPU took {:.1f} ms per {:.1f} ms base frame for two "
+                     "Pace governor: the {} took {:.1f} ms per {:.1f} ms base frame ({}) for two "
                      "seconds in a row ({} of {} frames late): the fallback, {} refreshes "
                      "({:.1f} a second); back to the base after {:.0f} s of good frames",
-                     made.gpu * 1e3, base_ms, made.late, made.frames, plan.fallback,
+                     Pacing::DecidedBy(made.figures), made.gpu * 1e3, base_ms,
+                     Pacing::FiguresText(made.figures), made.late, made.frames, plan.fallback,
                      plan.FallbackFps(), made.need);
             return;
         case Pacing::Regulator::Why::Good:
             LOG_INFO(Core,
-                     "Pace governor: the GPU took {:.1f} ms per {:.1f} ms base frame ({} of {} "
+                     "Pace governor: the {} took {:.1f} ms per {:.1f} ms base frame ({}; {} of {} "
                      "frames late) for {:.0f} s in a row: the base, {} refreshes ({:.1f} a second)",
-                     made.gpu * 1e3, base_ms, made.late, made.frames, regulator.Need(),
+                     Pacing::DecidedBy(made.figures), made.gpu * 1e3, base_ms,
+                     Pacing::FiguresText(made.figures), made.late, made.frames, regulator.Need(),
                      plan.base, plan.BaseFps());
             return;
         }
@@ -495,9 +499,10 @@ private:
         // do than it gets done).
         const double gpu = std::min(load, 1.0f) * taken;
         if (mode) {
-            regulator.Gpu(Pacing::FrameWorkTime(Pacing::GpuFrameTime(busy, span, taken, gpu), cp,
-                                                span, taken),
-                          static_cast<int>(frames));
+            const double gpu_time = Pacing::GpuFrameTime(busy, span, taken, gpu);
+            regulator.Gpu(Pacing::FrameWorkTime(gpu_time, cp, span, taken),
+                          static_cast<int>(frames),
+                          {.gpu = gpu_time, .cp = Pacing::CpFrameTime(cp, span, taken)});
         }
         const auto since_change = now - changed;
         const auto cost_at = [&](s32 other) { return gpu * cost[other] / cost[level]; };
