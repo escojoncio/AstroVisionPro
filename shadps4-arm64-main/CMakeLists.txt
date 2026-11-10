@@ -1497,6 +1497,7 @@ if (SHADPS4_VISIONOS)
                 src/platform/visionos/vpkengine_mirror.h
                 src/platform/visionos/vpkengine_mirror.cpp
                 ${VPKENGINE_PS4_DIR}/src/report.cpp
+                ${VPKENGINE_PS4_DIR}/src/shader_stats.cpp
                 src/platform/visionos/vpkengine_renderer.h
                 src/platform/visionos/vpkengine_renderer.mm
                 src/platform/visionos/vpkengine_presenter.h
