@@ -39,9 +39,8 @@ public:
                                                      u32& eye_height);
     bool DeliverHmdFrame(Vulkan::Frame* frame, const Core::Vr::PresentedFrame& info);
     bool IsFrameFinished(const Vulkan::Frame* frame) const;
-    bool IsGpuBusy() const {
-        return false;
-    }
+    /// Whether the GPU still has frames of the title's before it (what the title's governor sizes the scene by).
+    bool IsGpuBusy() const;
 
     // There is no window: these present nothing, but the flip completes (a frame that stands
     // for nothing; a null one would have the driver retry forever).

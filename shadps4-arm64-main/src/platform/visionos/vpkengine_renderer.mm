@@ -422,6 +422,7 @@ struct Engine {
     std::thread watchdog;
     std::condition_variable_any watchCv;  // (the engine lock is recursive: condition_variable takes only std::mutex)
     std::atomic<u64> submits{0};
+    std::atomic<u64> submittedPub{0};  // the device's frames handed over so far, for Present::GpuBusy (other threads)
     std::atomic<unsigned> errorLines{0};
     // Set by the rasterizer: page watches (renderer hooks watchWrites / watchOwned).
     std::function<void(u64, u64)> watchWrites;
@@ -764,7 +765,7 @@ struct Engine {
             return;
         }
         const u64 f = submits.load();
-        if (line.rfind("gpu.", 0) == 0 && line.rfind("gpu.metal", 0) != 0 && f != 0 && f % kEvery != 1) return;
+        if (line.rfind("gpu.", 0) == 0 && line.rfind("gpu.metal", 0) != 0 && line.rfind("gpu.excl", 0) != 0 && f != 0 && f % kEvery != 1) return;
         LOG_INFO(Render_Vulkan, "VPKENGINE_GPU {}", line);
     }
 
@@ -846,6 +847,10 @@ struct Engine {
             fc.bc = mtl != nil && [mtl supportsBCTextureCompression];
             vpps4::setFormatCaps(fc);
         } else {
+            // The GPU's exclusive time per pass with the megabytes it loads and stores (gpu.excl in the log, one report
+            // every 30 s): on unless the environment already says otherwise (VP_EXCL_TIMING=0).
+            setenv("VP_EXCL_TIMING", "1", 0);
+            setenv("VP_EXCL_SECONDS", "30", 0);
             backend = std::make_unique<vpgpu::metal2::MetalBackend>(shaders, [this](const std::string& l) { log(l); },
                                                                    options);
             if (!backend->ok()) {
@@ -956,6 +961,7 @@ struct Engine {
         scheduler = std::make_unique<vpps4::Scheduler>(*renderer, *device, policy, [] { return msNow(); });
         scheduler->setSubmitHook([this] {
             ++submits;
+            submittedPub.store(device->submittedFrames() + 1);  // (the hook runs just before the frame is handed over)
             if (pm::enabled()) {  // the time between one picture's submit and the next: the guest's frame time
                 static pm::Hist& frame = pm::hist("TIME", "guest_frame_us");
                 static std::atomic<u64> previous{0};
@@ -3854,6 +3860,12 @@ bool Finished(int slot) {
     PresentState& p = present();
     std::scoped_lock l{p.done_mutex};
     return p.done[u32(slot) % kSlots];
+}
+
+bool GpuBusy() {
+    Engine& e = engine();
+    const u64 submitted = e.submittedPub.load();  // (not zero: the device exists)
+    return submitted != 0 && e.device->completedFrames() < submitted;
 }
 
 } // namespace Present

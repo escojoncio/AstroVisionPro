@@ -59,6 +59,10 @@ bool Presenter::DeliverHmdFrame(Vulkan::Frame* frame, const Core::Vr::PresentedF
     return true;
 }
 
+bool Presenter::IsGpuBusy() const {
+    return Present::GpuBusy();
+}
+
 bool Presenter::IsFrameFinished(const Vulkan::Frame* frame) const {
     return frame == nullptr || frame->host_buffer < 0 || Present::Finished(frame->host_buffer);
 }

@@ -111,6 +111,8 @@ int ComposeTexture(const AmdGpu::Image& texture, Core::Vr::Fov& fov, u32& eye_wi
 /// Hands the frame of `slot` to the compositor once the GPU has drawn it (blocks until then).
 void Deliver(int slot, const Core::Vr::PresentedFrame& info);
 bool Finished(int slot);
+/// Whether a frame handed to the GPU has not finished on it yet (takes no lock: looked at many times a refresh).
+bool GpuBusy();
 } // namespace Present
 
 } // namespace VpkengineRenderer
