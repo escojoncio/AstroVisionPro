@@ -943,9 +943,9 @@ struct Engine {
                 }
             return false;
         };
-        // Opt-in (VPK_SUBMIT_THREAD=1): frame encoding on its own thread. Not on by default: the Metal
-        // backend was written for one thread that creates resources and submits.
-        if (const char* t = std::getenv("VPK_SUBMIT_THREAD"); !shadow && t && *t && *t != '0') device->startSubmitThread(2);
+        // Frame encoding on its own thread (the Device serializes its backend calls; compose and the eye statistics drain
+        // it first): the thread that records goes on with the next frame meanwhile. VPK_SUBMIT_THREAD=0: inline.
+        if (const char* t = std::getenv("VPK_SUBMIT_THREAD"); !shadow && !(t && *t == '0')) device->startSubmitThread(2);
         // What vpps4 skips / approximates / cannot translate goes to the census.
         vpps4::setReportSink([](void*, const char* cat, const char* key, const char* detail, u64 count) {
             Census::NoteN(cat ? cat : "vpps4", key ? key : "", detail ? detail : "", count);
