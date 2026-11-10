@@ -34,6 +34,9 @@
 #include "input/controller.h"
 #include "platform/visionos/astro_core.h"
 #include "platform/visionos/astro_renderer.h"
+#ifdef SHADPS4_VPKENGINE_RENDERER
+#include "platform/visionos/vpkengine_renderer.h"
+#endif
 
 #include <pthread.h>
 
@@ -237,10 +240,15 @@ void astro_core_pad_state(const AstroPadState* state) {
     static std::atomic<bool> bench_combo{};
     const bool combo = (state->buttons & AstroPadL3) != 0 && (state->buttons & AstroPadR3) != 0;
     if (bench_combo.exchange(combo) != combo && combo && Common::Diagnostics()) {
-        // (the test is Vulkan's: with VPKEngine as the renderer there is nothing to measure)
+        // (with Vulkan in the picture - vulkan, shadow - the test is Vulkan's; else VPKEngine's)
         if (AstroRenderer::UsesVulkan()) {
             Vulkan::GpuBench::Start();
         }
+#ifdef SHADPS4_VPKENGINE_RENDERER
+        else {
+            VpkengineRenderer::StartGpuBench();
+        }
+#endif
     }
     // L1 and R1 held and R3 pressed: a mark in the log (game_clock.h), for the player to say
     // "now I see it" (the shadows and effects the title leaves out when its GPU looks slow).

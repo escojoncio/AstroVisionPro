@@ -98,6 +98,10 @@ private:
 /// recorded goes to its null backend at its next Flush; this only sets a flag, it takes no lock.
 void ShadowEndFrame();
 
+/// «Modo diagnóstico» (L3+R3, astro_core.mm): starts the GPU test of video_core/renderer_vulkan/gpu_bench.h on this renderer
+/// (what each pixel shader of the scene costs, by leaving its draws out). Not for the shadow: Vulkan's test is the one then.
+void StartGpuBench();
+
 // The headset's frames (used by vpkengine_presenter.cpp, which hands them to videoout/driver.cpp):
 // what is drawn goes into one of the compositor's Metal textures; a slot index stands for it,
 // -1 when the host has none free (or nothing can be drawn).

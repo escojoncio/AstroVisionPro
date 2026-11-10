@@ -33,6 +33,7 @@
 #include <fmt/ranges.h>
 #include "common/diagnostics.h"
 #include "common/elf_info.h"
+#include "common/hash.h"
 #include "common/logging/log.h"
 #include "common/jit_arena.h"
 #include "common/path_util.h"
@@ -49,6 +50,7 @@
 #include "video_core/amdgpu/regs.h"
 #include "video_core/amdgpu/resource.h"
 #include "video_core/page_manager.h"
+#include "video_core/renderer_vulkan/gpu_bench.h"
 #include "video_core/recent_ranges.h"
 #include "video_core/surface_metas.h"
 #include "vpgpu/core/device.h"
@@ -1693,6 +1695,90 @@ void describeGeometryDraw(const AmdGpu::Regs& regs) {
     dump("ps", regs.ps_program);
 }
 
+// ---- The GPU test (L3+R3, «Modo diagnóstico»): the shader test of video_core/renderer_vulkan/gpu_bench.h ----
+// It leaves out the draws of one pixel shader at a time and measures what a frame costs the GPU meanwhile. Its inputs here:
+// the draws (Rasterizer::Draw, under the engine lock), the GPU's time (below) and the flips (FrameStats::EndFrame of the
+// video-out driver calls GpuBench::NoteFrame). VPKEngine's draw state has no rasterizer discard: the test is made without
+// the steps that leave only a draw's pixels out (StartGpuBench), and the scene passes' own time is not measured.
+namespace gpu_bench = Vulkan::GpuBench;
+
+// The GPU's time: the busy time of the Metal command buffers (the union of their intervals, so overlapping buffers count
+// once; the backend's "GPU busy_union" probe timer, on with the diagnostics mode), taken between two looks - at most one
+// every 10 ms, from the draws - and given to the step the test is in. The work completed in a step's timed part was
+// submitted inside the step (the first half second of every step goes untimed and a frame is in flight for far less).
+struct BenchGpu {
+    bool synced = false;  // the figures below are from a look of this test
+    u64 ns = 0, calls = 0;
+    std::chrono::steady_clock::time_point at{};
+} gBenchGpu;  // (under the engine lock, like Rasterizer::Draw)
+
+void benchGpuTime() {
+    using Clock = std::chrono::steady_clock;
+    BenchGpu& g = gBenchGpu;
+    const auto now = Clock::now();
+    if (g.synced && now - g.at < std::chrono::milliseconds(10)) return;
+    g.at = now;
+    static pm::Timer& busy = pm::timer("GPU", "busy_union");
+    const u64 ns = busy.ns(), calls = busy.calls();
+    if (g.synced && calls > g.calls) {
+        if (const int tag = gpu_bench::TimingTag(); tag >= 0)
+            gpu_bench::NoteGpuTime(0, tag, double(ns - g.ns) / 1e6, 0.0, calls - g.calls);
+    }
+    g.ns = ns, g.calls = calls, g.synced = true;
+}
+
+// A shader as the Vulkan path names it in its test (HashCombine of the program's hash and its permutation), so that the
+// results read alike: VPKEngine has no permutations, the name is that of the program's first (0, nearly always the only
+// one). 0: the stage has no program.
+u64 benchShaderKey(const AmdGpu::ShaderProgram& program) {
+    if (program.Address<VAddr>() == 0) return 0;
+    return HashCombine(static_cast<u64>(AmdGpu::GetParams(program).hash), u64{0});
+}
+
+// What the draw is made with, for the log of a candidate (the counterpart of Vulkan's DescribeDrawState).
+std::string benchDescribeDraw(const AmdGpu::Regs& regs, const vpps4::DrawState& d) {
+    const auto& dc = regs.depth_control;
+    std::string blends;
+    u32 targets = 0, samples = 1;
+    for (unsigned i = 0; i < d.color.size(); ++i) {
+        if (d.color[i].address == 0) continue;
+        blends += fmt::format("{}{}{}", targets == 0 ? "" : ",", d.blend[i].enable ? "blend" : "opaque",
+                              d.color[i].writeMask ? "" : "(no writes)");
+        samples = targets == 0 ? d.color[i].samples : samples;
+        ++targets;
+    }
+    const std::string ps = regs.ps_program.Address<VAddr>() != 0
+                               ? fmt::format("pixel shader: kill {}, writes depth {}", d.psKill ? "yes" : "no",
+                                             d.psExportsZ ? "yes" : "no")
+                               : std::string{"no pixel shader"};
+    return fmt::format("depth test {} func {} write {}, stencil {}; {} colour targets [{}]; {} samples; prim {}; {}",
+                       dc.depth_enable ? "on" : "off", u32(dc.depth_func), dc.depth_write_enable ? "on" : "off",
+                       dc.stencil_enable ? "on" : "off", targets, blends, samples, u32(d.primitive), ps);
+}
+
+// For a draw about to be made: whether the test leaves it out (the draw call is then not made; the clears the draw's
+// metadata asked for were done before it). Keeps the test moving and its GPU time coming while it runs.
+bool benchLeavesOut(const AmdGpu::Regs& regs, const vpps4::DrawState& d, bool geometry) {
+    if (!gpu_bench::ShaderTestRunning()) {
+        gBenchGpu.synced = false;
+        return false;
+    }
+    gpu_bench::Current();
+    benchGpuTime();
+    // A scene pass: depth and a colour target, at least 1024 wide (not the shadow maps, the depth prepass or the
+    // post-processing at the picture's size without depth).
+    bool scene = false;
+    if (d.depth.zFormat != 0 || d.depth.stencilFormat != 0)
+        for (const vpps4::ColorTarget& c : d.color) scene = scene || (c.address != 0 && c.width >= 1024);
+    if (!scene) return false;
+    const u64 fs = benchShaderKey(regs.ps_program);
+    if (gpu_bench::WantsShaderState(fs)) gpu_bench::NoteShaderState(fs, benchDescribeDraw(regs, d));
+    const u64 vs = benchShaderKey(geometry ? regs.es_program : regs.vs_program);
+    // (0 vertices: not known, an indirect draw)
+    const u64 vertices = d.indirectAddress ? 0 : u64(d.count) * d.instances;
+    return gpu_bench::ShaderDraw(true, fs, vs, geometry, vertices) == gpu_bench::DrawAction::Skip;
+}
+
 } // namespace
 
 // ---- Rasterizer ---------------------------------------------------------------------------------
@@ -1954,6 +2040,16 @@ void ShadowEndFrame() {
         gShadowFlip.store(true, std::memory_order_release);
         VideoCore::Shadow::Frames().fetch_add(1, std::memory_order_relaxed);  // (the Tee's comparison writes its summary by these)
     }
+}
+
+void StartGpuBench() {
+    if (!Common::Diagnostics()) return;
+    // (no rasterizer discard in vpps4::DrawState: a draw's pixels cannot be left out on their own)
+    gpu_bench::StartOn("VPKEngine", false);
+    LOG_INFO(Render_Vulkan,
+             "GPU_SHADER_BENCH: VPKEngine: a frame's GPU time is the busy time of the Metal command buffers (probe {}); "
+             "the scene passes' own time is not measured (0.00 in the lines)",
+             pm::enabled() ? "on" : "OFF: no GPU times will come");
 }
 
 Rasterizer::~Rasterizer() {
@@ -2363,7 +2459,8 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
                               b.separateAlpha ? b.alphaFunc : b.colorFunc};
         }
     }
-    e.renderer->draw(d);
+    // (the GPU test, benchLeavesOut: not for the shadow, which follows Vulkan's draws - Vulkan feeds the test then)
+    if (impl->shadow || !benchLeavesOut(regs, d, geometry)) e.renderer->draw(d);
     if (VideoCore::Shadow::Side* side = shadowSide()) {
         // The definitions of Vulkan's half (shadow_record.h): `cleared` is what the renderer reports (its pass starts with
         // a clear of the target: Resolved::color[].cleared, shadowResolved), the depth target is used when the draw

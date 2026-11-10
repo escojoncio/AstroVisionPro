@@ -26,8 +26,18 @@ enum class Mode {
 /// Starts the test (again, if it was running). SHADPS4_GPU_BENCH chooses which: "stages" the
 /// one above; anything else (the default) the shader test below.
 void Start();
-/// The way the draws are made now (Normal while the shader test runs).
+/// Starts the shader test (never the one above) for a renderer other than Vulkan's, named
+/// `renderer` in the log, which logs a line when the test starts and one when it ends (shaders
+/// counted and left out, seconds it took). Without `can_discard_pixels` (no way to leave a draw's
+/// pixels out and run its vertices) there are no steps "without its pixels". The renderer calls
+/// Current() from its draws to keep the test moving, and feeds the rest as below. Diagnostics
+/// mode only.
+void StartOn(const char* renderer, bool can_discard_pixels);
+/// The way the draws are made now (Normal while the shader test runs). It also moves the shader
+/// test on (steps, result): called by the draws.
 Mode Current();
+/// Tests: the clock the tests read, in ns (null: steady_clock).
+void SetClockForTest(s64 (*now)());
 
 // The shader test: what each pixel shader of the scene costs the GPU, measured by leaving its
 // draws out (an Apple GPU times only whole passes). For 4 s the draws of the scene passes (with
@@ -52,7 +62,8 @@ int TimingTag();
 /// The GPU took `ms` (negative: no usable time) for a command buffer tagged `tag`, `scene_ms` of
 /// it in scene passes (timed on their own), timed
 /// by the timer `timer` (each scheduler has its own; the game's is the one with the most time).
-void NoteGpuTime(u32 timer, int tag, double ms, double scene_ms);
+/// `buffers` command buffers made that time together (a renderer that cannot tell them apart).
+void NoteGpuTime(u32 timer, int tag, double ms, double scene_ms, u64 buffers = 1);
 /// A frame was presented (FrameStats::EndFrame).
 void NoteFrame();
 /// While counting: whether the state of a draw with this pixel shader (key hash) is still
