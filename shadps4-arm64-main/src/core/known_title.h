@@ -32,7 +32,9 @@ namespace Core::KnownTitle {
 /// to what its frames take. SHADPS4_TITLE_TIMESTEP=0 leaves the title to its own; a number of
 /// frames a second instead of 0 is the slowest rate still made up for (20 unless told).
 /// SHADPS4_TITLE_RESOLUTION=<3..6> holds the title to one size for its scene.
-/// SHADPS4_VR_PACE=<2..6> gives every frame that many refreshes of the display.
+/// SHADPS4_VR_PACE=<2..6> gives every frame that many refreshes of the display;
+/// SHADPS4_VR_PACE=auto|base|steady leaves it to the plan of the display (known_title_pace.h):
+/// automatic between a base pace and a slower fallback, always the base, always the fallback.
 void OnFrameSubmitted();
 
 /// How many refreshes of the display a frame of the title is given at the moment, 0 where

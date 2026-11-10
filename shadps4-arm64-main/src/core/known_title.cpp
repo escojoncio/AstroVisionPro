@@ -9,6 +9,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <mutex>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -20,6 +21,7 @@
 #include "core/emulator_settings.h"
 #include "core/known_title.h"
 #include "core/known_title_builds.h"
+#include "core/known_title_pace.h"
 #include "core/memory.h"
 #include "core/vr/vr_runtime.h"
 #include "video_core/amdgpu/game_clock.h"
@@ -165,6 +167,10 @@ struct Settings {
     /// Refreshes of the display a frame is given: 0 is chosen by what the title manages, 1
     /// and more is that many throughout.
     s32 pace{};
+    /// SHADPS4_VR_PACE=auto|base|steady: the pace comes from the plan of the display
+    /// (known_title_pace.h) and the cap below does not choose it; absent (or a number), the
+    /// choice is the one above.
+    std::optional<Pacing::Mode> pace_mode;
     /// The fewest the choice may come to where the display refreshes faster than the title
     /// was made to draw: 2 is the title's own way (a frame for every two refreshes), 1 has it
     /// draw a frame for every refresh, faster than it ever did on the console.
@@ -203,9 +209,21 @@ Settings ParseSettings(Get get) {
                 parsed.pinned_level = level;
             }
         }
+        // SHADPS4_VR_PACE=<2..6> gives every frame that many refreshes; auto, base or steady
+        // hands the choice to the plan of the display (automatic, always the base, always the
+        // fallback).
         if (const char* value = get("SHADPS4_VR_PACE"); value != nullptr) {
-            const s32 pace = std::atoi(value);
-            parsed.pace = pace >= 1 ? std::min(pace, SlowestPace) : 0;
+            const std::string_view text{value};
+            if (text == "auto") {
+                parsed.pace_mode = Pacing::Mode::Auto;
+            } else if (text == "base") {
+                parsed.pace_mode = Pacing::Mode::Base;
+            } else if (text == "steady") {
+                parsed.pace_mode = Pacing::Mode::Steady;
+            } else {
+                const s32 pace = std::atoi(value);
+                parsed.pace = pace >= 1 ? std::min(pace, SlowestPace) : 0;
+            }
         }
         if (const char* value = get("SHADPS4_VR_FASTEST_PACE"); value != nullptr) {
             parsed.fastest_pace = std::atoi(value) == 1 ? 1 : 2;
@@ -253,6 +271,12 @@ const Settings& GetSettings() {
 ///  - the size is the largest that fits that pace with room to spare;
 ///  - what a size costs is taken from what it was seen to cost, and a step that had to be
 ///    taken back makes the next one wait longer (and a size count as dearer).
+///
+/// With SHADPS4_VR_PACE=auto|base|steady the pace is not chosen by the above but by the plan of
+/// the display (Pacing::Plan: a base pace and a fallback one, whole numbers of refreshes of the
+/// highest rate the display was seen to have) and Pacing::Regulator, which looks at the frames'
+/// intervals and at the GPU time. The size is still chosen here, inside those two paces: smaller
+/// when frames do not fit the fallback, larger when there is room.
 class Governor {
 public:
     /// For `fixed`: the size is the title's own business.
@@ -266,8 +290,12 @@ public:
 
     /// `fixed_pace_`: refreshes to give every frame, 0 to choose; `fastest_pace_`: the fewest
     /// the choice may come to on a display that refreshes faster than the title draws.
-    Governor(s32 fixed_pace_, s32 fastest_pace_, double fps_cap_)
-        : fixed_pace{fixed_pace_}, fastest_pace{fastest_pace_}, fps_cap{fps_cap_},
+    /// `mode_`: where the pace is the plan's (SHADPS4_VR_PACE=auto|base|steady), the cap is not
+    /// looked at.
+    Governor(s32 fixed_pace_, s32 fastest_pace_, double fps_cap_,
+             std::optional<Pacing::Mode> mode_)
+        : fixed_pace{fixed_pace_}, fastest_pace{fastest_pace_}, fps_cap{mode_ ? 0.0 : fps_cap_},
+          mode{mode_}, regulator{mode_.value_or(Pacing::Mode::Auto)},
           pace{fixed_pace_ >= 1 ? fixed_pace_ : 2} {}
 
     /// `fixed` is a size to keep to, 0 where the size is to be chosen here, NotMine where the
@@ -275,6 +303,10 @@ public:
     s32 Level(double frame, Clock::time_point now, s32 fixed) {
         const float rate = Vr::Runtime::Instance().HeadsetRefreshRate();
         refresh = 1.0 / static_cast<double>(rate > 0.0f ? rate : 120.0f);
+        if (mode) {
+            Replan(rate);
+            refresh = 1.0 / plan.panel;
+        }
         if (fixed > 0) {
             level = fixed;
         }
@@ -290,7 +322,7 @@ public:
             fastest_now = std::max<s32>(
                 1, static_cast<s32>(std::ceil(1.0 / (refresh * fps_cap * CapRoom) - 0.01)));
         }
-        if (fixed_pace == 0 && (fastest_now != fastest || pace < fastest_now)) {
+        if (!mode && fixed_pace == 0 && (fastest_now != fastest || pace < fastest_now)) {
             // The display turned out to be another kind than was thought (its rate is only
             // known once the headset is there): no waiting to find out what fits.
             if (fastest_now == 1 && refresh > SlowDisplay) {
@@ -304,8 +336,12 @@ public:
             started = true;
             window_start = now;
             changed = now;
+            said_at = now;
             Vulkan::FrameStats::TakeGpuLoad();
         } else {
+            if (mode) {
+                FollowPlan(frame, now);
+            }
             if (frame <= Stall) {
                 window_time += frame;
                 ++window_frames;
@@ -335,6 +371,99 @@ public:
     }
 
 private:
+    /// The plan of the display: the panel is the highest rate it was seen to have this session
+    /// (a measured rate only ever reads low: a refresh the compositor misses is a picture not
+    /// published, and planning from each window's rate made a 100 Hz panel read 93 and drop the
+    /// fallback), the rate the headset is set to until one was seen.
+    void Replan(float rate) {
+        const Vr::Runtime::DisplayRefresh shown = Vr::Runtime::Instance().GetDisplayRefresh();
+        if (shown.sequence != 0 && shown.rate > 20.0f) {
+            peak_rate = std::max(peak_rate, shown.rate);
+        }
+        const double panel = peak_rate > 20.0f ? std::round(static_cast<double>(peak_rate))
+                                               : static_cast<double>(rate > 20.0f ? rate : 120.0f);
+        if (panel == plan.panel) {
+            return;
+        }
+        plan = Pacing::MakePlan(panel);
+        regulator.SetPlan(plan);
+        if (plan.fallback != 0) {
+            LOG_INFO(Core,
+                     "Pace plan: the display refreshes {:.0f} times a second; frames are given {} "
+                     "refreshes at the base ({:.1f} a second) and {} at the fallback ({:.1f} a "
+                     "second)",
+                     plan.panel, plan.base, plan.BaseFps(), plan.fallback, plan.FallbackFps());
+        } else {
+            LOG_INFO(Core,
+                     "Pace plan: the display refreshes {:.0f} times a second; frames are given {} "
+                     "refreshes ({:.1f} a second), there is no slower pace worth having",
+                     plan.panel, plan.base, plan.BaseFps());
+        }
+    }
+
+    /// Hands the frame to the regulator, takes the pace it answers with, and tells once a minute
+    /// what it sees.
+    void FollowPlan(double frame, Clock::time_point now) {
+        const double seconds = std::chrono::duration<double>(now.time_since_epoch()).count();
+        const s32 before = pace;
+        if (regulator.Frame(seconds, frame)) {
+            LogSwitch(regulator.Last());
+        }
+        pace = regulator.Pace();
+        if (pace != before) {
+            changed = now;
+        }
+        if (now - said_at >= std::chrono::seconds{60}) {
+            said_at = now;
+            if (regulator.GetPlan().fallback != 0 && mode == Pacing::Mode::Auto) {
+                const Pacing::Regulator::Seen& seen = regulator.Window();
+                LOG_INFO(Core,
+                         "Pace governor: at the {} pace ({} refreshes), the GPU took {:.1f} ms per "
+                         "{:.1f} ms base frame, {} of {} frames missed their refresh",
+                         regulator.AtFallback() ? "fallback" : "base", pace, seen.gpu * 1e3,
+                         plan.base / plan.panel * 1e3, seen.late, seen.frames);
+            } else {
+                LOG_INFO(Core, "Pace governor: frames are given {} refreshes ({:.1f} a second)",
+                         pace, plan.panel / pace);
+            }
+        }
+    }
+
+    void LogSwitch(const Pacing::Regulator::Switch& made) {
+        const double base_ms = plan.base / plan.panel * 1e3;
+        switch (made.why) {
+        case Pacing::Regulator::Why::Start:
+            LOG_INFO(Core,
+                     "Pace governor: starting at the fallback, {} refreshes ({:.1f} a second)",
+                     plan.fallback, plan.FallbackFps());
+            return;
+        case Pacing::Regulator::Why::Burst:
+        case Pacing::Regulator::Why::Missed:
+            LOG_INFO(Core,
+                     "Pace governor: {} of {} frames in {:.2f} s missed their refresh at the "
+                     "base: the fallback, {} refreshes ({:.1f} a second); back to the base after "
+                     "{:.0f} s of good frames",
+                     made.late, made.frames, made.span, plan.fallback, plan.FallbackFps(),
+                     made.need);
+            return;
+        case Pacing::Regulator::Why::Heavy:
+            LOG_INFO(Core,
+                     "Pace governor: the GPU took {:.1f} ms per {:.1f} ms base frame for two "
+                     "seconds in a row ({} of {} frames late): the fallback, {} refreshes "
+                     "({:.1f} a second); back to the base after {:.0f} s of good frames",
+                     made.gpu * 1e3, base_ms, made.late, made.frames, plan.fallback,
+                     plan.FallbackFps(), made.need);
+            return;
+        case Pacing::Regulator::Why::Good:
+            LOG_INFO(Core,
+                     "Pace governor: the GPU took {:.1f} ms per {:.1f} ms base frame ({} of {} "
+                     "frames late) for {:.0f} s in a row: the base, {} refreshes ({:.1f} a second)",
+                     made.gpu * 1e3, base_ms, made.late, made.frames, regulator.Need(),
+                     plan.base, plan.BaseFps());
+            return;
+        }
+    }
+
     void Decide(Clock::time_point now, s32 fixed) {
         const float load = Vulkan::FrameStats::TakeGpuLoad();
         const u32 frames = window_frames;
@@ -352,11 +481,15 @@ private:
         ++summary_windows;
 
         const bool sized = fixed == 0;
-        const bool paced = fixed_pace == 0;
+        // (Where the plan chooses the pace, this does not: only the size is chosen here.)
+        const bool paced = fixed_pace == 0 && !mode;
         const double slot = pace * refresh;
         // How long the GPU worked on a frame (at least: one that never rests may have more to
         // do than it gets done).
         const double gpu = std::min(load, 1.0f) * taken;
+        if (mode) {
+            regulator.Gpu(gpu, static_cast<int>(frames));
+        }
         const auto since_change = now - changed;
         const auto cost_at = [&](s32 other) { return gpu * cost[other] / cost[level]; };
         // The slowest pace frames are ever held to, and the smallest size wanted at a pace.
@@ -411,7 +544,12 @@ private:
                 went_faster = {};
                 faster_allowed = now + pace_patience;
             };
-            if (sized && gpu_short && (level > smallest_at(pace) || (paced && pace < slowest))) {
+            // Where the plan chooses the pace and a fallback is there to go to, frames that do not
+            // fit the base are for the regulator to answer, not a smaller size.
+            const bool shrinks =
+                mode != Pacing::Mode::Auto || regulator.AtFallback() || plan.fallback == 0;
+            if (sized && gpu_short && shrinks &&
+                (level > smallest_at(pace) || (paced && pace < slowest))) {
                 if (now - went_up < Regret) {
                     // The step up was a mistake: that size costs more than was thought.
                     patience = std::min(patience * 2, LongestPatience);
@@ -547,6 +685,11 @@ private:
     const s32 fixed_pace;
     const s32 fastest_pace;
     const double fps_cap;
+    const std::optional<Pacing::Mode> mode;
+    Pacing::Regulator regulator;
+    Pacing::Plan plan;
+    float peak_rate{};
+    Clock::time_point said_at;
     s32 fastest{2};
     bool started{};
     s32 level{UsualLevel};
@@ -937,7 +1080,8 @@ void OnFrameSubmitted() {
     static bool running = false;
     static Clock::time_point last;
     static TimeStep time_step;
-    static Governor governor{settings.pace, settings.fastest_pace, settings.fps_cap};
+    static Governor governor{settings.pace, settings.fastest_pace, settings.fps_cap,
+                             settings.pace_mode};
     // For the log.
     static Clock::time_point report_time;
     static double report_real = 0.0;
@@ -957,7 +1101,9 @@ void OnFrameSubmitted() {
                  : settings.resolution == Settings::Resolution::Pinned ? "held to one"
                                                                        : "chosen by how busy the "
                                                                          "GPU is",
-                 settings.pace == 0 ? "chosen by what the title manages" : "one number");
+                 settings.pace_mode ? "chosen by the plan of the display"
+                 : settings.pace == 0 ? "chosen by what the title manages"
+                                      : "one number");
         return;
     }
     const double frame = std::chrono::duration<double>(now - last).count();

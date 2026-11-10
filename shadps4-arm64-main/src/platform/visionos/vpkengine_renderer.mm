@@ -957,6 +957,7 @@ struct Engine {
         // got four of them a picture. VPKENGINE_LABEL_GRACE_MS sets it.
         vpgpu::SubmitPolicy policy;
         policy.labelGraceMs = 12;
+        policy.passSlackIrqMs = 6;  // (a cut inside a multisampled pass measured ~1.5 ms of GPU: store, load and resolve of the depth samples)
         if (const char* v = std::getenv("VPKENGINE_LABEL_GRACE_MS"); v && *v) policy.labelGraceMs = std::max(1.0, std::atof(v));
         scheduler = std::make_unique<vpps4::Scheduler>(*renderer, *device, policy, [] { return msNow(); });
         scheduler->setSubmitHook([this] {
@@ -2329,6 +2330,8 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
         u32 addr = 0;
         std::memcpy(&addr, &regs.ps_input_addr, sizeof(addr));
         d.ps.psInputAddr = addr & 0xffff;
+        // PA_SC_MODE_CNTL_1.PS_ITER_SAMPLE (0xA293 bit 16): only then does the rasterizer run the pixel shader per sample.
+        d.ps.psIterSample = (regs.reg_array[0xA293] >> 16 & 1u) != 0;
         for (unsigned k = 0; k < 8; ++k) d.ps.exportFormat[k] = uint8_t(regs.color_export_format.GetFormat(k));
         d.ps.psNumInterp = uint8_t(regs.num_interp);
         for (unsigned k = 0; k < 32; ++k) std::memcpy(&d.ps.psInputCntl[k], &regs.ps_inputs[k], sizeof(u32));

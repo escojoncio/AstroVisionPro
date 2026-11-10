@@ -14,12 +14,14 @@ struct AstroSettings {
     /// little (log 2026-10-09: the scene took the same GPU time at 1440x1536 as at 816x870);
     /// what limits larger sizes is memory.
     var resolution = "1440"
-    /// The emulator's dynamic resolution: it draws the scene smaller (the console's own sizes, down to
-    /// 960x1080) where the GPU falls behind the frames it is given. With VPKEngine the GPU's time goes to
-    /// the pixels of the scene passes (log 2026-11-10: fragment 7-9 ms of the 8-10 ms of the main pass).
-    let dynamic = true
-    /// The most frames a second: 45 by default, every second refresh of a 90 Hz display, held even when
-    /// the system lowers the display's rate (GameRenderer keeps the game's clock at the nominal rate).
+    /// The emulator's dynamic resolution is never used: the picture keeps the size chosen above. (With
+    /// VPKEngine the GPU's time does go to the pixels of the scene passes, log 2026-11-10: fragment 7-9 ms
+    /// of the 8-10 ms of the main pass; a smaller picture is not wanted as the way to more frames.)
+    let dynamic = false
+    /// The frame pace the emulator holds (SHADPS4_VR_PACE). The stored values are the old frame-rate caps and
+    /// keep their place so saved settings stay valid: 45 = automatic (every second refresh of the display,
+    /// 45 at 90 Hz or 50 at 100 Hz, and one refresh more, 30 or 33, when the GPU cannot keep up), 60 = always
+    /// the first, 30 = always the second (steady).
     var fps = 45
     /// How much of the headset's field of view the game draws, in percent.
     var fov = 100
@@ -216,7 +218,8 @@ struct AstroSettings {
         if fovOf != "psvr" {
             env.append("SHADPS4_VR_FOV_OF=headset")
         }
-        env.append("SHADPS4_VR_FPS_CAP=\(fps)")
+        let pace = fps == 60 ? "base" : fps == 30 ? "steady" : "auto"
+        env.append("SHADPS4_VR_PACE=\(pace)")
         if !pause {
             env.append("SHADPS4_XR_PAUSE=0")
         }
@@ -307,9 +310,9 @@ struct AstroSettings {
     # consola, elegidos por el propio juego.
     resolution=1440
 
-    # Imágenes por segundo como máximo. Una imagen dura un número entero de refrescos de la
-    # pantalla del visor (90 Hz: 45 o 30; 120 Hz: 60). 45 es fijo: se mantiene aunque el sistema
-    # baje el refresco de la pantalla por calor (el visor reproyecta las imágenes).
+    # Ritmo de imágenes. Una imagen dura un número entero de refrescos de la pantalla del visor
+    # (90 Hz: 45 o 30; 100 Hz: 50 o 33; 120 Hz: 60 o 40). 45: automático, 45/50 y baja a 30/33 si
+    # no llega; 60: 45/50 siempre; 30: 30/33 fijo.
     fps=45
 
     # Qué parte del campo de visión del visor dibuja el juego, en porcentaje (70 a 100).
