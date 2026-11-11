@@ -88,7 +88,8 @@ enum LogFiles {
         try? FileManager.default.removeItem(at: runningMarker)
     }
 
-    /// The files to send: the newest console logs and emulator logs, and the check.
+    /// The files to send: the newest console logs, emulator logs, probe tables, CPU profiles and
+    /// call captures, the frame captures there are, and the check.
     static func filesToShare(report: String) -> [URL] {
         let check = directory.appendingPathComponent("comprobacion.txt")
         try? report.write(to: check, atomically: true, encoding: .utf8)
@@ -96,6 +97,9 @@ enum LogFiles {
         files += newest(prefix: "consola-", count: 3)
         files += newest(prefix: "emulador-", count: 2)
         files += newest(prefix: "probe-", count: 2)
+        files += newest(prefix: "cpuprof-", count: 2)
+        files += newest(prefix: "callcap-", count: 2)
+        files += newest(prefix: "framecap-", count: .max)
         // The running game's log as it is now.
         if FileManager.default.fileExists(atPath: emulatorLog.path) {
             let current = directory.appendingPathComponent("emulador-actual.txt")
@@ -119,7 +123,7 @@ enum LogFiles {
 
     /// Ten of each kind are kept.
     private static func prune() {
-        for prefix in ["consola-", "emulador-", "probe-"] {
+        for prefix in ["consola-", "emulador-", "probe-", "cpuprof-"] {
             let files = (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? []
             let old = files
                 .filter { $0.lastPathComponent.hasPrefix(prefix) && $0.lastPathComponent != "emulador-actual.txt" }

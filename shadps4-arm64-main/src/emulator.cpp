@@ -14,6 +14,7 @@
 #endif
 
 #include "common/console_language.h"
+#include "common/cpu_profiler.h"
 #include "common/debug.h"
 #include "common/logging/log.h"
 #include "common/thread.h"
@@ -95,6 +96,7 @@ void Emulator::Shutdown() {
     // atexit handler that may run after the sink is gone.
     Census::Shutdown();
     Common::Log::Flush();
+    Common::Profiler::Stop();
     if (controllers) {
         controllers->ResetLightbarColors();
         // need to give SDL time to do this before the runtime exits
