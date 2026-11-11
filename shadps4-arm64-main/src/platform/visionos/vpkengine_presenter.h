@@ -57,7 +57,7 @@ public:
 
 private:
     Vulkan::HmdFrames Token(int slot, u32 width, u32 height);
-    static constexpr u32 NumSlots = 6;
+    static constexpr u32 NumSlots = 8;
     std::array<Vulkan::Frame, NumSlots> tokens{};
     Vulkan::Frame no_window{};
 };

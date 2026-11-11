@@ -3106,7 +3106,7 @@ void Rasterizer::WriteDataOrdered(void* address, const void* data, u32 size) {
 
 namespace {
 
-constexpr u32 kSlots = 6;  // the host's (openxr_host_visionos.mm NumSlots)
+constexpr u32 kSlots = 8;  // the host's (openxr_host_visionos.mm NumSlots)
 
 // Draws an eye's picture (or the flat screen) into its area of the headset frame: sampled with
 // bilinear filtering, decoded to linear light when it holds sRGB-encoded values the format does
