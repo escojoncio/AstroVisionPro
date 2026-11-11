@@ -140,6 +140,9 @@ jobs:
           mkdir -p build/ipa/Payload
           echo "Symbols the app exports (should be just the Mach-O header):"
           nm -gU "$APP/AstroQuest" | tee -a ../app.log | head -5
+          # The app's symbols by address, for tools/symbolize_cpuprof.py (the diagnostics mode's CPU profiles).
+          { xcrun dwarfdump --uuid "$APP/AstroQuest" || true; nm -nU "$APP/AstroQuest"; } | gzip -9 > build/AstroQuest.symbols.txt.gz
+          echo "Symbol map: $(gzip -dc build/AstroQuest.symbols.txt.gz | wc -l) lines" | tee -a ../app.log
           cp -R "$APP" build/ipa/Payload/
           KK=../build/visionos/kosmickrisp/KosmicKrisp.framework
           if [[ -f "$KK/KosmicKrisp" ]]; then
@@ -172,7 +175,7 @@ jobs:
           gh api "repos/${GITHUB_REPOSITORY}/releases" \
             --jq '.[] | select(.draft and .tag_name == "visionos-latest") | .id' |
             xargs -r -I{} gh api -X DELETE "repos/${GITHUB_REPOSITORY}/releases/{}" || true
-          gh release create visionos-latest visionos/build/AstroQuest.ipa \
+          gh release create visionos-latest visionos/build/AstroQuest.ipa visionos/build/AstroQuest.symbols.txt.gz \
             --target "$GITHUB_SHA" --prerelease \
             --title "AstroQuest para Apple Vision Pro (última compilación)" \
             --notes "App sin firmar, compilada de ${GITHUB_SHA::7}. Fírmala con tu cuenta de desarrollador e instálala; los pasos están en README-VISIONOS.md."

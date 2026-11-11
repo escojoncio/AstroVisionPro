@@ -1412,6 +1412,7 @@ if (SHADPS4_VISIONOS)
         src/platform/visionos/astro_core.h
         src/platform/visionos/astro_core.mm
         src/platform/visionos/astro_renderer.h
+        src/platform/visionos/cpu_profiler_mach.cpp
         src/platform/visionos/jit_arena.c
         src/platform/visionos/diagnostics.c
         src/platform/visionos/logging.c

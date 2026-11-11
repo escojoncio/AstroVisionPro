@@ -4,6 +4,7 @@
 #include "common/alignment.h"
 #include "common/arch.h"
 #include "common/assert.h"
+#include "common/cpu_profiler.h"
 #include "common/elf_info.h"
 #include "common/logging/formatter.h"
 #include "common/logging/log.h"
@@ -529,6 +530,7 @@ void Linker::Execute(const std::vector<std::string>& args) {
 
     main_thread.Run([this, module, &args](std::stop_token) {
         Common::SetCurrentThreadName("Game:Main");
+        Common::Profiler::RegisterThread("game_main");
         std::set_terminate(Common::Log::Terminate);
 
 #ifndef _WIN32 // Clear any existing signal mask for game threads.

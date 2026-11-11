@@ -11,6 +11,7 @@
 #include <magic_enum/magic_enum.hpp>
 
 #include "common/assert.h"
+#include "common/cpu_profiler.h"
 #include "common/debug.h"
 #include "common/diagnostics.h"
 #include "common/polyfill_thread.h"
@@ -194,6 +195,7 @@ void Liverpool::ReleaseAfterGfxLocked() {
 
 void Liverpool::Process(std::stop_token stoken) {
     Common::SetCurrentThreadName("shadPS4:GpuCommandProcessor");
+    Common::Profiler::RegisterThread("cp");
     gpu_id = std::this_thread::get_id();
 
     while (!stoken.stop_requested()) {

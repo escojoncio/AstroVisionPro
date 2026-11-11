@@ -119,7 +119,7 @@ enum LogFiles {
 
     /// Ten of each kind are kept.
     private static func prune() {
-        for prefix in ["consola-", "emulador-", "probe-"] {
+        for prefix in ["consola-", "emulador-", "probe-", "cpuprof-"] {
             let files = (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? []
             let old = files
                 .filter { $0.lastPathComponent.hasPrefix(prefix) && $0.lastPathComponent != "emulador-actual.txt" }

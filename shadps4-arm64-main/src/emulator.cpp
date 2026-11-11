@@ -14,6 +14,7 @@
 #endif
 
 #include "common/console_language.h"
+#include "common/cpu_profiler.h"
 #include "common/debug.h"
 #include "common/logging/log.h"
 #include "common/thread.h"
@@ -94,6 +95,7 @@ void Emulator::Shutdown() {
     // The census summary goes to the log: written before the log is flushed and torn down, not by an
     // atexit handler that may run after the sink is gone.
     Census::Shutdown();
+    Common::Profiler::Stop();
     Common::Log::Flush();
     if (controllers) {
         controllers->ResetLightbarColors();
