@@ -99,7 +99,7 @@ enum LogFiles {
         files += newest(prefix: "probe-", count: 2)
         files += newest(prefix: "cpuprof-", count: 2)
         files += newest(prefix: "callcap-", count: 2)
-        files += newest(prefix: "framecap-", count: .max)
+        files += newest(prefix: "framecap-", count: 2)
         // The running game's log as it is now.
         if FileManager.default.fileExists(atPath: emulatorLog.path) {
             let current = directory.appendingPathComponent("emulador-actual.txt")
@@ -116,9 +116,10 @@ enum LogFiles {
             at: directory, includingPropertiesForKeys: [.contentModificationDateKey])) ?? []
         return files
             .filter { $0.lastPathComponent.hasPrefix(prefix) }
-            .sorted { $0.lastPathComponent > $1.lastPathComponent }
+            .map { ($0, (try? $0.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast) }
+            .sorted { $0.1 > $1.1 }
             .prefix(count)
-            .map { $0 }
+            .map { $0.0 }
     }
 
     /// Ten of each kind are kept.
