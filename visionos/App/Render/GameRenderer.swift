@@ -389,9 +389,9 @@ final class GameRenderer: @unchecked Sendable {
         }
         LogFiles.log(text)
         if settings.diagnostics {
-            LogFiles.log("DIAG: refreshes by gap since the one before (<2 <5 <10 <20 <40 >=40 ms): "
-                         + entryGaps.map(String.init).joined(separator: " ")
-                         + String(format: "; %.0f ms the longest", longestEntry * 1000))
+            let gaps = entryGaps.map { String($0) }.joined(separator: " ")
+            let longest = String(format: "%.0f", longestEntry * 1000)
+            LogFiles.log("DIAG: refreshes by gap since the one before (<2 <5 <10 <20 <40 >=40 ms): \(gaps); \(longest) ms the longest")
             entryGaps = [Int](repeating: 0, count: 6)
             longestEntry = 0
         }

@@ -113,6 +113,14 @@ int main() {
         Check(queue.Reusable(static_cast<std::size_t>(a)), "take latest: the older one stays free to draw over");
     }
     {
+        // A slot being drawn or read is never free to draw over.
+        Queue queue = Make();
+        queue.Begin(0);
+        Check(!queue.Reusable(0), "drawing: not free to draw over");
+        queue.End(0);
+        Check(queue.Take() == 0 && !queue.Reusable(0), "reading: not free to draw over");
+    }
+    {
         // A drawn frame that is dropped frees its slot, and cannot be delivered.
         Queue queue = Make();
         queue.Begin(0);
@@ -127,6 +135,7 @@ int main() {
         std::vector<int> drawing, reading;
         unsigned seed = 12345;
         bool ran_out = false;
+        bool reused_busy = false;
         int last_shown = -1;
         unsigned long long last_order = 0, delivered_order = 0;
         std::vector<unsigned long long> order(Slots, 0);
@@ -140,6 +149,9 @@ int main() {
                     for (std::size_t attempt = 0; attempt < Slots && slot < 0; ++attempt) {
                         const std::size_t s = (cursor + attempt) % Slots;
                         if (queue.Reusable(s)) {
+                            const SlotState before = queue.State(s);
+                            reused_busy = reused_busy || before == SlotState::Drawing ||
+                                          before == SlotState::Reading;
                             slot = static_cast<int>(s);
                             cursor = (s + 1) % Slots;
                         }
@@ -178,6 +190,7 @@ int main() {
                 break;
             }
         }
+        Check(!reused_busy, "a slot being drawn or read is never drawn over");
         Check(!ran_out, "8 slots: a slot is always free to draw into");
         Check(in_order, "frames are taken in the order they were delivered");
         Check(last_shown >= 0, "frames were taken");
