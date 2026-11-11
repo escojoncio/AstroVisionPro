@@ -346,6 +346,8 @@ final class AppModel {
         LogFiles.gameStarted()
         LogFiles.log("Game started: \(gamePath.path)")
         LogFiles.log("Settings: \(environment.joined(separator: " "))")
+        let switches = settings.testEnvironment
+        LogFiles.log("SWITCHES: \(switches.isEmpty ? "none" : switches.joined(separator: " "))")
         let codes = gameLanguageCodes
         LogFiles.log("Game language: \(GameLanguages.tag(for: settings.gameLanguage)); language files in the game: \(codes.isEmpty ? "none found" : codes.joined(separator: " "))")
         watchCore()

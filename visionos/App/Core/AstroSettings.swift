@@ -62,6 +62,8 @@ struct AstroSettings {
     /// diagnostic logs, the GPU test with L3 + R3 and the dump with L1 + R1 + L3. Off: none of
     /// them, a clean log at no cost.
     var diagnostics = false
+    /// «Pruebas» (TestSwitches.swift): the ids of the switches that are on (test_<id>=1 in settings.txt).
+    var testsOn: Set<String> = Set(TestSwitch.all.filter { $0.on }.map { $0.id })
     /// The game's picture antialiased (SMAA 1x, Render/EdgeSmoother.swift) before it is shown.
     var edgeSmoothing = true
     /// «Motor gráfico» (ASTRO_RENDERER): "vpkengine" (VPKEngine's own Metal renderer), "vulkan"
@@ -171,6 +173,14 @@ struct AstroSettings {
         case "spatial_audio": spatialAudio = flag
         case "diagnostics": diagnostics = value == "1"
         case "game_language": gameLanguage = value
+        // «Pruebas»: test_<id>=1 is on, anything else off (an id that TestSwitch.all no longer has does nothing).
+        case _ where key.hasPrefix("test_"):
+            let id = String(key.dropFirst(5))
+            if value == "1" {
+                testsOn.insert(id)
+            } else {
+                testsOn.remove(id)
+            }
         // Settings that are now fixed or gone (async_shaders, vulkan_driver, real_time…) stay in
         // older files and are not read.
         default: break
@@ -296,8 +306,14 @@ struct AstroSettings {
         }
         // The engine's hang reports with the other logs (LogFiles.directory: VPS4/LOGS).
         env.append("VPVK_HANG_DIR=\(LogFiles.directory.path)")
+        env.append(contentsOf: testEnvironment)
         env.append(contentsOf: extraEnvironment)
         return env
+    }
+
+    /// What the «Pruebas» switches that are on give the emulator (TestSwitch.all's order); the rest give nothing.
+    var testEnvironment: [String] {
+        TestSwitch.all.filter { testsOn.contains($0.id) }.map { "\($0.variable)=\($0.value)" }
     }
 
     static let defaultFile = """
