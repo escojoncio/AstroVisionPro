@@ -95,6 +95,20 @@ struct SettingsView: View {
                     Text(L("Solo para buscar fallos; apagado, el registro queda limpio y no cuesta nada. Encendido: estadísticas de la GPU y avisos del emulador en el registro; dentro del juego, L3 + R3 a la vez mide cuánto cuesta cada shader (~1 min, quédate quieto) y L1 + R1 sujetos + L3 captura la escena del siguiente fotograma (imágenes de cada ojo y lista de draws) en VPS4/LOGS; pulsa con el fallo en pantalla, las veces que quieras (hasta unos 400 MB cada vez; con el renderizador Vulkan o Sombra vuelca las imágenes de la GPU a VPS4/Partidas/rt_dump). Además guarda el código de cada shader en VPS4/VPKEngine/shaders. Se aplica al abrir el juego.", "Only for finding faults; off, the log stays clean and it costs nothing. On: the GPU's statistics and the emulator's notes in the log; in the game, L3 + R3 together measures what each shader costs (~1 min, keep still) and holding L1 + R1 and pressing L3 captures the scene of the next frame (each eye's pictures and the list of draws) to VPS4/LOGS; press it with the fault on screen, as many times as you like (up to about 400 MB each time; with the Vulkan or Shadow renderer it dumps the GPU's pictures to VPS4/Partidas/rt_dump). It also saves each shader's code to VPS4/VPKEngine/shaders. It applies when the game opens."))
                 }
 
+                if model.settings.diagnostics {
+                    Section {
+                        ForEach(TestSwitch.all) { test in
+                            Toggle(test.title, isOn: Binding(
+                                get: { model.settings.testsOn.contains(test.id) },
+                                set: { save("test_" + test.id, $0 ? "1" : "0") }))
+                        }
+                    } header: {
+                        Text(L("Pruebas", "Tests"))
+                    } footer: {
+                        Text(L("Cambios del motor y de la app para comparar entre partidas; lo normal es tenerlos todos apagados. Los que dejes encendidos siguen actuando aunque apagues el Modo diagnóstico. Se aplican al abrir el juego y el registro anota los encendidos (SWITCHES).", "Changes of the engine and of the app to compare between sessions; all off is the normal state. The ones left on keep acting when Diagnostics mode is turned off. They apply when the game opens and the log notes the ones that are on (SWITCHES)."))
+                    }
+                }
+
                 Section {
                     Toggle(L("Renderizado foveado", "Foveated rendering"), isOn: flag("foveation", \.foveation))
                     LabeledContent(L("Calidad de renderizado", "Render quality")) {
