@@ -9,6 +9,7 @@
 //
 // With a path, it also writes a profile there for tools/tests/symbolize_cpuprof_test.py.
 #include <cstdio>
+#include <cstring>
 #include <fstream>
 #include <map>
 #include <string>
@@ -49,77 +50,149 @@ static Image MakeImage() {
     return image;
 }
 
-static void TestWalk() {
-    alignas(16) u64 stack[128] = {};
-    alignas(16) u64 other[8] = {}; // (another stack: a signal's, say)
-    const u64 lo = Address(stack);
-    const u64 hi = Address(stack + 128);
-    int outside_reads = 0;
-    bool other_readable = false;
-    const auto read_outside = [&](u64 address, u64* record) {
-        ++outside_reads;
-        if (other_readable && address == Address(other)) {
-            record[0] = other[0];
-            record[1] = other[1];
-            return true;
+// The stopped thread's stack as the kernel copies it: only what is inside it can be had.
+struct FakeKernel {
+    u64 lo;
+    u64 hi;
+    int reads = 0;
+    bool gone = false;    // (the thread has ended: its stack is no longer there)
+    bool strayed = false; // (something that is not the stack was asked for)
+
+    bool operator()(u64 address, u64* words, u64 bytes) {
+        ++reads;
+        if (gone) {
+            return false;
         }
-        return false;
-    };
-    RawStack raw;
-
-    stack[4] = Address(stack + 10), stack[5] = 0x5000;
-    stack[10] = Address(stack + 20), stack[11] = 0x6000 | (0xabull << 56);
-    stack[20] = 0, stack[21] = 0;
-    WalkFrames(Address(stack + 4), lo, hi, read_outside, raw);
-    Check(raw.count == 2 && raw.rets[0] == 0x5000 && !raw.truncated && outside_reads == 0,
-          "the records of the thread's stack are followed in place, to the outermost");
-    Check(raw.rets[1] == 0x6000, "a return address loses its signature");
-
-    WalkFrames(Address(stack + 4) + 4, lo, hi, read_outside, raw);
-    Check(raw.count == 0 && outside_reads == 0, "a frame pointer that is not aligned is not read");
-
-    WalkFrames(0x1000, lo, hi, read_outside, raw); // (would fault if it were dereferenced)
-    Check(raw.count == 0 && outside_reads == 1,
-          "a frame pointer outside the stack is only read through the checked copy");
-
-    outside_reads = 0;
-    WalkFrames(Address(stack + 127), lo, hi, read_outside, raw);
-    Check(raw.count == 0 && outside_reads == 1,
-          "a record that would end beyond the stack is not read in place");
-
-    stack[30] = Address(stack + 30), stack[31] = 0x5000;
-    WalkFrames(Address(stack + 30), lo, hi, read_outside, raw);
-    Check(raw.count == 1, "a record that points to itself ends the walk");
-    stack[30] = Address(stack + 4);
-    WalkFrames(Address(stack + 30), lo, hi, read_outside, raw);
-    Check(raw.count == 1, "a record that points down the stack ends the walk");
-
-    // From a handler's stack back to the thread's, wherever each one is.
-    other_readable = true;
-    outside_reads = 0;
-    other[0] = Address(stack + 4), other[1] = 0x7000;
-    WalkFrames(Address(other), lo, hi, read_outside, raw);
-    Check(raw.count == 3 && raw.rets[0] == 0x7000 && raw.rets[1] == 0x5000 && outside_reads == 1,
-          "the walk goes from another stack into the thread's");
-
-    // A frame pointer that is none, into memory that happens to read like records.
-    outside_reads = 0;
-    const auto read_anything = [&](u64 address, u64* record) {
-        ++outside_reads;
-        record[0] = address + 16, record[1] = 0x9000;
+        if (address < lo || address > hi || hi - address < bytes) {
+            strayed = true;
+            return false;
+        }
+        std::memcpy(words, reinterpret_cast<const void*>(static_cast<std::uintptr_t>(address)), bytes);
         return true;
-    };
-    WalkFrames(0x4000, lo, hi, read_anything, raw);
-    Check(raw.count == kMaxOutside && raw.truncated && outside_reads == static_cast<int>(kMaxOutside),
-          "only so many records are read from outside the thread's stack");
-
-    for (u32 i = 0; i < 60; ++i) {
-        stack[2 * i] = Address(stack + 2 * (i + 1));
-        stack[2 * i + 1] = 0x8000 + 8 * i;
     }
-    WalkFrames(lo, lo, hi, read_outside, raw);
-    Check(raw.count == kMaxDepth - 1 && raw.truncated && raw.rets[kMaxDepth - 2] == 0x8000 + 8 * 46,
-          "a stack deeper than the limit is cut and said to be");
+};
+
+static void TestWalk() {
+    std::vector<u64> memory(8192, 0);
+    u64* const stack = memory.data();
+    const u64 size = memory.size();
+    alignas(16) u64 other[4] = {}; // (not the thread's stack: a signal's, the heap)
+    const u64 lo = Address(stack);
+    const u64 hi = Address(stack + size);
+    RawStack raw;
+    const auto walk = [&](u64 fp, FakeKernel& kernel) { WalkFrames(fp, lo, hi, kernel, raw); };
+
+    // (the high half of stack[5] is a signature to the aligned walk, and a return address to one
+    // that would read the record four bytes further on)
+    stack[4] = Address(stack + 10), stack[5] = 0x5000 | (0x9000ull << 32);
+    stack[10] = Address(stack + 20), stack[11] = 0x6000 | (0xabull << 56);
+    {
+        FakeKernel kernel{lo, hi};
+        walk(Address(stack + 4), kernel);
+        Check(raw.count == 2 && raw.rets[0] == 0x5000 && raw.rets[1] == 0x6000 && !raw.truncated,
+              "the records are followed to the outermost; return addresses lose their signature");
+        Check(kernel.reads == 1 && !kernel.strayed, "records near each other come in one copy");
+    }
+    {
+        FakeKernel kernel{lo, hi};
+        walk(Address(stack + 4) + 4, kernel);
+        Check(raw.count == 0 && kernel.reads == 0, "a frame pointer that is not aligned is not read");
+        walk(0x1000, kernel);
+        walk(Address(other), kernel);
+        walk(0, kernel);
+        Check(raw.count == 0 && kernel.reads == 0, "a frame pointer outside the stack is not read");
+        walk(Address(stack + size - 1), kernel);
+        Check(raw.count == 0 && kernel.reads == 0, "a record that would end beyond the stack is not read");
+    }
+    {
+        FakeKernel kernel{lo, hi};
+        stack[30] = Address(stack + 30), stack[31] = 0x5000;
+        walk(Address(stack + 30), kernel);
+        Check(raw.count == 1, "a record that points to itself ends the walk");
+        stack[30] = Address(stack + 4);
+        walk(Address(stack + 30), kernel);
+        Check(raw.count == 1, "a record that points down the stack ends the walk");
+    }
+    {
+        FakeKernel kernel{lo, hi};
+        other[0] = Address(stack + 4), other[1] = 0x7100;
+        stack[40] = Address(other), stack[41] = 0x7000;
+        walk(Address(stack + 40), kernel);
+        Check(raw.count == 1 && raw.rets[0] == 0x7000 && kernel.reads == 1 && !kernel.strayed,
+              "the walk ends where the records leave the stack: nothing else is read");
+    }
+    {
+        FakeKernel kernel{lo, hi};
+        stack[100] = Address(stack + 2000), stack[101] = 0x5100;
+        stack[2000] = Address(stack + 5000), stack[2001] = 0x5200;
+        walk(Address(stack + 100), kernel);
+        Check(raw.count == 2 && raw.rets[1] == 0x5200 && kernel.reads == 3 && !kernel.strayed,
+              "a record beyond what was copied is copied from where it is");
+    }
+    {
+        FakeKernel kernel{lo, hi};
+        stack[size - 6] = Address(stack + size - 4), stack[size - 5] = 0x5300;
+        stack[size - 4] = 0, stack[size - 3] = 0x5400;
+        walk(Address(stack + size - 6), kernel);
+        Check(raw.count == 2 && raw.rets[1] == 0x5400 && kernel.reads == 1 && !kernel.strayed,
+              "at the top of the stack only what is left of it is copied");
+    }
+    {
+        FakeKernel kernel{lo, hi};
+        for (u64 i = 0; i < 7; ++i) {
+            stack[200 + 1100 * i] = Address(stack + 200 + 1100 * (i + 1));
+            stack[201 + 1100 * i] = 0x8000 + 8 * i;
+        }
+        walk(Address(stack + 200), kernel);
+        Check(raw.count == kMaxReads && raw.truncated && kernel.reads == static_cast<int>(kMaxReads),
+              "only so many copies are made for a sample");
+    }
+    {
+        FakeKernel kernel{lo, hi};
+        for (u64 i = 0; i < 60; ++i) {
+            stack[6000 + 2 * i] = Address(stack + 6000 + 2 * (i + 1));
+            stack[6001 + 2 * i] = 0x8000 + 8 * i;
+        }
+        walk(Address(stack + 6000), kernel);
+        Check(raw.count == kMaxDepth - 1 && raw.truncated && kernel.reads == 1 &&
+                  raw.rets[kMaxDepth - 2] == 0x8000 + 8 * 46,
+              "a stack deeper than the limit is cut and said to be");
+    }
+    {
+        FakeKernel kernel{lo, hi};
+        kernel.gone = true;
+        walk(Address(stack + 4), kernel);
+        Check(raw.count == 0 && !raw.truncated && kernel.reads == 1,
+              "a thread that has ended gives no records, and nothing of its stack is touched");
+    }
+
+    // Only an image's code keeps a frame pointer: elsewhere (the JIT's) the stack is not walked.
+    Image image = MakeImage();
+    FakeKernel kernel{lo, hi};
+    const u64 fp = Address(stack + 4);
+    Capture(image.jit_begin + 0x40, Gamma + 0x14, fp, lo, hi, image, kernel, raw);
+    Check(raw.pc == image.jit_begin + 0x40 && raw.count == 0 && kernel.reads == 0,
+          "in the JIT's code the stack is not walked");
+    Capture(Library + 0x24, 0, fp, lo, hi, image, kernel, raw);
+    Check(raw.count == 0 && kernel.reads == 0 && image.Unknown(Library + 0x24) &&
+              !image.Unknown(image.jit_begin) && !image.Unknown(Beta),
+          "nor in code not yet known to be an image's, which is then to be asked about");
+    image.pages.Set(Library + 0x24, false);
+    Capture(Library + 0x24, 0, fp, lo, hi, image, kernel, raw);
+    Check(raw.count == 0 && kernel.reads == 0 && !image.Unknown(Library + 0x24) &&
+              image.Fold(Library + 0x3ff0) == kJit,
+          "code found to be in no image is not walked, and counts as the JIT's");
+    image.pages.Set(Library + 0x24, true);
+    Capture(Library + 0x24, 0, fp, lo, hi, image, kernel, raw);
+    Check(raw.count == 2 && kernel.reads == 1 && image.Fold(Library + 0x24) == Library + 0x24 &&
+              image.Unknown(Library + 0x4000),
+          "code found to be an image's is walked; the next page is another matter");
+    kernel.reads = 0;
+    Capture(Beta + 0x10, 0, fp, lo, hi, image, kernel, raw);
+    Check(raw.count == 2 && kernel.reads == 1, "the app's own code is walked");
+    image.pages.Set(Library + 0x24 + (4096ull << 14), false);
+    Check(image.Unknown(Library + 0x24) && image.Fold(Library + 0x24 + (4096ull << 14)) == kJit,
+          "a page that loses its place in the table is asked about again");
 }
 
 static void TestFunctions() {
@@ -184,9 +257,13 @@ static void TestFold() {
           "outside the image the link register is left out and a return address goes back to "
           "its call");
 
-    raw.pc = image.jit_begin + 0x123, raw.rets[0] = Beta, raw.count = 1;
-    Check(Folded(raw, image) == std::vector<u64>({kJit, Alpha}),
+    raw.rets[0] = Beta, raw.count = 1;
+    Check(Folded(raw, image) == std::vector<u64>({Library + 0x24, Alpha}),
           "a call that is a function's last instruction is still of that function");
+
+    raw.pc = image.jit_begin + 0x123, raw.rets[1] = Gamma + 0x14, raw.count = 2;
+    Check(Folded(raw, image) == std::vector<u64>({kJit}),
+          "a sample in the JIT's code is that one frame, whatever else was read");
 
     raw.pc = Beta + 0x10, raw.lr = 0;
     for (u32 i = 0; i < kMaxDepth - 1; ++i) {
@@ -334,7 +411,7 @@ static void TestText(const char* sample_path) {
     Add(cp, {Beta, Gamma, Alpha}, 5);
     Add(cp, {Library + 0x100, Gamma, Alpha}, 3);
     Add(cp, {Gamma, Alpha}, 3);
-    Add(cp, {kJit, Alpha}, 1);
+    Add(cp, {kJit}, 1);
     cp.missed = 2;
     cp.suspended_ns = 123'456;
 
@@ -355,7 +432,7 @@ static void TestText(const char* sample_path) {
         "5 AstroQuest+0x1040=_ZN4beta3runEv\n"
         "3 AstroQuest+0x116c\n"
         "incl 2\n"
-        "12 AstroQuest+0x1000\n"
+        "11 AstroQuest+0x1000\n"
         "11 AstroQuest+0x116c\n"
         "folded 2\n"
         "AstroQuest+0x1000;AstroQuest+0x116c;AstroQuest+0x1040 5\n"
@@ -378,7 +455,7 @@ static void TestText(const char* sample_path) {
     Check(text.find("excl 4\n") != std::string::npos && text.find("incl 5\n") != std::string::npos &&
               text.find("folded 4\n") != std::string::npos &&
               text.find("\n3 lib_system.dylib+0x100=-[Lock_wait:until_]\n") != std::string::npos &&
-              text.find("\nAstroQuest+0x1000;[jit] 1\n") != std::string::npos,
+              text.find("\n[jit] 1\n") != std::string::npos,
           "every frame with samples of its own is listed, every frame, every stack");
 
     if (sample_path == nullptr) {

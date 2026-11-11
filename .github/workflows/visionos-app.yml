@@ -141,7 +141,7 @@ jobs:
           echo "Symbols the app exports (should be just the Mach-O header):"
           nm -gU "$APP/AstroQuest" | tee -a ../app.log | head -5
           # The app's symbols by address, for tools/symbolize_cpuprof.py (the diagnostics mode's CPU profiles).
-          { xcrun dwarfdump --uuid "$APP/AstroQuest" || true; nm -nU "$APP/AstroQuest"; } | gzip -9 > build/AstroQuest.symbols.txt.gz
+          { xcrun dwarfdump --uuid "$APP/AstroQuest" || true; nm -nU "$APP/AstroQuest" || true; } | gzip -9 > build/AstroQuest.symbols.txt.gz || true
           echo "Symbol map: $(gzip -dc build/AstroQuest.symbols.txt.gz | wc -l) lines" | tee -a ../app.log
           cp -R "$APP" build/ipa/Payload/
           KK=../build/visionos/kosmickrisp/KosmicKrisp.framework

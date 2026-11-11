@@ -50,6 +50,7 @@ struct Target {
 };
 
 constexpr u32 kMaxTargets = 8;
+constexpr std::chrono::milliseconds kPeriod{2}; // 500 samples a second
 std::mutex g_mutex;             // RegisterThread and Stop; the sampler never takes it.
 Target* g_targets[kMaxTargets]; // Each written before g_count tells of it; never freed.
 std::atomic<u32> g_count{0};
@@ -159,7 +160,7 @@ std::string Stamp() {
     return stamp;
 }
 
-void Sample(Target& target, const Image& image) {
+void Sample(Target& target, Image& image) {
     RawStack raw;
     const auto begin = Clock::now();
     if (thread_suspend(target.port) != KERN_SUCCESS) {
@@ -174,17 +175,20 @@ void Sample(Target& target, const Image& image) {
         thread_get_state(target.port, ARM_THREAD_STATE64,
                          reinterpret_cast<thread_state_t>(&state), &state_count) == KERN_SUCCESS;
     if (got) {
-        raw.pc = static_cast<u64>(arm_thread_state64_get_pc(state));
-        raw.lr = static_cast<u64>(arm_thread_state64_get_lr(state));
-        WalkFrames(
+        Capture(
+            static_cast<u64>(arm_thread_state64_get_pc(state)),
+            static_cast<u64>(arm_thread_state64_get_lr(state)),
             static_cast<u64>(arm_thread_state64_get_fp(state)), target.stack_lo, target.stack_hi,
-            [](u64 address, u64* record) {
-                // The kernel does the copy: an address that leads nowhere is an error.
+            image,
+            [](u64 address, u64* words, u64 bytes) {
+                // The kernel does the copy: a stack that is no longer there is an error, not a
+                // fault (the thread may have ended since it registered).
                 vm_size_t copied = 0;
                 return vm_read_overwrite(mach_task_self(), static_cast<vm_address_t>(address),
-                                         2 * sizeof(u64), reinterpret_cast<vm_address_t>(record),
+                                         static_cast<vm_size_t>(bytes),
+                                         reinterpret_cast<vm_address_t>(words),
                                          &copied) == KERN_SUCCESS &&
-                       copied == 2 * sizeof(u64);
+                       copied == bytes;
             },
             raw);
     }
@@ -195,6 +199,11 @@ void Sample(Target& target, const Image& image) {
     if (!got) {
         ++target.profile.missed;
         return;
+    }
+    if (image.Unknown(raw.pc)) {
+        // (code seen for the first time in this page: whether it is an image's is known from now)
+        Dl_info where{};
+        image.pages.Set(raw.pc, dladdr(reinterpret_cast<void*>(raw.pc), &where) != 0);
     }
     u64 frames[kMaxDepth];
     const u32 depth = FoldStack(raw, image, frames);
@@ -259,11 +268,11 @@ void Run() {
             image.jit_begin = arena.begin;
             image.jit_end = arena.begin + arena.size;
         }
-        next += std::chrono::milliseconds{1};
-        std::this_thread::sleep_until(next);
-        if (Clock::now() - next > std::chrono::milliseconds{50}) {
-            next = Clock::now(); // (kept from running: no burst of samples to make up for it)
+        next += kPeriod;
+        if (const auto now = Clock::now(); next <= now) {
+            next = now + kPeriod; // (late: the samples missed are skipped, not made up for)
         }
+        std::this_thread::sleep_until(next); // (always ahead: every sample has a sleep before it)
         for (u32 i = 0; i < count; ++i) {
             Sample(*g_targets[i], image);
         }
@@ -276,7 +285,8 @@ void RegisterThread(const char* name) {
     if (!Common::Diagnostics()) {
         return;
     }
-    if (const char* off = std::getenv("SHADPS4_CPU_PROFILE_OFF"); off != nullptr && off[0] == '1') {
+    // (off unless asked for: it changes what the session's other measurements say)
+    if (const char* on = std::getenv("SHADPS4_CPU_PROFILE"); on == nullptr || on[0] != '1') {
         return;
     }
     std::scoped_lock lock{g_mutex};
@@ -299,8 +309,9 @@ void RegisterThread(const char* name) {
 
 void Stop() {
     std::scoped_lock lock{g_mutex};
-    if (g_sampler == nullptr || g_stop.exchange(true)) {
-        return;
+    if (g_sampler == nullptr || g_stop.exchange(true) ||
+        g_sampler->get_id() == std::this_thread::get_id()) {
+        return; // (none, ended already, or the sampler itself is the thread ending the session)
     }
     g_sampler->join();
 }

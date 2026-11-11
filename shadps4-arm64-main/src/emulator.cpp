@@ -95,8 +95,8 @@ void Emulator::Shutdown() {
     // The census summary goes to the log: written before the log is flushed and torn down, not by an
     // atexit handler that may run after the sink is gone.
     Census::Shutdown();
-    Common::Profiler::Stop();
     Common::Log::Flush();
+    Common::Profiler::Stop();
     if (controllers) {
         controllers->ResetLightbarColors();
         // need to give SDL time to do this before the runtime exits

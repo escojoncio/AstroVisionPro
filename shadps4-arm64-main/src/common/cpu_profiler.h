@@ -5,11 +5,12 @@
 
 namespace Common::Profiler {
 
-// The sampling CPU profiler of the diagnostics mode (SHADPS4_DIAGNOSTICS=1), for where there is no
-// other (the headset): about a thousand times a second a thread of its own stops each registered
-// thread, reads its stack and lets it go on. Every 30 s and at the session's end it adds what it
-// counted to cpuprof-<date>.txt next to the logs, for tools/symbolize_cpuprof.py. Without the
-// diagnostics mode, or with SHADPS4_CPU_PROFILE_OFF=1, nothing is made: no thread, no table.
+// The sampling CPU profiler, for where there is no other (the headset): 500 times a second a
+// thread of its own stops each registered thread, reads its stack and lets it go on. Every 30 s
+// and at the session's end it adds what it counted to cpuprof-<date>.txt next to the logs, for
+// tools/symbolize_cpuprof.py. It is off, with nothing made (no thread, no table), unless the
+// diagnostics mode is on (SHADPS4_DIAGNOSTICS=1) and SHADPS4_CPU_PROFILE=1 asks for it: it
+// changes what the session's other measurements say.
 
 #ifdef SHADPS4_VISIONOS
 /// The calling thread is sampled from now on, under `name`.

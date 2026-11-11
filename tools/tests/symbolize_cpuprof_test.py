@@ -63,7 +63,7 @@ def main():
                           ' 15.00%        3  gamma', '  5.00%        1  [jit]'],
               'exclusive: the app\'s functions by the map\'s names, the others by the headset\'s')
         check(cp[6] == 'inclusive (top 50 of 6)' and
-              cp[7:13] == ['100.00%       20  alpha', ' 65.00%       13  gamma', ' 45.00%        9  -[Lock_wait:until_]',
+              cp[7:13] == [' 95.00%       19  alpha', ' 65.00%       13  gamma', ' 45.00%        9  -[Lock_wait:until_]',
                            ' 35.00%        7  _ZN4beta3runEv', ' 30.00%        6  lib_system.dylib+0x200',
                            '  5.00%        1  [jit]'],
               'inclusive: a frame nothing names stays as it was written')
@@ -74,7 +74,7 @@ def main():
                          'cp_thread;alpha;lib_system.dylib+0x200;-[Lock_wait:until_] 6',
                          'cp_thread;alpha;gamma 3',
                          'cp_thread;alpha;gamma;-[Lock_wait:until_] 3',
-                         'cp_thread;alpha;[jit] 1',
+                         'cp_thread;[jit] 1',
                          'game_main;[jit] 20',
                          'game_main;[jit];alpha 10'],
               'the stacks are named, added up and put under their thread')
@@ -106,7 +106,7 @@ def main():
 
         code, bare, _ = run(sample)
         bare = bare.splitlines()
-        check(code == 0 and ' 35.00%        7  _ZN4beta3runEv' in bare and '100.00%       20  AstroQuest+0x1000' in bare,
+        check(code == 0 and ' 35.00%        7  _ZN4beta3runEv' in bare and ' 95.00%       19  AstroQuest+0x1000' in bare,
               'without a map the headset\'s own symbols are used')
 
     print(f'{failures} failure(s)')

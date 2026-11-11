@@ -21,10 +21,10 @@
 namespace Common::CpuProfile {
 
 inline constexpr u32 kMaxDepth = 48;
-/// The most frame records of a sample read from outside the thread's own stack (a signal
-/// handler's stack has few): each is a call to the kernel while the thread is stopped, and a
-/// frame pointer that is none (in the JIT's code, say) may lead through any memory.
-inline constexpr u32 kMaxOutside = 16;
+/// The stopped thread's stack is copied a window at a time (small, for the kernel to copy the
+/// bytes rather than share the thread's pages copy-on-write), at most so many times a sample.
+inline constexpr u32 kWindowWords = 1024;
+inline constexpr u32 kMaxReads = 6;
 /// Frames that are not addresses: any code the JIT wrote (it has no symbols), and what stands for
 /// the callers left out of a stack deeper than kMaxDepth.
 inline constexpr u64 kJit = 1;
@@ -43,34 +43,33 @@ struct RawStack {
     bool truncated{};
 };
 
-/// Follows the frame records (x29 -> {the caller's x29, the return address}) from `fp`. A record
-/// inside the thread's own stack [stack_lo, stack_hi) is read in place; any other address goes to
-/// `read_outside(address, record)`, which copies the two words or says it cannot: nothing else is
-/// dereferenced. Allocates nothing (it runs while the thread is stopped). `truncated`: there were
-/// more records than are taken.
-template <typename ReadOutside>
-void WalkFrames(u64 fp, u64 stack_lo, u64 stack_hi, ReadOutside&& read_outside, RawStack& out) {
-    const auto inside = [&](u64 address) {
-        return address >= stack_lo && address < stack_hi && stack_hi - address >= 2 * sizeof(u64);
-    };
+/// Follows the frame records (x29 -> {the caller's x29, the return address}) from `fp`, as long
+/// as they are inside the thread's own stack [stack_lo, stack_hi) and go up it. The stack is not
+/// read in place (a thread that has ended has none): `read(address, words, bytes)` copies that
+/// much of it, or says it cannot. Allocates nothing (it runs while the thread is stopped).
+/// `truncated`: there were more records than are taken.
+template <typename Read>
+void WalkFrames(u64 fp, u64 stack_lo, u64 stack_hi, Read&& read, RawStack& out) {
+    u64 window[kWindowWords];
+    u64 window_lo = 0;
+    u64 window_hi = 0;
+    u32 reads = 0;
     out.count = 0;
     out.truncated = false;
-    u32 outside = 0;
-    while (fp != 0 && (fp & 7) == 0) {
-        u64 record[2];
-        const bool own = inside(fp);
-        if (own) {
-            std::memcpy(record, reinterpret_cast<const void*>(static_cast<std::uintptr_t>(fp)),
-                        sizeof(record));
-        } else {
-            if (outside++ == kMaxOutside) {
+    while ((fp & 7) == 0 && fp >= stack_lo && fp < stack_hi && stack_hi - fp >= 2 * sizeof(u64)) {
+        if (fp < window_lo || fp >= window_hi || window_hi - fp < 2 * sizeof(u64)) {
+            if (reads++ == kMaxReads) {
                 out.truncated = true;
                 break;
             }
-            if (!read_outside(fp, record)) {
+            const u64 bytes = std::min<u64>(stack_hi - fp, sizeof(window)) & ~u64{7};
+            if (!read(fp, window, bytes)) {
                 break;
             }
+            window_lo = fp;
+            window_hi = fp + bytes;
         }
+        const u64* const record = window + (fp - window_lo) / sizeof(u64);
         const u64 ret = record[1] & kAddressMask;
         if (ret < 4096) {
             break; // (the outermost record, or not a record)
@@ -80,12 +79,39 @@ void WalkFrames(u64 fp, u64 stack_lo, u64 stack_hi, ReadOutside&& read_outside, 
             break;
         }
         out.rets[out.count++] = ret;
-        if (record[0] <= fp && inside(record[0]) == own) {
-            break; // (the records of one stack go up)
+        if (record[0] <= fp) {
+            break; // (the records of a stack go up)
         }
         fp = record[0];
     }
 }
+
+/// Whether the pages code was seen running in are some image's, as far as it was found out:
+/// nothing can be asked while the thread is stopped, so a page is asked about afterwards and
+/// known from the next sample on. Direct mapped; a page that loses its place is asked about again.
+class PageKinds {
+public:
+    enum class Kind : u8 { Unknown, Image, None };
+
+    Kind Get(u64 address) const {
+        const Entry& entry = entries[Index(address)];
+        return entry.page == address >> kPageBits ? entry.kind : Kind::Unknown;
+    }
+    void Set(u64 address, bool image) {
+        entries[Index(address)] = {address >> kPageBits, image ? Kind::Image : Kind::None};
+    }
+
+private:
+    static constexpr u32 kPageBits = 14;
+    struct Entry {
+        u64 page{};
+        Kind kind{Kind::Unknown};
+    };
+    static std::size_t Index(u64 address) {
+        return (address >> kPageBits) & 4095;
+    }
+    std::vector<Entry> entries = std::vector<Entry>(4096);
+};
 
 /// The emulator's own image (the app's executable) as it is loaded, and where the JIT's code is.
 struct Image {
@@ -98,19 +124,33 @@ struct Image {
     std::vector<u32> starts;
     u64 jit_begin{};
     u64 jit_end{};
+    PageKinds pages; ///< Of the code outside this image.
 
     bool Has(u64 address) const {
         return address - base < size;
+    }
+    bool InJit(u64 address) const {
+        return address >= jit_begin && address < jit_end;
+    }
+    /// Whether code at the address is known to be an image's. Only there is x29 a frame pointer
+    /// (in the JIT's code it may be any register of the guest's) and the stack walked.
+    bool InImage(u64 address) const {
+        return Has(address) || (!InJit(address) && pages.Get(address) == PageKinds::Kind::Image);
+    }
+    /// Whether it is still to be found out (and told to `pages`) if the address is in an image.
+    bool Unknown(u64 address) const {
+        return !Has(address) && !InJit(address) &&
+               pages.Get(address) == PageKinds::Kind::Unknown;
     }
     /// Whether the function the address is in is known.
     bool Known(u64 address) const {
         return Has(address) && !starts.empty() && address - base >= starts.front();
     }
     /// What an address counts as: the start of its function in this image, kJit in the JIT's
-    /// code, itself anywhere else. Samples of one function then add up whatever instruction each
-    /// one stopped at.
+    /// code and in any page known to be no image's, itself anywhere else. Samples of one function
+    /// then add up whatever instruction each one stopped at.
     u64 Fold(u64 address) const {
-        if (address >= jit_begin && address < jit_end) {
+        if (InJit(address) || (!Has(address) && pages.Get(address) == PageKinds::Kind::None)) {
             return kJit;
         }
         if (!Known(address)) {
@@ -121,6 +161,20 @@ struct Image {
                         1);
     }
 };
+
+/// What is taken of a stopped thread, given its registers: the stack is only walked when the
+/// thread is running an image's code.
+template <typename Read>
+void Capture(u64 pc, u64 lr, u64 fp, u64 stack_lo, u64 stack_hi, const Image& image, Read&& read,
+             RawStack& out) {
+    out.pc = pc;
+    out.lr = lr;
+    out.count = 0;
+    out.truncated = false;
+    if (image.InImage(pc)) {
+        WalkFrames(fp, stack_lo, stack_hi, read, out);
+    }
+}
 
 /// The offsets in a Mach-O LC_FUNCTION_STARTS list: ULEB128 steps from one function to the next,
 /// ended by a zero.
@@ -146,10 +200,14 @@ inline std::vector<u32> DecodeFunctionStarts(const u8* data, std::size_t size) {
 }
 
 /// A sample's stack as it is counted, leaf first, at most kMaxDepth frames in `frames`; returns
-/// how many. Return addresses are taken back to the call (-4) before they are folded.
+/// how many: one, kJit, for code that is no image's. Return addresses are taken back to the call
+/// (-4) before they are folded.
 inline u32 FoldStack(const RawStack& raw, const Image& image, u64* frames) {
     u32 depth = 0;
     frames[depth++] = image.Fold(raw.pc);
+    if (frames[0] == kJit) {
+        return depth; // (nothing there says who called)
+    }
     // A function with no frame record of its own (a leaf, or one still in its prologue) has its
     // caller in the link register only. With a record, the register holds either the same return
     // address as the record or one into the function itself (left by its last call): only a

@@ -35,5 +35,6 @@ struct TestSwitch: Identifiable {
         TestSwitch(id: "barrier_order", title: "Cómputo ordenado por niveles", variable: "VPVK_BARRIER_ORDER", value: "1", on: false),
         TestSwitch(id: "vs_fastmath", title: "Vértices en fast math", variable: "VPKENGINE_VS_FASTMATH", value: "1", on: false),
         TestSwitch(id: "max_aniso", title: "Anisotropía máxima 4", variable: "VPKENGINE_MAX_ANISO", value: "4", on: false),
+        TestSwitch(id: "cpu_profile", title: "Perfilador de CPU", variable: "SHADPS4_CPU_PROFILE", value: "1", on: false),
     ]
 }
