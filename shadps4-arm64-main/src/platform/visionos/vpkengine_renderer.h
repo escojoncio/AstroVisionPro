@@ -106,6 +106,8 @@ void StartGpuBench();
 /// for with what is wrong on screen: a SCENEDRAW line for every draw on the scene's depth targets and pictures at full
 /// resolution of what each view drew (vpps4::Renderer::beginSceneCapture; lines VPKENGINE_PROBE SCENECAP / SCENEDRAW /
 /// FRAMECAP n=u<capture>.<frame>, files framecap-u<capture>.<frame>-*.ppm next to the logs). As many times as wanted.
+/// The six pictures before it leave what was asked of the renderer in callcap-u<capture>.vp4, next to the logs too
+/// (vpps4::Renderer::beginCallCapture; lines VPKENGINE_PROBE CALLCAP begin / end).
 void RequestSceneCapture();
 
 // The headset's frames (used by vpkengine_presenter.cpp, which hands them to videoout/driver.cpp):

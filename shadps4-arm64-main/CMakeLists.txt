@@ -1482,6 +1482,7 @@ if (SHADPS4_VISIONOS)
             target_sources(shadps4 PRIVATE ${VPKENGINE_CORE_SOURCES}
                 ${VPKENGINE_METAL_DIR}/src/metal_backend.mm
                 ${VPKENGINE_PS4_DIR}/src/bc_decode.cpp
+                ${VPKENGINE_PS4_DIR}/src/callcap.cpp
                 ${VPKENGINE_PS4_DIR}/src/fixed_function.cpp
                 ${VPKENGINE_PS4_DIR}/src/formats.cpp
                 ${VPKENGINE_PS4_DIR}/src/renderer.cpp

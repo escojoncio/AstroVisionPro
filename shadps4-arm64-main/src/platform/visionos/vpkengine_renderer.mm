@@ -56,6 +56,7 @@
 #include "vpgpu/core/device.h"
 #include "vpgpu/core/probe.h"
 #include "vpgpu/metal2/metal_backend.h"
+#include "vpps4/callcap.h"
 #include "vpps4/fetch.h"
 #include "vpps4/formats.h"
 #include "vpps4/msaa.h"
@@ -2108,8 +2109,9 @@ void StartGpuBench() {
 void RequestSceneCapture() {
     if (!Common::Diagnostics()) return;
     gSceneCapture.store(true, std::memory_order_release);
-    LOG_INFO(Render_Vulkan, "VPKENGINE_PROBE SCENECAP asked for: the next whole picture is captured (SCENEDRAW and FRAMECAP "
-                            "lines, pictures framecap-u<n>.* next to the logs)");
+    LOG_INFO(Render_Vulkan, "VPKENGINE_PROBE SCENECAP asked for: the calls of the next six pictures go to callcap-u<n>.vp4, then "
+                            "the next whole picture is captured (SCENEDRAW and FRAMECAP lines, pictures framecap-u<n>.* next to "
+                            "the logs)");
 }
 
 Rasterizer::~Rasterizer() {
@@ -3629,7 +3631,13 @@ kernel void vp_eye_hash(texture2d<float, access::read> t [[texture(0)]], device 
     // submitted: a capture that was on ends with that picture (its eyes are told: the SCENEDRAW lines name targets by
     // address), one that was asked for starts with the next, so that one whole picture of the title is captured
     // (vpps4::Renderer::beginSceneCapture).
+    // Before it, the call capture (vpps4/callcap.h): what is asked of the renderer over the next six pictures goes to
+    // callcap-u<n>.vp4 next to the logs (replayed without the headset by VPKEngine's gpu/ps4/tools/vp4replay), and the scene
+    // capture starts with the picture after its last one. The renderer logs VPKENGINE_PROBE CALLCAP begin / end: the file,
+    // its bytes, pictures and draws, and what cut it short if something did.
     bool scene_capture = false;
+    bool call_capture = false;
+    u32 call_captures = 0;
     void sceneCapture(Engine& e, const std::array<vpps4::ImageDesc, 2>& eyeDesc) {
         if (scene_capture) {
             scene_capture = false;
@@ -3638,7 +3646,24 @@ kernel void vp_eye_hash(texture2d<float, access::read> t [[texture(0)]], device 
                 LOG_INFO(Render_Vulkan, "VPKENGINE_PROBE SCENECAP n={} eyes left={:#x} right={:#x}", n,
                          u64(eyeDesc[0].address), u64(eyeDesc[1].address));
         }
-        if (gSceneCapture.exchange(false, std::memory_order_acq_rel)) {
+        bool scene = false;  // the scene capture starts with the next picture
+        if (call_capture) {
+            // (one more picture of it is whole; false: that was its last one, or the file reached its limit)
+            if (!e.renderer->callCapturePicture()) {
+                e.renderer->endCallCapture();
+                call_capture = false;
+                scene = true;
+            }
+        } else if (gSceneCapture.exchange(false, std::memory_order_acq_rel)) {
+            std::filesystem::path dir;  // (where the probe's file and the scene capture's pictures go: probeStart)
+            if (const char* d = std::getenv("SHADPS4_PROBE_DIR"); d && *d) dir = d;
+            else dir = Common::FS::GetUserPath(Common::FS::PathType::LogDir);
+            vpps4::CallCapOptions options;
+            options.path = (dir / ("callcap-u" + std::to_string(++call_captures) + ".vp4")).string();
+            call_capture = e.renderer->beginCallCapture(options);
+            scene = !call_capture;  // (the file could not be made: the scene capture alone)
+        }
+        if (scene) {
             scene_capture = e.renderer->beginSceneCapture() != 0;
             if (!scene_capture) LOG_INFO(Render_Vulkan, "VPKENGINE_PROBE SCENECAP not started (the probe is off)");
         }
