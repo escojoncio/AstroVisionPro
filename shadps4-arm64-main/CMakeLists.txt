@@ -817,6 +817,7 @@ if (ENABLE_OPENXR)
 elseif (SHADPS4_VISIONOS)
     # The same host, handing the frames to the visionOS app instead of an OpenXR runtime.
     list(APPEND VR_LIBS src/core/vr/openxr_host_visionos.mm
+                        src/core/vr/frame_queue.h
                         src/core/vr/openxr_host.h
     )
 endif()

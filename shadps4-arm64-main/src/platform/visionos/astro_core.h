@@ -147,13 +147,16 @@ typedef struct AstroFrame {
     float ipd;
 } AstroFrame;
 
-/// The newest frame the game finished that has not been taken yet. It stays the host's until
-/// astro_core_release_frame. Returns false when there is none.
+/// The oldest of the (two at most) frames the game finished that have not been taken yet; with
+/// ASTRO_TAKE_LATEST=1 the newest. It stays the host's until astro_core_release_frame. Returns
+/// false when there is none.
 bool astro_core_take_frame(AstroFrame* frame);
 /// The GPU is done reading the frame in `slot`.
 void astro_core_release_frame(uint32_t slot);
 /// How many frames the game delivered so far.
 uint32_t astro_core_frames_delivered(void);
+/// How many of them were given up without being taken.
+uint32_t astro_core_frames_superseded(void);
 
 // --- the controller --------------------------------------------------------------------------
 

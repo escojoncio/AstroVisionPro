@@ -29,7 +29,9 @@
 #include <cstdlib>
 #include <mutex>
 
+#include "common/diagnostics.h"
 #include "common/logging/log.h"
+#include "core/vr/frame_queue.h"
 #include "core/vr/openxr_host.h"
 #include "core/vr/vr_runtime.h"
 #include "platform/visionos/astro_core.h"
@@ -41,8 +43,10 @@ namespace {
 using Clock = std::chrono::steady_clock;
 
 /// Being drawn (the GPU may be a frame or two ahead), waiting to be shown, being shown, and
-/// some to spare: with fewer, the GPU thread found none free at times and stalled.
-constexpr u32 NumSlots = 6;
+/// some to spare: with fewer, the GPU thread found none free at times and stalled. Two of them
+/// wait to be shown (FrameQueue). The same number is in vpkengine_presenter.h and
+/// vpkengine_renderer.mm (kSlots).
+constexpr u32 NumSlots = 8;
 
 float EnvFloat(const char* name, float fallback) {
     const char* value = std::getenv(name);
@@ -54,19 +58,19 @@ bool EnvFlag(const char* name, bool fallback) {
     return value != nullptr && *value != '\0' ? value[0] != '0' : fallback;
 }
 
+/// Gaps between deliveries, in milliseconds: under 2, 5, 10, 20, 40, and more.
+constexpr std::array<double, 5> GapLimits{0.002, 0.005, 0.010, 0.020, 0.040};
+
 } // namespace
 
 struct OpenXrHost::Impl {
     struct Slot {
-        enum class State { Free, Drawing, Ready, Reading };
-
         vk::Image image;
         vk::DeviceMemory memory;
         vk::ImageView view;
         id<MTLTexture> texture{nil};
         u32 width{};
         u32 height{};
-        State state{State::Free};
         PresentedFrame info;
     };
 
@@ -90,15 +94,20 @@ struct OpenXrHost::Impl {
     std::mutex slot_mutex;
     std::condition_variable slot_freed;
     std::array<Slot, NumSlots> slots;
-    s32 latest{-1};
+    FrameQueue<NumSlots> queue; // the state of each slot: which is taken next
     u32 next_slot{};
     std::vector<Retired> retired;
     std::atomic<bool> accepting{};
     std::atomic<bool> showing{};
     std::atomic<u32> delivered_frames{};
+    u32 taken_frames{};
     Clock::time_point last_delivery;
     double longest_gap{};
     u32 long_gaps{};
+    // Diagnostics: gaps between deliveries (GapLimits and over), every five seconds.
+    std::array<u32, GapLimits.size() + 1> gap_counts{};
+    double report_longest_gap{};
+    Clock::time_point last_report;
     bool reported_worn{true};
     float ipd{0.063f};
 
@@ -274,6 +283,9 @@ void OpenXrHost::Shutdown() {
 bool OpenXrHost::Connect() {
     impl->enabled = EnvFlag("SHADPS4_OPENXR", true);
     impl->pause_when_away = EnvFlag("SHADPS4_XR_PAUSE", true);
+    // ASTRO_TAKE_LATEST=1: the headset takes only the newest frame, as it did before.
+    const char* latest = std::getenv("ASTRO_TAKE_LATEST");
+    impl->queue.take_latest = latest != nullptr && latest[0] == '1';
     if (!impl->enabled) {
         LOG_INFO(Core_Vr, "The headset is not used (SHADPS4_OPENXR=0)");
         return false;
@@ -332,11 +344,7 @@ std::optional<OpenXrHost::MetalTarget> OpenXrHost::BeginMetalFrame(u32 width, u3
     }
     std::unique_lock lock{impl->slot_mutex};
     impl->DestroyRetired();
-    const auto reusable = [&](u32 index) {
-        const Impl::Slot& slot = impl->slots[index];
-        return slot.state == Impl::Slot::State::Free ||
-               (slot.state == Impl::Slot::State::Ready && static_cast<s32>(index) != impl->latest);
-    };
+    const auto reusable = [&](u32 index) { return impl->queue.Reusable(index); };
     impl->slot_freed.wait_for(lock, std::chrono::milliseconds{100}, [&] {
         for (u32 index = 0; index < NumSlots; ++index) {
             if (reusable(index)) {
@@ -358,7 +366,7 @@ std::optional<OpenXrHost::MetalTarget> OpenXrHost::BeginMetalFrame(u32 width, u3
             return std::nullopt;
         }
         impl->next_slot = (index + 1) % NumSlots;
-        slot.state = Impl::Slot::State::Drawing;
+        impl->queue.Begin(index);
         return MetalTarget{
             .index = index,
             .texture = (void*)slot.texture,
@@ -380,9 +388,7 @@ std::optional<OpenXrHost::Target> OpenXrHost::BeginFrame(u32 width, u32 height) 
     // little here beats the GPU thread trying again and again.
     const auto has_free = [&] {
         for (u32 index = 0; index < NumSlots; ++index) {
-            const Impl::Slot& slot = impl->slots[index];
-            if (slot.state == Impl::Slot::State::Free ||
-                (slot.state == Impl::Slot::State::Ready && static_cast<s32>(index) != impl->latest)) {
+            if (impl->queue.Reusable(index)) {
                 return true;
             }
         }
@@ -392,11 +398,8 @@ std::optional<OpenXrHost::Target> OpenXrHost::BeginFrame(u32 width, u32 height) 
     for (u32 attempt = 0; attempt < NumSlots; ++attempt) {
         const u32 index = (impl->next_slot + attempt) % NumSlots;
         Impl::Slot& slot = impl->slots[index];
-        // Not what is still being drawn or shown, and not the frame that waits to be shown.
-        const bool reusable = slot.state == Impl::Slot::State::Free ||
-                              (slot.state == Impl::Slot::State::Ready &&
-                               static_cast<s32>(index) != impl->latest);
-        if (!reusable) {
+        // Not what is still being drawn or shown, and not the frames that wait to be shown.
+        if (!impl->queue.Reusable(index)) {
             continue;
         }
         if ((!slot.image || slot.width != width || slot.height != height) &&
@@ -406,7 +409,7 @@ std::optional<OpenXrHost::Target> OpenXrHost::BeginFrame(u32 width, u32 height) 
             return std::nullopt;
         }
         impl->next_slot = (index + 1) % NumSlots;
-        slot.state = Impl::Slot::State::Drawing;
+        impl->queue.Begin(index);
         return Target{
             .index = index,
             .image = slot.image,
@@ -419,14 +422,12 @@ std::optional<OpenXrHost::Target> OpenXrHost::BeginFrame(u32 width, u32 height) 
 }
 
 void OpenXrHost::EndFrame(u32 index, const PresentedFrame& info) {
-    std::scoped_lock lock{impl->slot_mutex};
+    std::unique_lock lock{impl->slot_mutex};
     Impl::Slot& slot = impl->slots[index % NumSlots];
-    if (slot.state != Impl::Slot::State::Drawing) {
+    if (!impl->queue.End(index % NumSlots)) {
         return;
     }
-    slot.state = Impl::Slot::State::Ready;
     slot.info = info;
-    impl->latest = static_cast<s32>(index % NumSlots);
     impl->delivered_frames.fetch_add(1, std::memory_order_relaxed);
     impl->slot_freed.notify_all();
     const auto now = Clock::now();
@@ -436,16 +437,40 @@ void OpenXrHost::EndFrame(u32 index, const PresentedFrame& info) {
         if (gap > 0.050) {
             ++impl->long_gaps;
         }
+        if (Common::Diagnostics()) {
+            impl->report_longest_gap = std::max(impl->report_longest_gap, gap);
+            ++impl->gap_counts[std::upper_bound(GapLimits.begin(), GapLimits.end(), gap) -
+                               GapLimits.begin()];
+        }
     }
     impl->last_delivery = now;
+    if (!Common::Diagnostics()) {
+        return;
+    }
+    if (impl->last_report == Clock::time_point{}) {
+        impl->last_report = now;
+    }
+    if (now - impl->last_report < std::chrono::seconds{5}) {
+        return;
+    }
+    const auto counts = impl->gap_counts;
+    const double longest = impl->report_longest_gap;
+    const u32 superseded = impl->queue.superseded;
+    const u32 taken = impl->taken_frames;
+    impl->gap_counts = {};
+    impl->report_longest_gap = 0.0;
+    impl->last_report = now;
+    lock.unlock();
+    LOG_INFO(Core_Vr,
+             "DIAG: deliveries by gap (<2 <5 <10 <20 <40 >=40 ms): {} {} {} {} {} {}; {:.0f} ms the "
+             "longest; {} delivered, {} taken, {} superseded in all",
+             counts[0], counts[1], counts[2], counts[3], counts[4], counts[5], longest * 1e3,
+             impl->delivered_frames.load(std::memory_order_relaxed), taken, superseded);
 }
 
 void OpenXrHost::DropFrame(u32 index) {
     std::scoped_lock lock{impl->slot_mutex};
-    Impl::Slot& slot = impl->slots[index % NumSlots];
-    if (slot.state == Impl::Slot::State::Drawing) {
-        slot.state = Impl::Slot::State::Free;
-    }
+    impl->queue.Drop(index % NumSlots);
     impl->slot_freed.notify_all();
 }
 
@@ -501,19 +526,22 @@ struct VisionOsBridge {
     static bool TakeFrame(AstroFrame& frame) {
         auto& host = Host();
         std::scoped_lock lock{host.slot_mutex};
-        if (host.latest < 0 || host.slots[host.latest].state != Slot::State::Ready) {
+        // The oldest of the frames that wait (two at most), the newest with ASTRO_TAKE_LATEST=1.
+        const int taken = host.queue.Take();
+        if (taken < 0) {
             return false;
         }
-        Slot& slot = host.slots[host.latest];
+        Slot& slot = host.slots[taken];
         // A title with nothing to show hands over a black picture of a pixel an eye.
         if (slot.width < 64 || slot.height < 64) {
-            slot.state = Slot::State::Free;
+            host.queue.Return(static_cast<u32>(taken));
             host.slot_freed.notify_all();
             return false;
         }
-        slot.state = Slot::State::Reading;
+        ++host.taken_frames;
+        // The pose is the one this frame was drawn for, not the newest one's.
         const PresentedFrame& info = slot.info;
-        frame.slot = static_cast<u32>(host.latest);
+        frame.slot = static_cast<u32>(taken);
         frame.frame_id = info.id;
         frame.texture = (__bridge void*)slot.texture;
         frame.width = slot.width;
@@ -546,15 +574,18 @@ struct VisionOsBridge {
     static void ReleaseFrame(u32 index) {
         auto& host = Host();
         std::scoped_lock lock{host.slot_mutex};
-        Slot& slot = host.slots[index % NumSlots];
-        if (slot.state == Slot::State::Reading) {
-            slot.state = Slot::State::Free;
-        }
+        host.queue.Return(index % NumSlots);
         host.slot_freed.notify_all();
     }
 
     static u32 FramesDelivered() {
         return Host().delivered_frames.load(std::memory_order_relaxed);
+    }
+
+    static u32 FramesSuperseded() {
+        auto& host = Host();
+        std::scoped_lock lock{host.slot_mutex};
+        return host.queue.superseded;
     }
 };
 } // namespace Core::Vr
@@ -579,6 +610,10 @@ void astro_core_release_frame(uint32_t slot) {
 
 uint32_t astro_core_frames_delivered(void) {
     return Core::Vr::VisionOsBridge::FramesDelivered();
+}
+
+uint32_t astro_core_frames_superseded(void) {
+    return Core::Vr::VisionOsBridge::FramesSuperseded();
 }
 
 void astro_core_update_ipd(float ipd) {

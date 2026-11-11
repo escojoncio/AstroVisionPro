@@ -92,6 +92,13 @@ final class GameRenderer: @unchecked Sendable {
     private var framesTaken = 0
     private var refreshes = 0
     private var lastReport: TimeInterval = 0
+    /// Diagnostics: how long between one entry to renderFrame and the next (under 2, 5, 10, 20, 40
+    /// ms, and more), the longest, and the display's rate in whole fives of Hz last told.
+    private static let entryLimits: [TimeInterval] = [0.002, 0.005, 0.010, 0.020, 0.040]
+    private var lastEntry: TimeInterval = 0
+    private var entryGaps = [Int](repeating: 0, count: 6)
+    private var longestEntry: TimeInterval = 0
+    private var lastPanelHz = 0
     private var framesSinceOptics = 0
     private var fovSamples = 0
 
@@ -202,6 +209,15 @@ final class GameRenderer: @unchecked Sendable {
     }
 
     private func renderFrame() {
+        if settings.diagnostics {
+            let entered = ProcessInfo.processInfo.systemUptime
+            if lastEntry > 0 {
+                let gap = entered - lastEntry
+                entryGaps[Self.entryLimits.firstIndex(where: { gap < $0 }) ?? Self.entryLimits.count] += 1
+                longestEntry = max(longestEntry, gap)
+            }
+            lastEntry = entered
+        }
         guard let layerFrame = layerRenderer.queryNextFrame() else { return }
 
         layerFrame.startUpdate()
@@ -223,6 +239,14 @@ final class GameRenderer: @unchecked Sendable {
         // A measured rate near a standard one raises the nominal rate; it never lowers it (a throttled
         // 50 Hz display is not one of them, and 55 Hz, close to 60, is below the 90 already held).
         let measured = Float(1.0 / refreshPeriod)
+        if settings.diagnostics {
+            let panelHz = Int((measured / 5).rounded()) * 5
+            if panelHz != lastPanelHz {
+                lastPanelHz = panelHz
+                let rate = String(format: "%.1f", measured)
+                LogFiles.log("DIAG: the display measures \(rate) Hz now (game clock \(Int(nominalRefresh)) Hz)")
+            }
+        }
         for rate in Self.standardRefreshRates where abs(measured - rate) / rate < 0.08 {
             nominalRefresh = max(nominalRefresh, rate)
         }
@@ -333,7 +357,7 @@ final class GameRenderer: @unchecked Sendable {
         }
         guard now - lastReport >= 5 else { return }
         var text = "Headset: \(framesTaken) game frames taken in \(refreshes) refreshes, "
-            + "\(astro_core_frames_delivered()) delivered in all"
+            + "\(astro_core_frames_delivered()) delivered in all, \(astro_core_frames_superseded()) superseded"
         let thermal: String
         switch ProcessInfo.processInfo.thermalState {
         case .nominal: thermal = "nominal"
@@ -364,6 +388,13 @@ final class GameRenderer: @unchecked Sendable {
             text += "; no game frame yet"
         }
         LogFiles.log(text)
+        if settings.diagnostics {
+            let gaps = entryGaps.map { String($0) }.joined(separator: " ")
+            let longest = String(format: "%.0f", longestEntry * 1000)
+            LogFiles.log("DIAG: refreshes by gap since the one before (<2 <5 <10 <20 <40 >=40 ms): \(gaps); \(longest) ms the longest")
+            entryGaps = [Int](repeating: 0, count: 6)
+            longestEntry = 0
+        }
         framesTaken = 0
         refreshes = 0
         upscaleFrames = 0
