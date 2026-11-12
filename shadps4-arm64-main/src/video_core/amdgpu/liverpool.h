@@ -26,6 +26,7 @@
 #include "video_core/amdgpu/cb_db_extent.h"
 #include "video_core/amdgpu/pm4_exec.h"
 #include "video_core/amdgpu/regs.h"
+#include "video_core/amdgpu/state_serial.h"
 
 namespace Vulkan {
 class Rasterizer;
@@ -77,6 +78,10 @@ struct Liverpool {
     Regs regs{};
     std::array<CbDbExtent, NUM_COLOR_BUFFERS> last_cb_extent{};
     CbDbExtent last_db_extent{};
+    /// Moves with any write that can change a draw's fixed state (DrawState::stateSerial, see state_serial.h). Not with the
+    /// draw packets' own registers (counts, index base and type, instances, draw initiator, CP_STRMOUT_CNTL): the fixed state
+    /// does not follow them. Every write of the register file goes through RegPtr, StateSerial::Write or a Bump beside it.
+    StateSerial state_serial{};
 
 public:
     explicit Liverpool();

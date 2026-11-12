@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cstring>
 #include <mutex>
@@ -290,6 +291,29 @@ namespace {
 constexpr u32 kShRegBase = Regs::ShRegWordOffset;
 constexpr u32 kCsRegBase = Regs::ShRegWordOffset + 0x200; // COMPUTE_* registers (SH space 0x200..)
 
+// The registers whose value is not part of the fixed state of a draw the renderer's draw cache keys (draw_cache.h, which leaves
+// out the programs, their user data and the geometry): the address of every stage but the pixel shader's (its being 0 is a
+// stage that is not there), the user data of all of them, VGT_INDX_OFFSET and VGT_NUM_INSTANCES. A write that changes only
+// these does not move the state serial (state_serial.h); every other register does.
+#define LIVERPOOL_REG(field) u32(offsetof(Regs, field) / sizeof(u32))
+constexpr u32 kUserDataRegs = 16;
+constexpr std::array kInertRegs = {
+    RegRange{LIVERPOOL_REG(ps_program.user_data), LIVERPOOL_REG(ps_program.user_data) + kUserDataRegs},
+    RegRange{LIVERPOOL_REG(vs_program), LIVERPOOL_REG(vs_program) + 2},
+    RegRange{LIVERPOOL_REG(vs_program.user_data), LIVERPOOL_REG(vs_program.user_data) + kUserDataRegs},
+    RegRange{LIVERPOOL_REG(gs_program), LIVERPOOL_REG(gs_program) + 2},
+    RegRange{LIVERPOOL_REG(gs_program.user_data), LIVERPOOL_REG(gs_program.user_data) + kUserDataRegs},
+    RegRange{LIVERPOOL_REG(es_program), LIVERPOOL_REG(es_program) + 2},
+    RegRange{LIVERPOOL_REG(es_program.user_data), LIVERPOOL_REG(es_program.user_data) + kUserDataRegs},
+    RegRange{LIVERPOOL_REG(hs_program), LIVERPOOL_REG(hs_program) + 2},
+    RegRange{LIVERPOOL_REG(hs_program.user_data), LIVERPOOL_REG(hs_program.user_data) + kUserDataRegs},
+    RegRange{LIVERPOOL_REG(ls_program), LIVERPOOL_REG(ls_program) + 2},
+    RegRange{LIVERPOOL_REG(ls_program.user_data), LIVERPOOL_REG(ls_program.user_data) + kUserDataRegs},
+    RegRange{LIVERPOOL_REG(index_offset), LIVERPOOL_REG(index_offset) + 1},
+    RegRange{LIVERPOOL_REG(num_instances), LIVERPOOL_REG(num_instances) + 1},
+};
+#undef LIVERPOOL_REG
+
 u64 GuestAddress(u32 lo, u32 hi, u64 align_mask = ~0ull) {
     return (u64(lo) | u64(hi & 0xFFFF) << 32) & align_mask;
 }
@@ -328,6 +352,7 @@ void Liverpool::NoteUnhandledPacket(Pm4Engine engine, const PM4Header* header, c
 }
 
 u32* Liverpool::RegPtr(u32 mmio, u32 mapped_queue) {
+    state_serial.Bump(); // (the caller may write through it, or only read: when in doubt it moves)
     // The compute program registers (SH space 0x200..) are per queue.
     if (mmio >= kCsRegBase && mmio < kCsRegBase + sizeof(ComputeProgram) / 4) {
         return reinterpret_cast<u32*>(&mapped_queues[mapped_queue].cs_state) + (mmio - kCsRegBase);
@@ -934,6 +959,7 @@ Liverpool::Task Liverpool::ProcessCeUpdate(std::span<const u32> ccb) {
             continue;
         }
         if (type == 0) {
+            state_serial.Bump();
             const auto type0 = ConsumePm4Type0(ccb, regs.reg_array);
             if (!type0.consumed) {
                 LOG_ERROR(Lib_GnmDriver,
@@ -947,6 +973,7 @@ Liverpool::Task Liverpool::ProcessCeUpdate(std::span<const u32> ccb) {
             continue;
         }
         if (type == 1) {
+            state_serial.Bump();
             const auto type1 = ConsumePm4Type1(ccb, regs.reg_array);
             if (!type1.consumed) {
                 LOG_ERROR(Lib_GnmDriver,
@@ -1083,6 +1110,7 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
             dcb = {};
             break;
         case 0: {
+            state_serial.Bump();
             const auto type0 = ConsumePm4Type0(dcb, regs.reg_array);
             if (!type0.consumed) {
                 LOG_ERROR(Lib_GnmDriver,
@@ -1097,6 +1125,7 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
             continue;
         }
         case 1: {
+            state_serial.Bump();
             const auto type1 = ConsumePm4Type1(dcb, regs.reg_array);
             if (!type1.consumed) {
                 LOG_ERROR(Lib_GnmDriver, "PM4 type 1 exceeds remaining submission. remaining={}",
@@ -1179,13 +1208,14 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
             }
             case PM4ItOpcode::ClearState: {
                 regs.SetDefaults();
+                state_serial.Bump();
                 break;
             }
             case PM4ItOpcode::SetConfigReg: {
                 const auto* set_data = reinterpret_cast<const PM4CmdSetData*>(header);
                 const auto reg_addr = Regs::ConfigRegWordOffset + set_data->reg_offset;
                 const auto* payload = reinterpret_cast<const u32*>(header + 2);
-                std::memcpy(&regs.reg_array[reg_addr], payload, (count - 1) * sizeof(u32));
+                state_serial.Write(regs.reg_array.data(), reg_addr, payload, count - 1, kInertRegs);
                 break;
             }
             case PM4ItOpcode::SetContextReg: {
@@ -1193,7 +1223,7 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                 const auto reg_addr = Regs::ContextRegWordOffset + set_data->reg_offset;
                 const auto* payload = reinterpret_cast<const u32*>(header + 2);
 
-                std::memcpy(&regs.reg_array[reg_addr], payload, (count - 1) * sizeof(u32));
+                state_serial.Write(regs.reg_array.data(), reg_addr, payload, count - 1, kInertRegs);
 
                 // In the case of HW, render target memory has alignment as color block operates on
                 // tiles. There is no information of actual resource extents stored in CB context
@@ -1223,6 +1253,7 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                     } else {
                         last_cb_extent[col_buf_id].raw = 0;
                     }
+                    state_serial.Bump();
                     break;
                 }
                 case ContextRegs::CbColor0Cmask:
@@ -1244,6 +1275,7 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                                    "NOP hint is missing in CB setup sequence");
                         last_cb_extent[col_buf_id].raw = payload[nop_offset + 1];
                     }
+                    state_serial.Bump();
                     break;
                 }
                 case ContextRegs::DbZInfo: {
@@ -1254,6 +1286,7 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                     } else {
                         last_db_extent.raw = 0;
                     }
+                    state_serial.Bump();
                     break;
                 }
                 default:
@@ -1272,15 +1305,15 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                                  (set_data->reg_offset - 0x200);
                     std::memcpy(addr, header + 2, set_size);
                 } else {
-                    std::memcpy(&regs.reg_array[Regs::ShRegWordOffset + set_data->reg_offset],
-                                header + 2, set_size);
+                    state_serial.Write(regs.reg_array.data(), Regs::ShRegWordOffset + set_data->reg_offset,
+                                       reinterpret_cast<const u32*>(header + 2), count - 1, kInertRegs);
                 }
                 break;
             }
             case PM4ItOpcode::SetUconfigReg: {
                 const auto* set_data = reinterpret_cast<const PM4CmdSetData*>(header);
-                std::memcpy(&regs.reg_array[Regs::UconfigRegWordOffset + set_data->reg_offset],
-                            header + 2, (count - 1) * sizeof(u32));
+                state_serial.Write(regs.reg_array.data(), Regs::UconfigRegWordOffset + set_data->reg_offset,
+                                   reinterpret_cast<const u32*>(header + 2), count - 1, kInertRegs);
                 break;
             }
             case PM4ItOpcode::IndexType: {
@@ -1934,6 +1967,7 @@ Liverpool::Task Liverpool::ProcessCompute(std::span<const u32> acb, u32 vqid) {
         }
 
         if (header->type == 0) {
+            state_serial.Bump();
             const auto type0 = ConsumePm4Type0(acb, regs.reg_array);
             if (!type0.consumed) {
                 LOG_ERROR(Lib_GnmDriver,
@@ -1953,6 +1987,7 @@ Liverpool::Task Liverpool::ProcessCompute(std::span<const u32> acb, u32 vqid) {
         }
 
         if (header->type == 1) {
+            state_serial.Bump();
             const auto type1 = ConsumePm4Type1(acb, regs.reg_array);
             if (!type1.consumed) {
                 LOG_ERROR(Lib_GnmDriver,
@@ -2080,8 +2115,8 @@ Liverpool::Task Liverpool::ProcessCompute(std::span<const u32> acb, u32 vqid) {
                              (set_data->reg_offset - 0x200);
                 std::memcpy(addr, header + 2, set_size);
             } else {
-                std::memcpy(&regs.reg_array[Regs::ShRegWordOffset + set_data->reg_offset],
-                            header + 2, set_size);
+                state_serial.Write(regs.reg_array.data(), Regs::ShRegWordOffset + set_data->reg_offset,
+                                   reinterpret_cast<const u32*>(header + 2), header->type3.NumWords() - 1, kInertRegs);
             }
             break;
         }

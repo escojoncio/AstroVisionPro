@@ -2210,12 +2210,15 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
     // before this draw, as the Vulkan backend does with the load action of the pass.
     std::array<bool, 8> clearColor{};
     bool clearDepth = false;
+    bool sizesFromHistory = false;  // a target's size came from the sizes remembered (TargetExtents::Cache), not from the registers
     if (regs.color_control.mode != Mode::Disable)
         for (unsigned i = 0; i < 8; ++i) {
             const auto& cb = regs.color_buffers[i];
             if (!cb) continue;
             vpps4::ColorTarget& c = d.color[i];
-            c = sizedColorTarget(e, regs, impl->liverpool->last_cb_extent[i], i);
+            VpkengineRenderer::TargetExtents::Source how{};
+            c = sizedColorTarget(e, regs, impl->liverpool->last_cb_extent[i], i, &how);
+            sizesFromHistory |= how == VpkengineRenderer::TargetExtents::Source::Cache;
             c.writeMask = uint8_t(regs.color_target_mask.GetMask(i) & regs.color_shader_mask.GetMask(i));
             c.forceDstAlpha1 = cb.attrib.force_dst_alpha_1;
             c.blendClamp = cb.info.blend_clamp;
@@ -2521,6 +2524,10 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
                               b.separateAlpha ? b.alphaFunc : b.colorFunc};
         }
     }
+    // The count of the register writes (Liverpool::state_serial) lets the renderer take the fixed state of this draw to be the last
+    // one's when the count did not move. Not known (0) when a size came from the history of sizes, which the registers alone do
+    // not decide. (The clear draw above is not given one.)
+    d.stateSerial = sizesFromHistory ? 0 : impl->liverpool->state_serial.Value();
     // (the GPU test, benchLeavesOut: not for the shadow, which follows Vulkan's draws - Vulkan feeds the test then)
     if (impl->shadow || !benchLeavesOut(regs, d, geometry)) e.renderer->draw(d);
     if (VideoCore::Shadow::Side* side = shadowSide()) {
